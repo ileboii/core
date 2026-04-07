@@ -452,9 +452,7 @@ bool Map::Add(Player* player)
     if (!player->GetSession()->PlayerLoading())
         player->GetSession()->ClearIncomingPacketsByType(PACKET_PROCESS_MOVEMENT);
 
-    if (player->m_broadcaster)
-        player->m_broadcaster->SetInstanceId(GetInstanceId());
-
+    player->m_broadcaster->SetInstanceId(GetInstanceId());
     return true;
 }
 
@@ -463,8 +461,7 @@ void Map::ExistingPlayerLogin(Player* player)
     // Reset visibility list
     for (ObjectGuidSet::const_iterator it = player->m_visibleGUIDs.begin(); it != player->m_visibleGUIDs.end(); ++it)
         if (Player* other = GetPlayer(*it))
-            if (other->m_broadcaster)
-                other->m_broadcaster->RemoveListener(player);
+            other->m_broadcaster->RemoveListener(player);
     player->m_visibleGUIDs.clear();
 
     SendInitTransports(player);
@@ -1274,8 +1271,7 @@ void Map::Remove(Player* player, bool remove)
 
     for (ObjectGuidSet::const_iterator it = player->m_visibleGUIDs.begin(); it != player->m_visibleGUIDs.end(); ++it)
         if (Player* other = GetPlayer(*it))
-            if (other->m_broadcaster)
-                other->m_broadcaster->RemoveListener(player);
+            other->m_broadcaster->RemoveListener(player);
 
     player->ResetMap();
     if (remove)
@@ -2132,7 +2128,7 @@ bool DungeonMap::CanEnter(Player* player)
 
     if (m_resetAfterUnload)
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[DungeonReset] %s attempted to enter map %u, instance %u during reset", player->GetName(), GetId(), m_instanceId);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[DungeonReset] %s attempted to enter map %u, instance %u during reset", player->GetName(), m_instanceId);
         player->SendTransferAborted(TRANSFER_ABORT_NOT_FOUND);
         return false;
     }

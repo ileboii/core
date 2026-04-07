@@ -42,8 +42,6 @@ set (shared_SRCS
     Config/ConfigEnv.h
     Crypto/BigNumber.h
     Crypto/BigNumber.cpp
-    Crypto/InitializeCrypto.h
-    Crypto/InitializeCrypto.cpp
     Crypto/Authentication/SRP6.h
     Crypto/Authentication/SRP6.cpp
     Crypto/Encoding/Base32.h

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
  * Copyright (C) 2009-2011 MaNGOSZero <https://github.com/mangos/zero>
  * Copyright (C) 2011-2016 Nostalrius <https://nostalrius.org>
@@ -40,6 +40,9 @@
 #include "CellImpl.h"
 #include "Anticheat.h"
 #include "AccountMgr.h"
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/PlayerbotMgr.h"
+#include "playerbot/RandomPlayerbotMgr.h"
 
 bool WorldSession::SanitizeChatMessage(std::string& msg, uint32 lang, uint32 msgType)
 {
@@ -342,6 +345,11 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
 
             GetPlayer()->Say(packet.message.c_str(), packet.lang);
 
+            // Playerbot: forward say to bots
+            sRandomPlayerbotMgr.HandleCommand(CHAT_MSG_SAY, packet.message, *_player, "", GetPlayer()->GetTeam(), packet.lang);
+            if (_player->GetPlayerbotMgr())
+                _player->GetPlayerbotMgr()->HandleCommand(CHAT_MSG_SAY, packet.message, packet.lang);
+
             if (packet.lang != LANG_ADDON)
             {
                 sWorld.LogChat(this, "Say", packet.message.c_str());
@@ -387,6 +395,11 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
 
             GetPlayer()->Yell(packet.message.c_str(), packet.lang);
 
+            // Playerbot: forward yell to bots
+            sRandomPlayerbotMgr.HandleCommand(CHAT_MSG_YELL, packet.message, *_player, "", GetPlayer()->GetTeam(), packet.lang);
+            if (_player->GetPlayerbotMgr())
+                _player->GetPlayerbotMgr()->HandleCommand(CHAT_MSG_YELL, packet.message, packet.lang);
+
             if (packet.lang != LANG_ADDON)
             {
                 sWorld.LogChat(this, "Yell", packet.message.c_str());
@@ -406,6 +419,14 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
             }
             MasterPlayer* masterPlr = GetMasterPlayer();
             ASSERT(masterPlr);
+
+            // Playerbot: check if whisper target is a bot
+            Player* botPlayer = ObjectAccessor::FindPlayerByName(packet.whisperTargetOrChannel.c_str());
+            if (botPlayer && botPlayer->GetPlayerbotAI())
+            {
+                botPlayer->GetPlayerbotAI()->HandleCommand(CHAT_MSG_WHISPER, packet.message, *_player, packet.lang);
+                break;
+            }
 
             MasterPlayer* player = ObjectAccessor::FindMasterPlayer(packet.whisperTargetOrChannel.c_str());
             uint32 tSecurity = GetSecurity();
@@ -489,6 +510,17 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
             WorldPacket data;
             ChatHandler::BuildChatPacket(data, ChatMsg(packet.type), packet.message.c_str(), Language(packet.lang), _player->GetChatTag(), _player->GetObjectGuid(), _player->GetName());
             group->BroadcastPacket(&data, false, group->GetMemberGroup(GetPlayer()->GetObjectGuid()));
+
+            // Playerbot: forward party chat to bot group members
+            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+            {
+                Player* member = itr->getSource();
+                if (member && member->GetPlayerbotAI() && member->IsInSameGroupWith(GetPlayer()))
+                {
+                    member->GetPlayerbotAI()->HandleCommand(CHAT_MSG_PARTY, packet.message, *GetPlayer(), packet.lang);
+                }
+            }
+
             if (packet.lang != LANG_ADDON)
                 sWorld.LogChat(this, "Group", packet.message.c_str(), nullptr, group->GetId());
         }

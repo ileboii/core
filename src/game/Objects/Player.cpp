@@ -74,6 +74,8 @@
 #include "ZoneScriptMgr.h"
 #include "PlayerBotMgr.h"
 #include "PlayerBotAI.h"
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/PlayerbotMgr.h"
 #include "AccountMgr.h"
 #include "Anticheat.h"
 #include "MovementBroadcaster.h"
@@ -287,6 +289,12 @@ Player::Player(WorldSession* session) : Unit(),
 
 Player::~Player()
 {
+    // Playerbot cleanup
+    delete m_playerbotMgr;
+    m_playerbotMgr = nullptr;
+    delete m_playerbotAI;
+    m_playerbotAI = nullptr;
+
     DeletePacketBroadcaster();
 
     RemoveAI();
@@ -1354,6 +1362,12 @@ void Player::Update(uint32 update_diff, uint32 p_time)
         if (cheatAction)
             GetSession()->ProcessAnticheatAction("MovementAnticheat", reason.str().c_str(), cheatAction, sWorld.getConfig(CONFIG_UINT32_AC_MOVEMENT_BAN_DURATION));
     }
+
+    // Playerbot AI updates
+    if (m_playerbotAI)
+        m_playerbotAI->UpdateAI(update_diff);
+    if (m_playerbotMgr)
+        m_playerbotMgr->UpdateAI(update_diff);
 }
 
 void Player::OnDisconnected()
@@ -6403,12 +6417,11 @@ ReputationRank Player::GetReputationRank(uint32 faction) const
 }
 
 //Calculate total reputation percent player gain with quest/creature level
-int32 Player::CalculateReputationGain(ReputationSource source, int32 rep, int32 faction, uint32 creatureOrQuestLevel)
+int32 Player::CalculateReputationGain(ReputationSource source, int32 rep, int32 faction, uint32 creatureOrQuestLevel, bool noAuraBonus)
 {
     float percent = 100.0f;
 
-    // Diplomacy racial does not affect rep loss. Tested on classic.
-    float repMod = rep < 0 ? 0.0f : (float)GetTotalAuraModifier(SPELL_AURA_MOD_REPUTATION_GAIN);
+    float repMod = noAuraBonus ? 0.0f : (float)GetTotalAuraModifier(SPELL_AURA_MOD_REPUTATION_GAIN);
 
     // faction specific auras only seem to apply to kills
     if (source == REPUTATION_SOURCE_KILL)
@@ -18036,10 +18049,10 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature const
                 InterruptSpell(CURRENT_CHANNELED_SPELL, true);
     }
 
-    uint32 sourceNode = nodes[0];
+    uint32 sourcenode = nodes[0];
 
     // starting node too far away (cheat?)
-    TaxiNodesEntry const* node = sObjectMgr.GetTaxiNodeEntry(sourceNode);
+    TaxiNodesEntry const* node = sObjectMgr.GetTaxiNodeEntry(sourcenode);
     if (!node)
     {
         WorldPacket data(SMSG_ACTIVATETAXIREPLY, 4);
@@ -18084,27 +18097,26 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature const
     m_taxi.ClearTaxiDestinations();
 
     // 0 element current node
-    m_taxi.AddTaxiDestination(sourceNode);
+    m_taxi.AddTaxiDestination(sourcenode);
 
     float discount = npc ? GetReputationPriceDiscount(npc, true) : 1.0f;
     m_taxi.SetDiscount(discount);
 
     // fill destinations path tail
-    uint32 sourcePath = 0;
+    uint32 sourcepath = 0;
     uint32 sourceCost = 0;
-    uint32 totalCost = 0;
+    uint32 totalcost = 0;
     uint32 lastPath = 0;
     uint32 lastNode = nodes[1];
-    sObjectMgr.GetTaxiPath(sourceNode, lastNode, sourcePath, sourceCost);
-    if (!sourcePath || sourcePath >= sTaxiPathNodesByPath.size())
+    sObjectMgr.GetTaxiPath(sourcenode, lastNode, sourcepath, sourceCost);
+    if (!sourcepath)
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "ActivateTaxiPathTo: Taxi path from nodes %u to %u is invalid!", sourceNode, lastNode);
         m_taxi.ClearTaxiDestinations();
         return false;
     }
-    lastPath = sourcePath;
+    lastPath = sourcepath;
     sourceCost = uint32(sourceCost * discount + 0.5f);
-    totalCost += sourceCost;
+    totalcost += sourceCost;
 
     // multiple path
     if (nodes.size() > 2)
@@ -18117,13 +18129,12 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature const
         {
             nextNode = nodes[nodeIndex];
             sObjectMgr.GetTaxiPath(lastNode, nextNode, nextPath, nextCost);
-            if (!nextPath || nextPath >= sTaxiPathNodesByPath.size())
+            if (!nextPath)
             {
-                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "ActivateTaxiPathTo: Taxi path from nodes %u to %u is invalid!", lastNode, nextNode);
                 m_taxi.ClearTaxiDestinations();
                 return false;
             }
-            totalCost += uint32(nextCost * discount + 0.5f);
+            totalcost += uint32(nextCost * discount + 0.5f);
 
             // find a transition
             uint32 inNode = 0;
@@ -18166,10 +18177,10 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature const
         m_taxi.AddTaxiDestination(lastNode);
 
     // get mount display id (in case non taximaster (npc==nullptr) allow more wide lookup)
-    uint32 mount_display_id = sObjectMgr.GetTaxiMountDisplayId(sourceNode, GetTeam(), npc == nullptr);
+    uint32 mount_display_id = sObjectMgr.GetTaxiMountDisplayId(sourcenode, GetTeam(), npc == nullptr);
 
     // in spell case allow display id to be 0
-    if ((mount_display_id == 0 && spellid == 0) || sourcePath == 0)
+    if ((mount_display_id == 0 && spellid == 0) || sourcepath == 0)
     {
         WorldPacket data(SMSG_ACTIVATETAXIREPLY, 4);
         data << uint32(ERR_TAXIUNSPECIFIEDSERVERERROR);
@@ -18180,7 +18191,7 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature const
 
     uint32 money = GetMoney();
 
-    if (money < totalCost)
+    if (money < totalcost)
     {
         WorldPacket data(SMSG_ACTIVATETAXIREPLY, 4);
         data << uint32(ERR_TAXINOTENOUGHMONEY);
@@ -18216,7 +18227,7 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature const
     data << uint32(ERR_TAXIOK);
     GetSession()->SendPacket(&data);
 
-    GetSession()->SendDoFlight(mount_display_id, sourcePath);
+    GetSession()->SendDoFlight(mount_display_id, sourcepath);
 
     return true;
 }
@@ -18236,7 +18247,7 @@ bool Player::ActivateTaxiPathTo(uint32 taxi_path_id, uint32 spellid /*= 0*/, boo
     return ActivateTaxiPathTo(nodes, nullptr, spellid, nocheck);
 }
 
-void Player::ContinueTaxiFlight()
+void Player::ContinueTaxiFlight() const
 {
     uint32 sourceNode = m_taxi.GetTaxiSource();
     if (!sourceNode)
@@ -18247,12 +18258,8 @@ void Player::ContinueTaxiFlight()
     uint32 mountDisplayId = sObjectMgr.GetTaxiMountDisplayId(sourceNode, GetTeam(), true);
     uint32 path = m_taxi.GetCurrentTaxiPath();
 
-    if (path >= sTaxiPathNodesByPath.size())
-    {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "ContinueTaxiFlight: %s attempts to continue out of bounds taxi path %u", GetName(), path);
-        m_taxi.ClearTaxiDestinations();
-        return;
-    }
+    // search appropriate start path node
+    uint32 startNode = 0;
 
     TaxiPathNodeList const& nodeList = sTaxiPathNodesByPath[path];
 
@@ -18261,9 +18268,6 @@ void Player::ContinueTaxiFlight()
         (nodeList[0].x - GetPositionX()) * (nodeList[0].x - GetPositionX()) +
         (nodeList[0].y - GetPositionY()) * (nodeList[0].y - GetPositionY()) +
         (nodeList[0].z - GetPositionZ()) * (nodeList[0].z - GetPositionZ());
-
-    // search appropriate start path node
-    uint32 startNode = 0;
 
     for (uint32 i = 1; i < nodeList.size(); ++i)
     {
@@ -18780,7 +18784,7 @@ void Player::LeaveBattleground(bool teleportToEntryPoint)
                 AddAura(26013, 0, this);               // Deserter
         }
         bg->RemovePlayerAtLeave(GetObjectGuid(), teleportToEntryPoint, true);
-        sLog.Out(LOG_BG, LOG_LVL_DETAIL, "[%u,%u]: %s:%u [%u:%s] leaves, TypeID: %u",
+        sLog.Out(LOG_BG, LOG_LVL_DETAIL, "[%u,%u]: %s:%u [%u:%s] leaves",
                  bg->GetMapId(), bg->GetInstanceID(),
                  GetName(),
                  GetGUIDLow(), GetSession()->GetAccountId(), GetSession()->GetRemoteAddress().c_str(),

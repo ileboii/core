@@ -76,6 +76,18 @@ class ByteBuffer
             return *this;
         }
 
+        // copy operator
+        ByteBuffer& operator=(ByteBuffer const& rhs)
+        {
+            if (this != &rhs)
+            {
+                _rpos = rhs._rpos;
+                _wpos = rhs._wpos;
+                _storage = rhs._storage;
+            }
+            return *this;
+        }
+
         static ByteBuffer from(std::vector<uint8> const& v)
         {
             ByteBuffer buf;

@@ -46,6 +46,7 @@ class ChannelMgr
         void LeftChannel(std::string const& name);
         void CreateDefaultChannels();
         static void AnnounceBothFactionsChannel(std::string const& channelName, ObjectGuid playerGuid, char const* message);
+        ChannelMap const& GetChannels() const { return channels; }
     private:
         ChannelMap channels;
 };

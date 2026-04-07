@@ -76,6 +76,14 @@ if(WIN32)
   )
 endif()
 
+if(BUILD_PLAYERBOTS)
+  include_directories(
+    ${CMAKE_SOURCE_DIR}/src/game/Playerbots
+    ${CMAKE_SOURCE_DIR}/src/game/Playerbots/playerbot
+    ${CMAKE_SOURCE_DIR}/src/game/Playerbots/ahbot
+  )
+endif()
+
 # Display some debug informations at server startup
 set_directory_properties(PROPERTIES COMPILE_DEFINITIONS "${DEFINITIONS}")
 
@@ -100,6 +108,12 @@ else()
     framework
     g3dlite
     gsoap
+  )
+endif()
+
+if(BUILD_PLAYERBOTS)
+  target_link_libraries(${EXECUTABLE_NAME}
+    playerbots
   )
 endif()
 

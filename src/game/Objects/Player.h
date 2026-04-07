@@ -746,9 +746,15 @@ struct QuestShareInfo
     uint32 QuestId;
 };
 
+class PlayerbotAI;
+class PlayerbotMgr;
+
 class Player final: public Unit
 {
     friend class WorldSession;
+    friend class PlayerbotAI;
+    friend class PlayerbotMgr;
+    friend class PlayerbotFactory;
     friend void Item::AddToUpdateQueueOf(Player* player);
     friend void Item::RemoveFromUpdateQueueOf(Player* player);
     public:
@@ -1410,9 +1416,9 @@ class Player final: public Unit
         void UpdateFreeTalentPoints(bool resetIfNeed = true);
         uint32 GetResetTalentsCost() const;
         void UpdateResetTalentsMultiplier() const;
-        uint32 CalculateTalentsPoints() const;
         void SendTalentWipeConfirm(ObjectGuid guid) const;
     public:
+        uint32 CalculateTalentsPoints() const;
         uint32 GetFreeTalentPoints() const { return GetUInt32Value(PLAYER_CHARACTER_POINTS1); }
         void SetFreeTalentPoints(uint32 points) { SetUInt32Value(PLAYER_CHARACTER_POINTS1, points); }
         bool ResetTalents(bool noCost = false);
@@ -1907,7 +1913,7 @@ class Player final: public Unit
         bool ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature const* npc = nullptr, uint32 spellid = 0, bool nocheck = false);
         bool ActivateTaxiPathTo(uint32 taxi_path_id, uint32 spellid = 0, bool nocheck = false);
         void TaxiStepFinished(bool lastPointReached);
-        void ContinueTaxiFlight();
+        void ContinueTaxiFlight() const;
 
         /*********************************************************/
         /***                 CINEMATIC SYSTEM                  ***/
@@ -2172,7 +2178,7 @@ class Player final: public Unit
         ReputationRank GetReputationRank(uint32 faction_id) const;
         void RewardReputation(Unit const* pVictim, float rate);
         void RewardReputation(Quest const* pQuest);
-        int32 CalculateReputationGain(ReputationSource source, int32 rep, int32 faction, uint32 creatureOrQuestLevel = 0);
+        int32 CalculateReputationGain(ReputationSource source, int32 rep, int32 faction, uint32 creatureOrQuestLevel = 0, bool noAuraBonus = false);
         void SetTemporaryAtWarWithFaction(uint32 factionId) { m_temporaryAtWarFactions.insert(factionId); }
         void ClearTemporaryWarWithFactions();
 
@@ -2486,6 +2492,17 @@ class Player final: public Unit
         static uint32 GetRankFromDB(ObjectGuid guid);
         int GetGuildIdInvited() const { return m_guildIdInvited; }
         static void RemovePetitionsAndSigns(ObjectGuid guid, uint32 exceptPetitionId = 0);
+
+    // Playerbot integration
+    public:
+        PlayerbotAI* GetPlayerbotAI() const { return m_playerbotAI; }
+        void SetPlayerbotAI(PlayerbotAI* ai) { m_playerbotAI = ai; }
+        PlayerbotMgr* GetPlayerbotMgr() const { return m_playerbotMgr; }
+        void SetPlayerbotMgr(PlayerbotMgr* mgr) { m_playerbotMgr = mgr; }
+        bool isRealPlayer() const { return m_playerbotAI == nullptr; }
+    private:
+        PlayerbotAI* m_playerbotAI = nullptr;
+        PlayerbotMgr* m_playerbotMgr = nullptr;
 };
 
 inline Player* Object::ToPlayer()

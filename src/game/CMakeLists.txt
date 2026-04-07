@@ -91,6 +91,7 @@ set (game_SRCS
     Commands/TeleportCommands.cpp
     Commands/TicketCommands.cpp
     Commands/UnitCommands.cpp
+    Commands/OldBotCommandStubs.cpp
     Database/CharacterDatabaseCache.cpp
     Database/CharacterDatabaseCleaner.cpp
     Database/DBCStores.cpp
@@ -189,12 +190,6 @@ set (game_SRCS
     PacketBroadcast/ChatCommands.cpp
     PacketBroadcast/MovementBroadcaster.cpp
     PacketBroadcast/PlayerBroadcaster.cpp
-    PlayerBots/PartyBotAI.cpp
-    PlayerBots/CombatBotBaseAI.cpp
-    PlayerBots/BattleBotAI.cpp
-    PlayerBots/BattleBotWaypoints.cpp
-    PlayerBots/PlayerBotAI.cpp
-    PlayerBots/PlayerBotMgr.cpp
     Server/Protocol/Opcodes.cpp
     Server/Packets/Battleground.cpp
     Server/Packets/AuctionHouse.cpp
@@ -437,12 +432,6 @@ set (game_SRCS
     OutdoorPvP/OutdoorPvPSI.h
     PacketBroadcast/MovementBroadcaster.h
     PacketBroadcast/PlayerBroadcaster.h
-    PlayerBots/CombatBotBaseAI.h
-    PlayerBots/PartyBotAI.h
-    PlayerBots/BattleBotAI.h
-    PlayerBots/BattleBotWaypoints.h
-    PlayerBots/PlayerBotAI.h
-    PlayerBots/PlayerBotMgr.h
     Server/Protocol/Opcodes.h
     Server/Protocol/Opcodes_active.h
     Server/Packet.h
@@ -585,6 +574,15 @@ if(WIN32)
   )
 endif()
 
+if(BUILD_PLAYERBOTS)
+  include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/Playerbots
+    ${CMAKE_CURRENT_SOURCE_DIR}/Playerbots/playerbot
+    ${CMAKE_CURRENT_SOURCE_DIR}/Playerbots/ahbot
+  )
+  add_definitions(-DENABLE_PLAYERBOTS)
+endif()
+
 source_group("Object"
   REGULAR_EXPRESSION .*
 )
@@ -631,6 +629,11 @@ target_link_libraries(game
   shared
   Detour
 )
+
+if(BUILD_PLAYERBOTS)
+  add_subdirectory(Playerbots)
+  target_link_libraries(game playerbots)
+endif()
 
 #add_dependencies(game revision.h)
 

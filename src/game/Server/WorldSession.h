@@ -251,6 +251,7 @@ class WorldSession
         void KickDisconnectedFromWorld() { m_disconnectTimer = 0; }
 
         bool PlayerLoading() const { return m_playerLoading; }
+        void SetPlayerLoading(bool loading) { m_playerLoading = loading; }
         bool PlayerLogout() const { return m_playerLogout; }
         bool PlayerLogoutWithSave() const { return m_playerLogout && m_playerSave; }
 

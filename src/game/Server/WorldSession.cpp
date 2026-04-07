@@ -37,11 +37,12 @@
 #include "SocialMgr.h"
 #include "PlayerBotMgr.h"
 #include "PlayerBotAI.h"
+#include "playerbot/PlayerbotMgr.h"
+#include "playerbot/PlayerbotAI.h"
 #include "Anticheat.h"
 #include "Language.h"
 #include "Chat.h"
 #include "MasterPlayer.h"
-#include "PlayerBroadcaster.h"
 #include "Crypto/Hash/MD5.h"
 
 // select opcodes appropriate for processing in Map::Update context for current session state
@@ -119,6 +120,15 @@ void WorldSession::SendPacket(WorldPacket const* packet)
         // Packet will be rejected by client
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[NETWORK] Packet %s size %u is too large. Not sent [Account %u Player %s]", LookupOpcodeName(packet->GetOpcode()), packet->size(), GetAccountId(), GetPlayerName());
         return;
+    }
+
+    // Playerbot AI packet handling
+    if (GetPlayer())
+    {
+        if (GetPlayer()->GetPlayerbotAI())
+            GetPlayer()->GetPlayerbotAI()->HandleBotOutgoingPacket(*packet);
+        else if (GetPlayer()->GetPlayerbotMgr())
+            GetPlayer()->GetPlayerbotMgr()->HandleMasterOutgoingPacket(*packet);
     }
 
     if (!m_socket)
@@ -440,6 +450,10 @@ bool WorldSession::Update(PacketFilter& updater)
     if (sWorld.getConfig(CONFIG_UINT32_PERFLOG_SLOW_UNIQUE_SESSION_UPDATE) && sessionUpdateTime > sWorld.getConfig(CONFIG_UINT32_PERFLOG_SLOW_UNIQUE_SESSION_UPDATE))
         sLog.Out(LOG_PERFORMANCE, LOG_LVL_MINIMAL, "Slow session update: %ums. Account %u on IP %s", sessionUpdateTime, GetAccountId(), GetRemoteAddress().c_str());
 
+    // Update master's playerbot sessions
+    if (GetPlayer() && GetPlayer()->GetPlayerbotMgr())
+        GetPlayer()->GetPlayerbotMgr()->UpdateSessions(0);
+
     //check if we are safe to proceed with logout
     //logout procedure should happen only in World::UpdateSessions() method!!!
     if (updater.ProcessLogout())
@@ -462,8 +476,8 @@ bool WorldSession::Update(PacketFilter& updater)
                 m_warden = nullptr;
             }
 
-            if (GetPlayer() && GetPlayer()->m_broadcaster)
-                GetPlayer()->m_broadcaster->ChangeSocket(nullptr);
+            if (GetPlayer())
+                GetPlayer()->DeletePacketBroadcaster();
 
             // Character stays IG for 2 minutes
             return ForcePlayerLogoutDelay();

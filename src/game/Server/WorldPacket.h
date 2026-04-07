@@ -53,6 +53,17 @@ class WorldPacket : public ByteBuffer
             return *this;
         }
 
+        WorldPacket& operator=(WorldPacket const& rhs)
+        {
+            if (this != &rhs)
+            {
+                m_opcode = rhs.m_opcode;
+                m_recvdTime = rhs.m_recvdTime;
+                ByteBuffer::operator=(rhs);
+            }
+            return *this;
+        }
+
         void Initialize(uint16 opcode, size_t newres=200)
         {
             clear();

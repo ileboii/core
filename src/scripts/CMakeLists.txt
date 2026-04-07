@@ -330,6 +330,14 @@ include_directories(
   ${MYSQL_INCLUDE_DIR}
 )
 
+if(BUILD_PLAYERBOTS)
+  include_directories(
+    ${CMAKE_SOURCE_DIR}/src/game/Playerbots
+    ${CMAKE_SOURCE_DIR}/src/game/Playerbots/playerbot
+    ${CMAKE_SOURCE_DIR}/src/game/Playerbots/ahbot
+  )
+endif()
+
 add_library(${LIBRARY_NAME} STATIC
   ${SCRIPTS_SRCS}
 )

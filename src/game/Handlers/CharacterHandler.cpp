@@ -43,6 +43,9 @@
 #include "PlayerBotMgr.h"
 #include "MapManager.h"
 #include "AccountMgr.h"
+#include "playerbot/PlayerbotMgr.h"
+#include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/RandomPlayerbotMgr.h"
 
 class LoginQueryHolder : public SqlQueryHolder
 {
@@ -719,6 +722,17 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder *holder)
     if (sWorld.getConfig(CONFIG_BOOL_SEND_LOOT_ROLL_UPON_RECONNECT) && alreadyOnline)
         if (Group* pGroup = pCurrChar->GetGroup())
             pGroup->SendLootStartRollsForPlayer(pCurrChar);
+
+    // Playerbot integration: create PlayerbotMgr for real players
+    if (pCurrChar->isRealPlayer() && sPlayerbotAIConfig.enabled)
+    {
+        if (!pCurrChar->GetPlayerbotMgr())
+        {
+            pCurrChar->SetPlayerbotMgr(new PlayerbotMgr(pCurrChar));
+        }
+        pCurrChar->GetPlayerbotMgr()->OnPlayerLogin(pCurrChar);
+        sRandomPlayerbotMgr.OnPlayerLogin(pCurrChar);
+    }
 }
 
 void WorldSession::HandleSetFactionAtWarOpcode(WorldPackets::Misc::SetFactionAtWar const& packet)

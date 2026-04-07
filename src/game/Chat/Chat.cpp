@@ -88,6 +88,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "stop",       SEC_ADMINISTRATOR,      true,  &ChatHandler::HandleBotStopCommand,             "", nullptr },
         { "start",      SEC_ADMINISTRATOR,      true,  &ChatHandler::HandleBotStartCommand,            "", nullptr },
         { "ranadd",     SEC_ADMINISTRATOR,      true,  &ChatHandler::HandleBotAddRandomCommand,        "", nullptr },
+        { "",           SEC_PLAYER,             false, &ChatHandler::HandlePlayerbotMgrChatCommand,    "", nullptr },
         { nullptr,      0,                      false, nullptr,                                        "", nullptr },
     };
 
@@ -1215,6 +1216,8 @@ ChatCommand * ChatHandler::getCommandTable()
         { "wp",             SEC_TICKETMASTER,   false, nullptr,                                        "", wpCommandTable       },
         { "service",        SEC_ADMINISTRATOR,  true, nullptr,                                         "", serviceCommandTable  },
         { "bot",            SEC_ADMINISTRATOR,  true, nullptr,                              "Manage bots", botCommandTable      },
+        { "rndbot",         SEC_GAMEMASTER,     true,  &ChatHandler::HandleRandomPlayerbotCommand, "Manage random bots", nullptr },
+        { "pmo",            SEC_GAMEMASTER,     true,  &ChatHandler::HandlePerfMonCommand, "Performance monitor: toggle, reset, full, tick, stack, map", nullptr },
         { "ahbot",          SEC_ADMINISTRATOR,  true, nullptr,                            "Manage AH bot", ahbotCommandTable    },
         { "partybot",       SEC_ADMINISTRATOR,  false, nullptr,                       "Manage party bots", partyBotCommandTable },
         { "battlebot",      SEC_ADMINISTRATOR,  true, nullptr,                      "Manage battle bots", battleBotCommandTable},

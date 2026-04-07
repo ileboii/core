@@ -268,6 +268,9 @@ class ChatHandler
         bool HandleGoArathiCommand(char *);
         bool HandleGoAlteracCommand(char*);
         // Bots commandes
+        bool HandlePlayerbotMgrChatCommand(char * args);
+        bool HandleRandomPlayerbotCommand(char * args);
+        bool HandlePerfMonCommand(char* args);
         bool HandleBotAddAllCommand(char *);
         bool HandleBotAddRandomCommand(char *args);
         bool HandleBotAddCommand(char * args);
