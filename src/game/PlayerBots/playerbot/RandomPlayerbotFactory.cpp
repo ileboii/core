@@ -421,26 +421,6 @@ void RandomPlayerbotFactory::CreateRandomBots()
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Random bot characters deleted");
     }
 
-    if (!sPlayerbotAIConfig.randomBotAutoCreate)
-    {
-        for (uint32 accountNumber = 0; accountNumber < sPlayerbotAIConfig.randomBotAccountCount; ++accountNumber)
-        {
-            std::ostringstream out; out << sPlayerbotAIConfig.randomBotAccountPrefix << accountNumber;
-            std::string accountName = out.str();
-
-            auto results = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
-            if (!results)
-                continue;
-
-            Field* fields = results->Fetch();
-            uint32 accountId = fields[0].GetUInt32();
-
-            sPlayerbotAIConfig.randomBotAccounts.push_back(accountId);
-        }
-
-        return;
-    }
-
     int totalAccCount = sPlayerbotAIConfig.randomBotAccountCount;
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Creating random bot accounts...");
 
@@ -484,6 +464,26 @@ void RandomPlayerbotFactory::CreateRandomBots()
     {
         bar3.step();
         account_creations[i].wait();
+    }
+
+    if (!sPlayerbotAIConfig.randomBotAutoCreate)
+    {
+        for (uint32 accountNumber = 0; accountNumber < sPlayerbotAIConfig.randomBotAccountCount; ++accountNumber)
+        {
+            std::ostringstream out; out << sPlayerbotAIConfig.randomBotAccountPrefix << accountNumber;
+            std::string accountName = out.str();
+
+            auto results = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
+            if (!results)
+                continue;
+
+            Field* fields = results->Fetch();
+            uint32 accountId = fields[0].GetUInt32();
+
+            sPlayerbotAIConfig.randomBotAccounts.push_back(accountId);
+        }
+
+        return;
     }
 
     //LoginDatabase.PExecute("UPDATE account SET expansion = '%u' where username like '%s%%'", 2, sPlayerbotAIConfig.randomBotAccountPrefix.c_str());
