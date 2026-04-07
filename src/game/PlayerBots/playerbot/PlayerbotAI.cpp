@@ -5708,6 +5708,9 @@ bool PlayerbotAI::HasPlayerNearby(WorldPosition pos, float range)
     for (auto& i : sRandomPlayerbotMgr.GetPlayersSnapshot())
     {
         Player* player = i.second;
+        if (!player->IsInWorld())
+            continue;
+
         if (!player->IsGameMaster() || !player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM))
         {
             if (player->GetMapId() != bot->GetMapId() || player->GetInstanceId() != bot->GetInstanceId())
@@ -5743,6 +5746,9 @@ bool PlayerbotAI::HasManyPlayersNearby(uint32 trigerrValue, float range)
     for (auto& i : sRandomPlayerbotMgr.GetPlayersSnapshot())
     {
         Player* player = i.second;
+        if (!player->IsInWorld())
+            continue;
+
         if ((!player->IsGameMaster() || !player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM)) && player->GetMapId() == bot->GetMapId() && player->GetInstanceId() == bot->GetInstanceId() && sServerFacade.GetDistance2d(player, bot) < sqRange)
         {
             found++;
