@@ -1550,6 +1550,8 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 #ifdef MANGOSBOT_TWO
             case CHAT_MSG_PARTY_LEADER:
 #endif
+            case CHAT_MSG_RAID:
+            case CHAT_MSG_RAID_LEADER:
             case CHAT_MSG_YELL:
             case CHAT_MSG_WHISPER:
             case CHAT_MSG_GUILD:

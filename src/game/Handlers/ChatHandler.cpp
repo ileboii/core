@@ -564,6 +564,16 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
             ChatHandler::BuildChatPacket(data, CHAT_MSG_RAID, packet.message.c_str(), Language(packet.lang), _player->GetChatTag(), _player->GetObjectGuid(), _player->GetName());
             group->BroadcastPacket(&data, false);
 
+            // Playerbot: forward raid chat to bot group members
+            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+            {
+                Player* member = itr->getSource();
+                if (member && member->GetPlayerbotAI() && member->IsInSameRaidWith(GetPlayer()))
+                {
+                    member->GetPlayerbotAI()->HandleCommand(CHAT_MSG_RAID, packet.message, *GetPlayer(), packet.lang);
+                }
+            }
+
             if (packet.lang != LANG_ADDON)
                 sWorld.LogChat(this, "Raid", packet.message.c_str(), nullptr, group->GetId());
         }
@@ -587,12 +597,23 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
             WorldPacket data;
             ChatHandler::BuildChatPacket(data, CHAT_MSG_RAID_LEADER, packet.message.c_str(), Language(packet.lang), _player->GetChatTag(), _player->GetObjectGuid(), _player->GetName());
             group->BroadcastPacket(&data, false);
+
+            // Playerbot: forward raid leader chat to bot group members
+            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+            {
+                Player* member = itr->getSource();
+                if (member && member->GetPlayerbotAI() && member->IsInSameRaidWith(GetPlayer()))
+                {
+                    member->GetPlayerbotAI()->HandleCommand(CHAT_MSG_RAID, packet.message, *GetPlayer(), packet.lang);
+                }
+            }
+
             if (packet.lang != LANG_ADDON)
                 sWorld.LogChat(this, "Raid", packet.message.c_str(), nullptr, group->GetId());
         }
         break;
 
-        case CHAT_MSG_RAID_WARNING: // Master side: TODO
+        case CHAT_MSG_RAID_WARNING:
         {
             Group* group = GetPlayer()->GetGroup();
             if (!group || !group->isRaidGroup() ||
@@ -603,6 +624,16 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
             //in battleground, raid warning is sent only to players in battleground - code is ok
             ChatHandler::BuildChatPacket(data, CHAT_MSG_RAID_WARNING, packet.message.c_str(), Language(packet.lang), _player->GetChatTag(), _player->GetObjectGuid(), _player->GetName());
             group->BroadcastPacket(&data, false);
+
+            // Playerbot: forward raid warning to bot group members
+            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+            {
+                Player* member = itr->getSource();
+                if (member && member->GetPlayerbotAI() && member->IsInSameRaidWith(GetPlayer()))
+                {
+                    member->GetPlayerbotAI()->HandleCommand(CHAT_MSG_RAID, packet.message, *GetPlayer(), packet.lang);
+                }
+            }
 
             if (packet.lang != LANG_ADDON)
                 sWorld.LogChat(this, "Raid", packet.message.c_str(), nullptr, group->GetId());
