@@ -49,12 +49,13 @@ bool GuildShareItemAction::Execute(Event& event)
                 return false;
             }
 
+            ItemPrototype const* proto = item->GetProto();
             bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);
             item->SetOwnerGuid(receiver->GetObjectGuid());
             receiver->MoveItemToInventory(dest, item, true);
 
             std::ostringstream receiverOut;
-            receiverOut << "Got " << chat->formatItem(item, giveCount) << " from guild member " << bot->GetName();
+            receiverOut << "Got " << chat->formatItem(proto, giveCount) << " from guild member " << bot->GetName();
             receiverAi->TellPlayerNoFacing(receiverAi->GetMaster(), receiverOut.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         }
         else
@@ -72,6 +73,7 @@ bool GuildShareItemAction::Execute(Event& event)
             item->SetState(ITEM_CHANGED, bot);
             bot->SaveInventoryAndGoldToDB();
 
+            ItemPrototype const* proto = item->GetProto();
             Item* newItem = Item::CreateItem(itemId, giveCount, receiver->GetObjectGuid());
             if (!newItem)
                 return false;
@@ -79,7 +81,7 @@ bool GuildShareItemAction::Execute(Event& event)
             receiver->StoreItem(dest, newItem, true);
 
             std::ostringstream receiverOut;
-            receiverOut << "Got " << chat->formatItem(newItem, giveCount) << " from guild member " << bot->GetName();
+            receiverOut << "Got " << chat->formatItem(proto, giveCount) << " from guild member " << bot->GetName();
             receiverAi->TellPlayerNoFacing(receiverAi->GetMaster(), receiverOut.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         }
 
