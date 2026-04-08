@@ -14751,10 +14751,11 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
         return false;
     }
 
-    // check name limitations
+    // check name limitations (skip for bot sessions)
     m_name = fields[2].GetCppString();
-    if (ObjectMgr::CheckPlayerName(m_name) != CHAR_NAME_SUCCESS ||
-       (GetSession()->GetSecurity() == SEC_PLAYER && sObjectMgr.IsReservedName(m_name)))
+    if (GetSession()->GetSocket() &&
+        (ObjectMgr::CheckPlayerName(m_name) != CHAR_NAME_SUCCESS ||
+        (GetSession()->GetSecurity() == SEC_PLAYER && sObjectMgr.IsReservedName(m_name))))
     {
         CharacterDatabase.PExecute("UPDATE `characters` SET `character_flags` = `character_flags` | '%u' WHERE `guid` ='%u'",
                                    uint32(CHARACTER_FLAG_RENAME), guid.GetCounter());
