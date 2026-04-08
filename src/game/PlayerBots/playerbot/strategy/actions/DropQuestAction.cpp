@@ -163,7 +163,9 @@ bool CleanQuestLogAction::HasProgress(Player* bot, Quest const* quest)
     if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
         return true;
 
-    QuestStatusData questStatus = *(QuestStatusData*)nullptr /* getQuestStatusMap not in vmangos */;
+    QuestStatusData const* questStatus = bot->GetQuestStatusData(questId);
+    if (!questStatus)
+        return false;
 
     for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
     {
@@ -173,7 +175,7 @@ bool CleanQuestLogAction::HasProgress(Player* bot, Quest const* quest)
         if (quest->ReqItemId[i])
         {
             int required = quest->ReqItemCount[i];
-            int available = questStatus.m_itemcount[i];
+            int available = questStatus->m_itemcount[i];
             if (available > 0 && required > 0)
                 return true;
         }
@@ -181,7 +183,7 @@ bool CleanQuestLogAction::HasProgress(Player* bot, Quest const* quest)
         if (quest->ReqCreatureOrGOId[i])
         {
             int required = quest->ReqCreatureOrGOCount[i];
-            int available = questStatus.m_creatureOrGOcount[i];
+            int available = questStatus->m_creatureOrGOcount[i];
 
             if (available > 0 && required > 0)
                 return true;
