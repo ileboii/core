@@ -98,6 +98,7 @@ public:
         void OnPlayerLogout(Player* player);
         void OnPlayerLogin(Player* player);
         void OnPlayerLoginError(uint32 bot);
+        void OnBotLoginRegistration(Player* bot);
         Player* GetRandomPlayer();
         PlayerBotMap& GetPlayers() { return players; };
         // Thread-safe snapshot of real player map for use from map update threads (Continents.Instanciate sub-maps).

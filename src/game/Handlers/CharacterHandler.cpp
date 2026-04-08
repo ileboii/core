@@ -723,8 +723,12 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder *holder)
         if (Group* pGroup = pCurrChar->GetGroup())
             pGroup->SendLootStartRollsForPlayer(pCurrChar);
 
-    // Playerbot integration: create PlayerbotMgr for real players
-    if (pCurrChar->isRealPlayer() && sPlayerbotAIConfig.enabled)
+    // Playerbot integration: create PlayerbotMgr for real players only.
+    // Check for a valid socket to exclude bot sessions that haven't had
+    // their PlayerbotAI set yet (isRealPlayer() would incorrectly return
+    // true for them, leading to ResetStrategies on other bots from the
+    // wrong thread).
+    if (GetSocket() && pCurrChar->isRealPlayer() && sPlayerbotAIConfig.enabled)
     {
         if (!pCurrChar->GetPlayerbotMgr())
         {

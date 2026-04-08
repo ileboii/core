@@ -3429,6 +3429,24 @@ void RandomPlayerbotMgr::OnPlayerLogin(Player* player)
     }
 }
 
+void RandomPlayerbotMgr::OnBotLoginRegistration(Player* player)
+{
+    if (IsFreeBot(player))
+    {
+        uint32 guid = player->GetGUIDLow();
+        if (!sPlayerbotAIConfig.IsFreeAltBot(player))
+            SetEventValue(guid, "login", 0, 0);
+    }
+    else
+    {
+        {
+            std::unique_lock<std::shared_mutex> lock(m_playersMutex);
+            players[player->GetGUIDLow()] = player;
+        }
+        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Including non-random bot player %s into random bot update", player->GetName());
+    }
+}
+
 void RandomPlayerbotMgr::OnPlayerLoginError(uint32 bot)
 {
     SetEventValue(bot, "add", 0, 0);

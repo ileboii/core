@@ -2220,7 +2220,12 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(std::unique_ptr<QueryResult> 
         return;
     }
 
-    sRandomPlayerbotMgr.OnPlayerLogin(bot);
-
     OnBotLogin(bot);
+
+    // Register the bot with RandomPlayerbotMgr after OnBotLogin has set up
+    // PlayerbotAI. We only do the bookkeeping part here (IsFreeBot/players map).
+    // We must NOT call the full OnPlayerLogin which iterates existing bots and
+    // calls ResetStrategies() on them, because this callback runs on a DB
+    // worker thread and would corrupt engine data accessed by the map thread.
+    sRandomPlayerbotMgr.OnBotLoginRegistration(bot);
 }
