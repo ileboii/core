@@ -1798,7 +1798,9 @@ std::string PlayerbotHolder::HandleBotAddLogin(Player* bot, Player* master, cons
     bool isMasterAccount = (masterAccountId == botAccount);
     bool isRandomAccount = sPlayerbotAIConfig.IsInRandomAccountList(botAccount);
 
-    if (isMasterAccount || isRandomAccount || sPlayerbotAIConfig.allowMultiAccountAltBots)
+    if (isRandomAccount)
+        sRandomPlayerbotMgr.AddRandomBot(guid);
+    else if (isMasterAccount || sPlayerbotAIConfig.allowMultiAccountAltBots)
         AddPlayerBot(guid, masterAccountId);
     else
         return "Not in your account";
@@ -2167,40 +2169,26 @@ void PlayerbotHolder::AddPlayerBot(uint32 playerGuid, uint32 masterAccountId)
     Player* bot = sObjectMgr.GetPlayer(guid);
 
     if (bot && bot->IsInWorld())
-    {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "AddPlayerBot: bot guid %u already in world", playerGuid);
         return;
-    }
 
     uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
     if (accountId == 0)
-    {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "AddPlayerBot: bot guid %u has no account (not in cache?)", playerGuid);
         return;
-    }
 
     PlayerbotLoginQueryHolder* holder = new PlayerbotLoginQueryHolder(accountId, guid);
     if (!holder->Initialize())
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "AddPlayerBot: bot guid %u failed to initialize login queries", playerGuid);
         delete holder;
         return;
     }
 
-    if (!CharacterDatabase.DelayQueryHolderUnsafe(this, &PlayerbotHolder::HandlePlayerBotLoginCallback, holder))
-    {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "AddPlayerBot: DelayQueryHolderUnsafe FAILED for bot guid %u", playerGuid);
-        delete holder;
-    }
+    CharacterDatabase.DelayQueryHolder(this, &PlayerbotHolder::HandlePlayerBotLoginCallback, holder);
 }
 
 void PlayerbotHolder::HandlePlayerBotLoginCallback(std::unique_ptr<QueryResult> /*dummy*/, SqlQueryHolder* holder)
 {
     if (!holder)
-    {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "HandlePlayerBotLoginCallback: holder is null");
         return;
-    }
 
     PlayerbotLoginQueryHolder* lqh = (PlayerbotLoginQueryHolder*)holder;
     uint32 botAccountId = lqh->GetAccountId();
@@ -2227,7 +2215,7 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(std::unique_ptr<QueryResult> 
     Player* bot = botSession->GetPlayer();
     if (!bot)
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "HandlePlayerBotLoginCallback: LoadFromDB FAILED for bot guid %u account %u", botGuid.GetCounter(), botAccountId);
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Error logging in bot guid %u, please try to reset all random bots", botGuid.GetCounter());
         delete botSession;
         return;
     }
