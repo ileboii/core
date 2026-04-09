@@ -1,0 +1,17 @@
+LIBRARY libssl-3-x64
+EXPORTS
+    SSL_connect
+    SSL_CTX_ctrl
+    SSL_CTX_free
+    SSL_CTX_new
+    SSL_CTX_set_mode
+    SSL_CTX_set_options
+    SSL_ctrl
+    SSL_free
+    SSL_get_error
+    SSL_new
+    SSL_read
+    SSL_set_fd
+    SSL_shutdown
+    SSL_write
+    TLS_client_method

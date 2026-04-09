@@ -46,6 +46,7 @@
 #include "GuildMgr.h"
 #include "ChannelMgr.h"
 #include "PlayerbotLLMInterface.h"
+#include "Packets/Chat.h"
 
 
 
@@ -7652,8 +7653,10 @@ void PlayerbotAI::SendDelayedPacket(WorldSession* session, futurePackets futPack
             if (delayedPacket.second)
                 std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
 
-            std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(delayedPacket.first));
-            // session->QueuePacket not compatible with WorldPacket in vmangos;
+            WorldPacket wp(delayedPacket.first);
+            WorldPackets::Chat::ChatMessage chatMsg;
+            chatMsg.ReadFromWorldPacket(wp);
+            session->HandleChatMessageOpcode(chatMsg);
         }
     });
 

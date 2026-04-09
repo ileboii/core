@@ -1,6 +1,7 @@
 #include <atomic>
 #include <string>
 #include <vector>
+#include "Policies/Singleton.h"
 
 class PlayerbotLLMInterface
 {

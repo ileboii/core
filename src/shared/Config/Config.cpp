@@ -73,10 +73,10 @@ bool Config::ProcessLine(char const* line)
     std::string value;
 
     int i = 0;
+    bool quoteFound = false;
     while (!IsLineEndChar(line[i]))
     {
         bool stop = false;
-        bool quoteFound = false;
 
         switch (stage)
         {
@@ -112,14 +112,20 @@ bool Config::ProcessLine(char const* line)
                     case '#': // comment can only be at end of line, stop reading
                         if (!quoteFound)
                             stop = true;
+                        else
+                            value += line[i];
                         break;
                     case '"': // handle quoted text
                         if (quoteFound)
                             stop = true;
-                        else
+                        else if (stage == STAGE_FIND_VALUE)
                         {
                             quoteFound = true;
                             stage = STAGE_READ_VALUE;
+                        }
+                        else
+                        {
+                            value += line[i];
                         }
                         break;
                     case ' ': // ignore white space until text found
