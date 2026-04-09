@@ -260,6 +260,18 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
     
+
+    // Validate master pointer to prevent dangling reference after master logs out
+    if (master && master != bot)
+    {
+        Player* resolvedMaster = sObjectMgr.GetPlayer(masterGuid);
+        if (resolvedMaster != master)
+        {
+            master = resolvedMaster;
+            if (!master)
+                masterGuid = ObjectGuid();
+        }
+    }
     if(aiInternalUpdateDelay > elapsed)
     {
         aiInternalUpdateDelay -= elapsed;
@@ -5908,7 +5920,7 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
         if (!player || !player->IsInWorld())
             continue;
 
-        if (player->GetSocial()->HasFriend(bot->GetObjectGuid()))
+        if (sSocialMgr.HasFriend(player->GetGUIDLow(), bot->GetObjectGuid()))
             return ActivePiorityType::PLAYER_FRIEND;
     }
 
@@ -8229,15 +8241,12 @@ bool PlayerbotAI::HasPlayerRelation()
 
     for (auto& p : sRandomPlayerbotMgr.GetPlayersSnapshot())
     {
-        if (p.second)
+        if (p.second && p.second->IsInWorld())
         {
-            if (PlayerSocial* social = p.second->FindSocial())
+            if (sSocialMgr.HasFriend(p.second->GetGUIDLow(), bot->GetObjectGuid()))
             {
-                if (social->HasFriend(bot->GetObjectGuid()))
-                {
-                    SetPlayerFriend(true);
-                    return true;
-                }
+                SetPlayerFriend(true);
+                return true;
             }
         }
     }

@@ -22141,6 +22141,8 @@ PlayerSocial* Player::GetSocial() const
 
 PlayerSocial* Player::FindSocial() const
 {
+    if (!GetSession())
+        return nullptr;
     MasterPlayer* masterPlayer = GetSession()->GetMasterPlayer();
     return masterPlayer ? masterPlayer->GetSocial() : nullptr;
 }

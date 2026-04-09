@@ -6,7 +6,7 @@ namespace ai
 {
     class WorldPacketTrigger : public Trigger {
     public:
-        WorldPacketTrigger(PlayerbotAI* ai, std::string command) : Trigger(ai, command), triggered(false) {}
+        WorldPacketTrigger(PlayerbotAI* ai, std::string command) : Trigger(ai, command), triggered(false), owner(nullptr) {}
 
         virtual void ExternalEvent(WorldPacket &packet, Player* owner = NULL) override
         {

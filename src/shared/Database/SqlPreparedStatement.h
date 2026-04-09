@@ -172,7 +172,7 @@ class SqlStmtParameters
 class SqlStatementID
 {
     public:
-        SqlStatementID() : m_bInitialized(false) {}
+        SqlStatementID() : m_nIndex(0), m_nArguments(0), m_bInitialized(false) {}
 
         int ID() const { return m_nIndex; }
         int arguments() const { return m_nArguments; }

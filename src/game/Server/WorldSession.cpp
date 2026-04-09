@@ -39,6 +39,7 @@
 #include "PlayerBotAI.h"
 #include "playerbot/PlayerbotMgr.h"
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/RandomPlayerbotMgr.h"
 #include "Anticheat.h"
 #include "Language.h"
 #include "Chat.h"
@@ -799,6 +800,10 @@ void WorldSession::LogoutPlayer(bool Save)
 
         // Update cached data at logout
         sObjectMgr.UpdatePlayerCache(_player);
+
+        // Notify playerbot system before player is deleted
+        if (sPlayerbotAIConfig.enabled)
+            sRandomPlayerbotMgr.OnPlayerLogout(_player);
 
         // No need to create any new maps
         sMapMgr.CancelInstanceCreationForPlayer(_player);

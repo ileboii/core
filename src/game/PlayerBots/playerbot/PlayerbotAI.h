@@ -403,13 +403,13 @@ public:
     WorldObject* GetWorldObject(ObjectGuid guid);
     std::vector<Player*> GetPlayersInGroup();
     void DropQuest(uint32 questId);
-    std::vector<const Quest*> GetAllCurrentQuests();
-    std::vector<const Quest*> GetCurrentIncompleteQuests();
+    std::vector<const ::Quest*> GetAllCurrentQuests();
+    std::vector<const ::Quest*> GetCurrentIncompleteQuests();
     std::set<uint32> GetAllCurrentQuestIds();
     std::set<uint32> GetCurrentIncompleteQuestIds();
-    const Quest* GetCurrentIncompleteQuestWithId(uint32 questId);
+    const ::Quest* GetCurrentIncompleteQuestWithId(uint32 questId);
     bool HasCurrentIncompleteQuestWithId(uint32 questId);
-    std::vector<std::pair<const Quest*, uint32>> GetCurrentQuestsRequiringItemId(uint32 itemId);
+    std::vector<std::pair<const ::Quest*, uint32>> GetCurrentQuestsRequiringItemId(uint32 itemId);
     const AreaTableEntry* GetCurrentArea();
     const AreaTableEntry* GetCurrentZone();
     std::string GetLocalizedAreaName(const AreaTableEntry* entry);
@@ -605,7 +605,8 @@ public:
     BotCheatMask GetCheat() { return cheatMask; }
     void SetCheat(BotCheatMask mask) { cheatMask = mask; }
 
-    void SetMaster(Player* master) { this->master = master; }
+    void SetMaster(Player* master) { this->master = master; this->masterGuid = master ? master->GetObjectGuid() : ObjectGuid(); }
+    ObjectGuid GetMasterGuid() const { return masterGuid; }
     AiObjectContext* GetAiObjectContext() { return aiObjectContext; }
     void SetAiObjectContext(AiObjectContext* aiObjectContext) { this->aiObjectContext = aiObjectContext; }
     ChatHelper* GetChatHelper() { return &chatHelper; }
@@ -682,6 +683,7 @@ private:
 protected:
 	Player* bot;
 	Player* master;
+	ObjectGuid masterGuid;
 	uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;

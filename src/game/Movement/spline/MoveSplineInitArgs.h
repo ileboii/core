@@ -39,7 +39,7 @@ namespace Movement
 
         FacingInfo(float o) : angle(o) {}
         FacingInfo(uint64 t) : target(t) {}
-        FacingInfo() {}
+        FacingInfo() : target(0) {}
     };
 
     struct MoveSplineInitArgs

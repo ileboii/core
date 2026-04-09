@@ -65,7 +65,7 @@ float ThreatValue::GetThreat(Player* player, Unit* target)
     if (target->IsFriendlyTo(player))
         target = ObjectAccessor::GetUnit(*target, target->GetTargetGuid());
 
-    if (target->GetObjectGuid().IsPlayer())
+    if (!target || target->GetObjectGuid().IsPlayer())
         return 0;
 
     float botThreat = sServerFacade.GetThreatManager(target).getThreat(player);

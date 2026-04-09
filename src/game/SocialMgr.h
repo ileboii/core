@@ -147,6 +147,7 @@ class SocialMgr
         ~SocialMgr();
         // Misc
         void RemovePlayerSocial(uint32 guid);
+        bool HasFriend(uint32 playerLowGuid, ObjectGuid friendGuid);
 
         void GetFriendInfo(MasterPlayer* player, uint32 friendGUID, FriendInfo &friendInfo);
         // Packet management

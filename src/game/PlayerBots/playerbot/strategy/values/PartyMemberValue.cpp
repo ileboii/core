@@ -12,7 +12,7 @@ Unit* PartyMemberValue::FindPartyMember(std::list<Player*>* party, FindPlayerPre
     {
         Player* player = *i;
 
-        if (!player)
+        if (!player || !player->IsInWorld())
             continue;
 
         if (ignoreTanks && ai->IsTank(player))
@@ -33,7 +33,7 @@ Unit* PartyMemberValue::FindPartyMember(std::list<Player*>* party, FindPlayerPre
 
 Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ignoreOutOfGroup, bool ignoreTanks)
 {
-    Player* master = GetMaster();
+    Player* master = sObjectMgr.GetPlayer(ai->GetMasterGuid());
     std::list<ObjectGuid> nearestPlayers;
     if(ai->AllowActivity(OUT_OF_PARTY_ACTIVITY))
         nearestPlayers = AI_VALUE(std::list<ObjectGuid>, "nearest friendly players");      
@@ -60,7 +60,7 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
             }
         }
     }
-    
+
     if (!ignoreOutOfGroup && !nearestPlayers.empty() && nearestPlayers.size() < 100  && sServerFacade.IsDistanceLessThan(AI_VALUE2(float, "distance", "master target"), sPlayerbotAIConfig.sightDistance))
         nearestGroupPlayers.insert(nearestGroupPlayers.end(), nearestPlayers.begin(), nearestPlayers.end());
 
@@ -71,7 +71,7 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
     for (std::list<ObjectGuid>::iterator i = nearestPlayers.begin(); i != nearestPlayers.end(); ++i)
     {
         Player* player = dynamic_cast<Player*>(ai->GetUnit(*i));
-        if (!player || player == bot) 
+        if (!player || player == bot || !player->IsInWorld()) 
         {
             continue;
         }

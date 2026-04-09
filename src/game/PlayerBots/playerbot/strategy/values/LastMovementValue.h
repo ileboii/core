@@ -23,6 +23,7 @@ namespace ai
             lastMoveShortStart = other.lastMoveShortStart;
             lastPath = other.lastPath;
             nextTeleport = other.nextTeleport;
+            lastFlee = other.lastFlee;
             moveEvent = Event();
         }
 

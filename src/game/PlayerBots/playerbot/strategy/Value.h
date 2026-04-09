@@ -49,7 +49,7 @@ namespace ai
     {
     public:
         CalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) : UntypedValue(ai, name),
-            checkInterval(checkInterval)
+            checkInterval(checkInterval), value{}
         {
             lastCheckTime = 0;
         }

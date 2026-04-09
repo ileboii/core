@@ -266,7 +266,7 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid)
         WorldSession* botWorldSessionPtr = bot->GetSession();
         WorldSession* masterWorldSessionPtr = nullptr;
 
-        Player* master = ai->GetMaster();
+        Player* master = sObjectMgr.GetPlayer(ai->GetMasterGuid());
         if (master)
             masterWorldSessionPtr = master->GetSession();
 
@@ -303,7 +303,7 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid)
             }
             else if (bot)
             {
-                ai->TellPlayer(ai->GetMaster(), BOT_TEXT("logout_start"));
+                ai->TellPlayer(master, BOT_TEXT("logout_start"));
                 NullClientPacket p;
                 botWorldSessionPtr->HandleLogoutRequestOpcode(NullClientPacket());
                 if (!bot)
@@ -325,7 +325,7 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid)
         // if instant logout possible, do it
         else if (bot && (logout || !botWorldSessionPtr->IsLogingOut()))
         {
-            ai->TellPlayer(ai->GetMaster(), BOT_TEXT("goodbye"));
+            ai->TellPlayer(master, BOT_TEXT("goodbye"));
             playerBots[guid] = nullptr;    // deletes bot player ptr inside this WorldSession PlayerBotMap
             botWorldSessionPtr->LogoutPlayer(true); // this will delete the bot Player object and PlayerbotAI object
             //botWorldSessionPtr->LogoutPlayer(true); // this will delete the bot Player object and PlayerbotAI object
@@ -448,7 +448,7 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
         playerBots[bot->GetGUIDLow()] = bot;
     }
 
-    Player* master = ai->GetMaster();
+    Player* master = sObjectMgr.GetPlayer(ai->GetMasterGuid());
     if (!master && sPlayerbotAIConfig.IsFreeAltBot(bot))
     {
         ai->SetMaster(bot);
@@ -508,7 +508,7 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
     // set delay on login
     ai->SetActionDuration(urand(2000, 4000));
 
-    ai->TellPlayer(ai->GetMaster(), BOT_TEXT("hello"));
+    ai->TellPlayer(master, BOT_TEXT("hello"));
 
     JoinChatChannels(bot);
 
@@ -1011,11 +1011,17 @@ void PlayerbotMgr::HandleMasterIncomingPacket(const WorldPacket& packet)
 {
     ForEachPlayerbot([&](Player* bot)
     {
+        if (!bot->GetPlayerbotAI())
+            return;
+
         bot->GetPlayerbotAI()->HandleMasterIncomingPacket(packet);
     });
 
     sRandomPlayerbotMgr.ForEachPlayerbot([&](Player* bot)
     {
+        if (!bot->GetPlayerbotAI())
+            return;
+
         if (bot->GetPlayerbotAI()->GetMaster() == GetMaster())
             bot->GetPlayerbotAI()->HandleMasterIncomingPacket(packet);
     });
@@ -1048,6 +1054,9 @@ void PlayerbotMgr::HandleMasterOutgoingPacket(const WorldPacket& packet)
 
     sRandomPlayerbotMgr.ForEachPlayerbot([&](Player* bot)
     {
+        if (!bot->GetPlayerbotAI())
+            return;
+
         if (bot->GetPlayerbotAI()->GetMaster() == GetMaster())
             bot->GetPlayerbotAI()->HandleMasterOutgoingPacket(packet);
     });

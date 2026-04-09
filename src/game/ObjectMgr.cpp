@@ -8370,6 +8370,14 @@ void ObjectMgr::LoadCorpses()
             continue;
         }
 
+        // Skip duplicate corpses for the same player (keep the first one loaded)
+        if (sObjectAccessor.GetCorpseForPlayerGUID(corpse->GetOwnerGuid()))
+        {
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Duplicate corpse (guid %u) found for player %u, skipping.", guid, corpse->GetOwnerGuid().GetCounter());
+            delete corpse;
+            continue;
+        }
+
         sObjectAccessor.AddCorpse(corpse);
 
         ++count;

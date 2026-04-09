@@ -58,13 +58,13 @@ void ServerFacade::SetFacingTo(Unit* unit, float angle, bool force)
     //unit->m_movementInfo.RemoveMovementFlag(MovementFlags(MOVEFLAG_SPLINE_ENABLED | MOVEFLAG_FORWARD));
 }
 
-bool ServerFacade::IsFriendlyTo(Unit* bot, Unit* to) { return bot->IsFriendlyTo(to); }
+bool ServerFacade::IsFriendlyTo(Unit* bot, Unit* to) { return bot && to && bot->IsInWorld() && to->IsInWorld() && bot->IsFriendlyTo(to); }
 
-bool ServerFacade::IsHostileTo(Unit* bot, Unit* to) { return bot->IsHostileTo(to); }
+bool ServerFacade::IsHostileTo(Unit* bot, Unit* to) { return bot && to && bot->IsInWorld() && to->IsInWorld() && bot->IsHostileTo(to); }
 
-bool ServerFacade::IsFriendlyTo(WorldObject* bot, Unit* to) { return bot->IsFriendlyTo(to); }
+bool ServerFacade::IsFriendlyTo(WorldObject* bot, Unit* to) { return bot && to && bot->IsInWorld() && to->IsInWorld() && bot->IsFriendlyTo(to); }
 
-bool ServerFacade::IsHostileTo(WorldObject* bot, Unit* to) { return bot->IsHostileTo(to); }
+bool ServerFacade::IsHostileTo(WorldObject* bot, Unit* to) { return bot && to && bot->IsInWorld() && to->IsInWorld() && bot->IsHostileTo(to); }
 
 
 bool ServerFacade::IsSpellReady(Player* bot, uint32 spell, uint32 itemId) { return bot->IsSpellReady(spell); }

@@ -454,7 +454,7 @@ namespace ai
         }
 
         virtual uint32 GetSubSquareId(const WorldPosition& point) const override { return GetGridId(point); };
-        uint32 mapId;
+        uint32 mapId = 0;
     };
 
     //Contains all map squares.

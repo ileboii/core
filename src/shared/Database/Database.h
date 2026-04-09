@@ -91,7 +91,7 @@ class SqlConnection
         Database& DB() { return m_db; }
 
     protected:
-        SqlConnection(Database& db) : m_db(db) {}
+        SqlConnection(Database& db) : m_db(db), m_port(0), m_use_socket(false) {}
 
         virtual SqlPreparedStatement* CreateStatement(std::string const& fmt);
         //allocate prepared statement and return statement ID

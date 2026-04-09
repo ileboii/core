@@ -148,7 +148,7 @@ bool PetitionOfferAction::Execute(Event& event)
     data << petitions.front()->GetObjectGuid();
     data << guid;
 
-    auto result = CharacterDatabase.PQuery("SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'", player->GetSession()->GetAccountId(), petitions.front()->GetObjectGuid().GetCounter());
+    auto result = CharacterDatabase.PQuery("SELECT `player_guid` FROM `petition_sign` WHERE `player_account` = '%u' AND `petition_guid` = '%u'", player->GetSession()->GetAccountId(), petitions.front()->GetObjectGuid().GetCounter());
 
     if (result)
     {
@@ -157,7 +157,7 @@ bool PetitionOfferAction::Execute(Event& event)
 
     bot->GetSession()->HandleOfferPetitionOpcode(MakeTypedPacket<WorldPackets::Petition::OfferPetition>(data));
 
-    result = CharacterDatabase.PQuery("SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitions.front()->GetObjectGuid().GetCounter());
+    result = CharacterDatabase.PQuery("SELECT `player_guid` FROM `petition_sign` WHERE `petition_guid` = '%u'", petitions.front()->GetObjectGuid().GetCounter());
     uint8 signs = result ? (uint8)result->GetRowCount() : 0;
 
     context->GetValue<uint8>("petition signs")->Set(signs);

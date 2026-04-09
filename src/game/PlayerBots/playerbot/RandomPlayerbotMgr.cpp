@@ -1849,18 +1849,18 @@ void RandomPlayerbotMgr::CheckPlayers()
 
     uint32 newPlayersLevel = 0;
 
-    for (auto i : players)
     {
-        Player* player = i.second;
+        std::shared_lock<std::shared_mutex> lock(m_playersMutex);
+        for (auto i : players)
+        {
+            Player* player = i.second;
 
-        if (player->IsGameMaster())
-            continue;
+            if (player->IsGameMaster())
+                continue;
 
-        //if (player->GetSession()->GetSecurity() > SEC_PLAYER)
-        //    continue;
-
-        if (player->GetLevel() > newPlayersLevel)
-            newPlayersLevel = player->GetLevel();
+            if (player->GetLevel() > newPlayersLevel)
+                newPlayersLevel = player->GetLevel();
+        }
     }
 
     if(playersLevel!= newPlayersLevel)

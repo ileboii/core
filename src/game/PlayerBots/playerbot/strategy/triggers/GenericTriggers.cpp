@@ -445,7 +445,7 @@ bool DeflectSpellTrigger::IsActive()
     if (!target->IsNonMeleeSpellCasted(true))
         return false;
 
-    if (!target->GetTargetGuid() == bot->GetObjectGuid())
+    if (target->GetTargetGuid() != bot->GetObjectGuid())
         return false;
 
     uint32 spellid = context->GetValue<uint32>("spell id", spell)->Get();

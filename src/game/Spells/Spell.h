@@ -544,8 +544,8 @@ class Spell
 
         struct ExecuteLogInfo
         {
-            ExecuteLogInfo() {}
-            ExecuteLogInfo(ObjectGuid _targetGuid) : targetGuid(_targetGuid) {}
+            ExecuteLogInfo() : powerDrain{} {}
+            ExecuteLogInfo(ObjectGuid _targetGuid) : targetGuid(_targetGuid), powerDrain{} {}
 
             ObjectGuid targetGuid;
 

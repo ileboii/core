@@ -1143,7 +1143,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
         PathFinder path(mover);
         path.calculate(movePosition.getX(), movePosition.getY(), movePosition.getZ(), false);
         PathType type = path.getPathType();
-        const const PointsArray& points = path.getPath();
+        const PointsArray& points = path.getPath();
         movePath.addPath(startPosition.fromPointsArray(points));
         TravelNodePathType pathType;
         uint32 entry;
@@ -1161,7 +1161,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
             PathFinder path(mover);
             path.calculate(movePosition.getX(), movePosition.getY(), movePosition.getZ(), false);
             PathType type = path.getPathType();
-            const const PointsArray& points = path.getPath();
+            const PointsArray& points = path.getPath();
             bool foundAggro = false;
 
             for (auto p : points)

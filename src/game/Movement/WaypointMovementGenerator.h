@@ -40,7 +40,7 @@ template<class T, class P>
 class PathMovementBase
 {
     public:
-        PathMovementBase() : i_currentNode(0) {}
+        PathMovementBase() : i_path(nullptr), i_currentNode(0) {}
         virtual ~PathMovementBase() {};
 
         bool MovementInProgress(void) const { return (i_currentNode+1) < i_path->size(); }
@@ -68,7 +68,7 @@ class WaypointMovementGenerator<Creature>
   public PathMovementBase<Creature, WaypointPath const*>
 {
     public:
-        WaypointMovementGenerator(Creature &, bool repeating = true) : i_nextMoveTime(0), m_isArrivalDone(false), m_repeating(repeating), m_isWandering(false), m_lastReachedWaypoint(0) {}
+        WaypointMovementGenerator(Creature &, bool repeating = true) : i_nextMoveTime(0), m_isArrivalDone(false), m_repeating(repeating), m_isWandering(false), m_lastReachedWaypoint(0), m_PathOrigin(PATH_NO_PATH) {}
         ~WaypointMovementGenerator() { i_path = nullptr; }
         void Initialize(Creature &u);
         void Interrupt(Creature &);

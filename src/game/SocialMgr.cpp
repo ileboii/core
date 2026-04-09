@@ -346,6 +346,15 @@ PlayerSocial* SocialMgr::LoadFromDB(std::unique_ptr<QueryResult> result, ObjectG
     return social;
 }
 
+bool SocialMgr::HasFriend(uint32 playerLowGuid, ObjectGuid friendGuid)
+{
+    std::shared_lock<std::shared_timed_mutex> guard(_socialMapLock);
+    auto itr = m_socialMap.find(playerLowGuid);
+    if (itr != m_socialMap.end())
+        return itr->second.HasFriend(friendGuid);
+    return false;
+}
+
 void SocialMgr::RemovePlayerSocial(uint32 guid)
 {
     std::unique_lock<std::shared_timed_mutex> guard(_socialMapLock);
