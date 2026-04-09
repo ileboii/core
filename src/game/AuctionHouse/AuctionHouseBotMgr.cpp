@@ -5,8 +5,11 @@
 #include "AuctionHouseMgr.h"
 #include "ObjectMgr.h"
 #include "AuctionHouseBotMgr.h"
+#include "AuctionHouseBot/AuctionHouseBot.h"
 #include "Config/Config.h"
 #include "Chat.h"
+
+#include <sstream>
 
 INSTANTIATE_SINGLETON_1(AuctionHouseBotMgr);
 
@@ -189,6 +192,106 @@ bool ChatHandler::HandleAHBotUpdateCommand(char *args)
 bool ChatHandler::HandleAHBotReloadCommand(char *args)
 {
     sAuctionHouseBotMgr.Load();
+    sAuctionHouseBot.ReloadAllConfig();
     SendSysMessage("[AHBot] Reload finished.");
+    return true;
+}
+
+bool ChatHandler::HandleAHBotRebuildCommand(char *args)
+{
+    bool all = args && std::string(args) == "all";
+    sAuctionHouseBot.Rebuild(all);
+    if (all)
+        SendSysMessage("[AHBot] Rebuild (all) started.");
+    else
+        SendSysMessage("[AHBot] Rebuild started.");
+    return true;
+}
+
+bool ChatHandler::HandleAHBotStatusCommand(char *args)
+{
+    AuctionHouseBotStatusInfo statusInfo;
+    sAuctionHouseBot.PrepareStatusInfos(statusInfo);
+    char const* houseNames[MAX_AHBOT_HOUSE_TYPE] = { "Alliance", "Horde", "Neutral" };
+    for (uint32 i = 0; i < MAX_AHBOT_HOUSE_TYPE; ++i)
+    {
+        PSendSysMessage("[AHBot] %s: %u items (Gray %u, White %u, Green %u, Blue %u, Purple %u, Orange %u)",
+            houseNames[i], statusInfo[i].ItemsCount,
+            statusInfo[i].QualityInfo[0], statusInfo[i].QualityInfo[1],
+            statusInfo[i].QualityInfo[2], statusInfo[i].QualityInfo[3],
+            statusInfo[i].QualityInfo[4], statusInfo[i].QualityInfo[5]);
+    }
+    return true;
+}
+
+bool ChatHandler::HandleAHBotItemCommand(char *args)
+{
+    if (!args || !*args)
+    {
+        SendSysMessage("Syntax: .ahbot item #itemid [$itemvalue [$addchance [$minamount [$maxamount]]]] [reset]");
+        return true;
+    }
+
+    std::string argsStr(args);
+    bool reset = false;
+    // Check for trailing "reset"
+    size_t resetPos = argsStr.find("reset");
+    if (resetPos != std::string::npos)
+    {
+        reset = true;
+        argsStr = argsStr.substr(0, resetPos);
+    }
+
+    std::istringstream iss(argsStr);
+    uint32 itemId = 0;
+    iss >> itemId;
+    if (!itemId)
+    {
+        SendSysMessage("Invalid item id.");
+        return true;
+    }
+
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+    if (!proto)
+    {
+        PSendSysMessage("Item %u does not exist.", itemId);
+        return true;
+    }
+
+    if (reset)
+    {
+        AuctionHouseBotItemData itemData;
+        sAuctionHouseBot.SetItemData(itemId, itemData, true);
+        PSendSysMessage("[AHBot] Item %u (%s) configuration reset.", itemId, proto->Name1);
+        return true;
+    }
+
+    AuctionHouseBotItemData itemData = sAuctionHouseBot.GetItemData(itemId);
+
+    uint32 value = 0, addChance = 0, minAmount = 0, maxAmount = 0;
+    bool hasValue = false;
+    if (iss >> value)
+    {
+        hasValue = true;
+        itemData.Value = value;
+        if (iss >> addChance)
+            itemData.AddChance = addChance;
+        if (iss >> minAmount)
+            itemData.MinAmount = minAmount;
+        if (iss >> maxAmount)
+            itemData.MaxAmount = maxAmount;
+    }
+
+    if (hasValue)
+    {
+        sAuctionHouseBot.SetItemData(itemId, itemData);
+        PSendSysMessage("[AHBot] Item %u (%s) set: value=%u, addChance=%u, min=%u, max=%u",
+            itemId, proto->Name1, itemData.Value, itemData.AddChance, itemData.MinAmount, itemData.MaxAmount);
+    }
+    else
+    {
+        PSendSysMessage("[AHBot] Item %u (%s): value=%u, addChance=%u, min=%u, max=%u",
+            itemId, proto->Name1, itemData.Value, itemData.AddChance, itemData.MinAmount, itemData.MaxAmount);
+    }
     return true;
 }

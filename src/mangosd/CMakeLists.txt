@@ -60,6 +60,7 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/src/game/Objects
   ${CMAKE_SOURCE_DIR}/src/game/OutdoorPvP
   ${CMAKE_SOURCE_DIR}/src/game/PlayerBots
+  ${CMAKE_SOURCE_DIR}/src/game/AuctionHouseBot
   ${CMAKE_SOURCE_DIR}/src/game/Server
   ${CMAKE_SOURCE_DIR}/src/game/Server/Protocol
   ${CMAKE_SOURCE_DIR}/src/game/Spells
@@ -160,6 +161,7 @@ install(TARGETS ${EXECUTABLE_NAME} DESTINATION ${BIN_DIR})
 install(FILES run-mangosd DESTINATION ${BIN_DIR})
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/mangosd.conf.dist.in ${CMAKE_CURRENT_BINARY_DIR}/mangosd.conf.dist)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mangosd.conf.dist DESTINATION ${CONF_DIR})
+install(FILES ${CMAKE_SOURCE_DIR}/src/game/AuctionHouseBot/ahbot.conf.dist.in DESTINATION ${CONF_DIR} RENAME ahbot.conf.dist)
 
 if(WIN32 AND MSVC)
   install(FILES $<TARGET_PDB_FILE:${EXECUTABLE_NAME}> DESTINATION ${BIN_DIR} OPTIONAL)

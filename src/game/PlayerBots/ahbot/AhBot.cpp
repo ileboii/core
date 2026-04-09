@@ -360,7 +360,7 @@ int AhBot::Answer(int auction, Category* category, ItemBag* inAuctionItems)
             sLog.Out(LOG_BASIC, LOG_LVL_DETAIL,  "AhBot %d placed bid %d for %s (x%d) in auction %d",
                     bidder, entry->bid, item->GetProto()->Name1, item->GetCount(), auctionIds[auction]);
 
-            CharacterDatabase.PExecute("UPDATE auction SET buyguid = '%u',lastbid = '%u' WHERE id = '%u'",
+            CharacterDatabase.PExecute("UPDATE `auction` SET `buyer_guid` = '%u', `last_bid` = '%u' WHERE `id` = '%u'",
                 entry->bidder, entry->bid, entry->Id);
             AddToHistory(entry, AHBOT_WON_BID);
         }

@@ -263,6 +263,9 @@ class ChatHandler
         // AHBot
         bool HandleAHBotReloadCommand(char *);
         bool HandleAHBotUpdateCommand(char *);
+        bool HandleAHBotRebuildCommand(char *);
+        bool HandleAHBotStatusCommand(char *);
+        bool HandleAHBotItemCommand(char *);
         //Bg
         bool HandleGoWarsongCommand(char *);
         bool HandleGoArathiCommand(char *);

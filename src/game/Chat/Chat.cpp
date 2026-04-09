@@ -73,8 +73,11 @@ ChatCommand * ChatHandler::getCommandTable()
 
     static ChatCommand ahbotCommandTable[] =
     {
-        { "reload",     SEC_ADMINISTRATOR,    true,  &ChatHandler::HandleAHBotReloadCommand,           "Reload table and config", nullptr},
+        { "reload",     SEC_ADMINISTRATOR,    true,  &ChatHandler::HandleAHBotReloadCommand,           "Reload AHBot settings from configuration file.", nullptr},
         { "update",     SEC_ADMINISTRATOR,    true,  &ChatHandler::HandleAHBotUpdateCommand,           "Add items for sale", nullptr},
+        { "rebuild",    SEC_ADMINISTRATOR,    true,  &ChatHandler::HandleAHBotRebuildCommand,          "Expire all ahbot auctions and re-fill. Use 'all' to include bidded.", nullptr},
+        { "status",     SEC_ADMINISTRATOR,    true,  &ChatHandler::HandleAHBotStatusCommand,           "Show current AHBot auction counts.", nullptr},
+        { "item",       SEC_ADMINISTRATOR,    true,  &ChatHandler::HandleAHBotItemCommand,             "Show/modify AHBot item. Usage: .ahbot item #id [$value [$chance [$min [$max]]]] [reset]", nullptr},
         { nullptr,      0,                    false, nullptr,                                          "", nullptr }
     };
 
