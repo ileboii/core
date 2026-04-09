@@ -208,16 +208,16 @@ class HonorMgr
 
     private:
         HonorCPMap m_honorCP;
-        float m_lastWeekCP;
-        float m_rankPoints;
-        uint32 m_lastWeekHK;
-        uint32 m_storedHK;
-        uint32 m_storedDK;
-        uint32 m_totalHK;
-        uint32 m_totalDK;
+        float m_lastWeekCP = 0.0f;
+        float m_rankPoints = 0.0f;
+        uint32 m_lastWeekHK = 0;
+        uint32 m_storedHK = 0;
+        uint32 m_storedDK = 0;
+        uint32 m_totalHK = 0;
+        uint32 m_totalDK = 0;
         HonorRankInfo m_rank;
         HonorRankInfo m_highestRank;
-        uint32 m_standing;
+        uint32 m_standing = 0;
 
         Player* m_owner;
 };

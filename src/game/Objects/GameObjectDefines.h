@@ -814,20 +814,20 @@ struct GameObjectLocale
 // from `gameobject`
 struct GameObjectData
 {
-    uint32 id;                                              // entry in gamobject_template
+    uint32 id = 0;                                          // entry in gamobject_template
     WorldLocation position;
-    float rotation0;
-    float rotation1;
-    float rotation2;
-    float rotation3;
-    int32  spawntimesecsmin;
-    int32  spawntimesecsmax;
-    uint32 animprogress;
-    GOState go_state;
-    uint32 spawn_flags;
-    float visibility_mod;
+    float rotation0 = 0.0f;
+    float rotation1 = 0.0f;
+    float rotation2 = 0.0f;
+    float rotation3 = 0.0f;
+    int32  spawntimesecsmin = 0;
+    int32  spawntimesecsmax = 0;
+    uint32 animprogress = 0;
+    GOState go_state = GO_STATE_READY;
+    uint32 spawn_flags = 0;
+    float visibility_mod = 0.0f;
 
-    uint32 instanciatedContinentInstanceId;
+    uint32 instanciatedContinentInstanceId = 0;
     uint32 ComputeRespawnDelay(uint32 baseDelay) const;
     uint32 GetRandomRespawnTime() const { return urand(uint32(spawntimesecsmin), uint32(spawntimesecsmax)); }
 };

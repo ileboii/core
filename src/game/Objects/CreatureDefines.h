@@ -384,7 +384,7 @@ struct CreatureData
     float visibility_mod = 0.0f;
 
     // non db field
-    uint32 instanciatedContinentInstanceId;
+    uint32 instanciatedContinentInstanceId = 0;
 
     // helper function
     ObjectGuid GetObjectGuid(uint32 lowguid) const { return ObjectGuid(CreatureInfo::GetHighGuid(), creature_id[0], lowguid); }
