@@ -100,7 +100,7 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
         }
 
 
-        if (0 /* MinLootGold not in vmangos */ > 0)
+        if (cInfo->gold_max > 0 || cInfo->loot_id > 0)
         {
             purpose |= (uint32)TravelDestinationPurpose::Grind;
         }

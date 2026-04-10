@@ -582,7 +582,7 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     CreatureInfo const* cInfo = GetCreatureInfo();
 
 #ifdef MANGOSBOT_TWO
-    if (cInfo->rank == CREATURE_ELITE_NORMAL && 0 /* MinLootGold not in vmangos */ == 0 && info.GetPosition().getMapId() == 609)
+    if (cInfo->rank == CREATURE_ELITE_NORMAL && cInfo->gold_max == 0 && cInfo->loot_id == 0 && info.GetPosition().getMapId() == 609)
         return true;
 #endif
 
@@ -602,7 +602,7 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     if ((int32)cInfo->level_max < minLevel) //@lvl5 min = 3, @lvl60 max = 50
         return false;
 
-    if (0 /* MinLootGold not in vmangos */ == 0)
+    if (cInfo->gold_max == 0 && cInfo->loot_id == 0)
         return false;
 
     if (cInfo->rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))
@@ -740,7 +740,7 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         if (!cInfo)
             return false;
 
-        skillId = 0 /* GetRequiredLootSkill not in vmangos */;
+        skillId = SKILL_SKINNING;
         uint32 targetLevel = cInfo->level_max;
         reqSkillValue = targetLevel < 10 ? 1 : targetLevel < 20 ? (targetLevel - 10) * 10 : targetLevel * 5;
     }
@@ -2600,12 +2600,15 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     if (botLevel < 6)
         botLevel = 6;
 
-    uint32 areaLevel = position.getAreaLevel();
+    int32 areaLevel = position.getAreaLevel();
+
+    if (areaLevel <= 0) //Unknown area level, allow travel.
+        return true;
 
     if (!position.isOverworld() && !canFightElite)
         areaLevel += 10;
 
-    if (!areaLevel || botLevel < areaLevel) //Skip points that are in a area that is too high level.
+    if (botLevel < (uint32)areaLevel) //Skip points that are in a area that is too high level.
         return false;
 
     return true;

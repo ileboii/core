@@ -1359,7 +1359,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
         if (!player->GetPlayerbotAI())
             continue;
 
-        static QuestStatusMap emptyQuestMap; QuestStatusMap& questMap = emptyQuestMap; /* GetQuestStatusMap not public in vmangos */
+        QuestStatusMap& questMap = player->GetQuestStatusMap();
 
         bool onlyClassQuest = bot == player && !urand(0, 10);
 

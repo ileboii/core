@@ -1254,6 +1254,7 @@ void PlayerbotAI::Reset(bool full)
         *AI_VALUE(FutureDestinations*, "future travel destinations") = FutureDestinations();
         RESET_AI_VALUE2(std::string, "manual string", "future travel purpose");
         RESET_AI_VALUE2(int, "manual int", "future travel relevance");
+        aiObjectContext->ClearValues("no active travel destinations");
 
         InterruptSpell();
 
