@@ -702,17 +702,26 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 
 void RandomPlayerbotMgr::ScaleBotActivity()
 {
-    float activityPercentage = getActivityPercentage();
+    float previousActivityPercentage = getActivityPercentage();
 
     //if (activityPercentage >= 100.0f || activityPercentage <= 0.0f) pid.reset(); //Stop integer buildup during max/min activity
 
     //    % increase/decrease                   wanted diff                                         , avg diff
     float activityPercentageMod = pid.calculate(sRandomPlayerbotMgr.GetPlayers().empty() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer, sWorld.GetCurrentDiff());
 
-    activityPercentage = activityPercentageMod + 50;
+    float activityPercentage = activityPercentageMod + 50;
 
     //Cap the percentage between 0 and 100.
     activityPercentage = std::max(0.0f, std::min(100.0f, activityPercentage));
+
+    //Clamp rate of change to prevent sudden activity spikes.
+    float maxDelta = sPlayerbotAIConfig.maxActivityRatePerTick;
+    if (maxDelta > 0.0f)
+    {
+        float delta = activityPercentage - previousActivityPercentage;
+        delta = std::max(-maxDelta, std::min(maxDelta, delta));
+        activityPercentage = previousActivityPercentage + delta;
+    }
 
     setActivityPercentage(activityPercentage);
 

@@ -1020,6 +1020,10 @@ AiPlayerbot.PerfMonEnabled = 0
 # AiPlayerbot.DiffWithPlayer = 100
 # AiPlayerbot.DiffEmpty = 200
 
+# Maximum percentage change in bot activity per update tick. Lower values make activity scaling more gradual.
+# Set to 0 to disable rate limiting.
+# AiPlayerbot.MaxActivityRatePerTick = 0
+
 # LLM values. These values are for noncombat strategy 'ai chat' which allows bots to reply using a LLM api.
 # For a quickstart download koboldcpp, a 7b model from huggingface and start kobold.
 # (Default) KoboldCPP examples:

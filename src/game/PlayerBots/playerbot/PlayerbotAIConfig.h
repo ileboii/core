@@ -241,6 +241,7 @@ public:
     uint32 botActiveAlone;
     uint32 diffWithPlayer;
     uint32 diffEmpty;
+    float maxActivityRatePerTick;
     uint32 minEnchantingBotLevel;
     uint32 randombotStartingLevel;
     bool randomBotSayWithoutMaster;
