@@ -798,20 +798,25 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
 
         bool dropsFromGatherNode = false;
         bool dropsFromMob = false;
+        bool canGatherThisNode = false;
         for (int32 entry : dropEntries)
         {
             if (entry < 0)
+            {
                 dropsFromGatherNode = true;
+                uint32 nodeSkill = EntryTravelPurposeMapValue::SkillIdToGatherEntry(entry);
+                if ((nodeSkill == SKILL_HERBALISM && hasHerbalism) ||
+                    (nodeSkill == SKILL_MINING && hasMining) ||
+                    (nodeSkill == SKILL_SKINNING && hasSkinning))
+                    canGatherThisNode = true;
+            }
             else
                 dropsFromMob = true;
-
-            if (dropsFromGatherNode && dropsFromMob)
-                break;
         }
 
         uint32 priority = 4;
 
-        if (dropsFromGatherNode && hasAnyGathering)
+        if (dropsFromGatherNode && canGatherThisNode)
         {
             priority = 0;
         }
@@ -844,7 +849,7 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
                 priority = hasRelevantCraftSkill ? 2 : 3;
             }
         }
-        else if (dropsFromGatherNode && !hasAnyGathering)
+        else if (dropsFromGatherNode && !canGatherThisNode)
         {
             priority = 3;
         }
