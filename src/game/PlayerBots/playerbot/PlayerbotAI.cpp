@@ -6712,7 +6712,7 @@ bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
     if (!spellInfo)
         return false;
 
-    if (!false &&
+    if (!spellInfo->IsSpellAppliesAura((1 << EFFECT_INDEX_0) | (1 << EFFECT_INDEX_1) | (1 << EFFECT_INDEX_2)) &&
         !spellInfo->HasEffect(SPELL_EFFECT_PERSISTENT_AREA_AURA))
     {
         return false;
@@ -6723,9 +6723,9 @@ bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
     for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
     {
         uint8 eff = spellInfo->Effect[i];
-        if (eff >= MAX_SPELL_EFFECTS)
+        if (eff >= TOTAL_SPELL_EFFECTS)
             continue;
-        if (false /* IsAreaAuraEffect not in vmangos */ ||
+        if (Spells::IsAreaAuraEffect(eff) ||
             eff == SPELL_EFFECT_APPLY_AURA ||
             eff == SPELL_EFFECT_PERSISTENT_AREA_AURA)
         {
