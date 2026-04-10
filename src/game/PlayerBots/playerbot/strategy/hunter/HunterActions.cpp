@@ -19,10 +19,13 @@ bool CastViperStingAction::isUseful()
 bool FeedPetAction::Execute(Event& event)
 {
     Pet* pet = bot->GetPet();
-    if (pet && 0 /* getPetType not in vmangos */ == HUNTER_PET && pet->GetHappinessState() != HAPPY)
+    if (pet && pet->GetPetType() == HUNTER_PET && pet->GetHappinessState() != HAPPY)
+    {
         pet->SetPower(POWER_HAPPINESS, HAPPINESS_LEVEL_SIZE * 2);
+        return true;
+    }
 
-    return true;
+    return false;
 }
 
 bool CastAutoShotAction::isUseful()
