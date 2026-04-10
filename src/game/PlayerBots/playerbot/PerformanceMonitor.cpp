@@ -266,10 +266,15 @@ void PerformanceMonitor::PrintStats(bool perTick, bool fullStack, bool showMap)
 
     if (total)
     {
-        float avgDiff = data[PERF_MON_TOTAL][{"PlayerbotAIBase::FullTick"}].totalTime / data[PERF_MON_TOTAL][{"PlayerbotAIBase::FullTick"}].count;
-        float aiPerc = (maxMapTime * 100.0f) / (float)(data[PERF_MON_TOTAL][{"PlayerbotAIBase::FullTick"}].totalTime);
+        uint32 fullTickCount = data[PERF_MON_TOTAL][{"PlayerbotAIBase::FullTick"}].count;
+        uint32 fullTickTime = data[PERF_MON_TOTAL][{"PlayerbotAIBase::FullTick"}].totalTime;
+        if (fullTickCount > 0 && fullTickTime > 0)
+        {
+            float avgDiff = (float)fullTickTime / (float)fullTickCount;
+            float aiPerc = (maxMapTime * 100.0f) / (float)fullTickTime;
 
-        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Estimated avg diff: %3.2f with ai load at least: %5.2f%%", avgDiff, aiPerc);
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Estimated avg diff: %3.2f with ai load at least: %5.2f%%", avgDiff, aiPerc);
+        }
 
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, " ");
     }
