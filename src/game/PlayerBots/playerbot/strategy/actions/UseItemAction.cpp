@@ -12,6 +12,7 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/TravelMgr.h"
+#include "ScriptMgr.h"
 
 using namespace ai;
 
@@ -19,12 +20,6 @@ static const std::string LOS_GOS_PARAM = "los gos";
 
 SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets, Aura* triggeredByAura)
 {
-    /* GetTrueCaster not in vmangos */ WorldObject* truecaster = nullptr;
-    if (!truecaster)
-    {
-        truecaster = m_caster;
-    }
-
     m_spellState = SPELL_STATE_PREPARING;
     m_targets = *targets;
 
@@ -33,17 +28,19 @@ SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets
         m_triggeredByAuraSpell = triggeredByAura->GetSpellProto();
     }
 
+    UpdateOriginalCasterPointer();
+    UpdateCastStartPosition();
+
     // create and add update event for this spell
     SpellEvent* Event = new SpellEvent(this);
-    /* m_events not on WorldObject in vmangos */
+    m_caster->m_Events.AddEvent(Event, m_caster->m_Events.CalculateTime(1));
 
-    /* PreCastCheck not in vmangos */ SpellCastResult result = SPELL_CAST_OK;
+    SpellCastResult result = CheckCast(true);
     bool failed = result != SPELL_CAST_OK;
     if (result == SPELL_FAILED_BAD_TARGETS && OpenLockCheck())
     {
         failed = false;
         m_IsTriggeredSpell = true;
-        /* m_ignoreCastTime not in vmangos */
     }
 
     if (result == SPELL_FAILED_REAGENTS && itemCheats)
@@ -57,11 +54,60 @@ SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets
         finish(false);
         return result;
     }
-    else
+
+    // Fill cost data
+    m_powerCost = CalculatePowerCost(m_spellInfo, m_casterUnit, this, m_CastItem, false);
+
+    if (Player* pPlayer = m_caster->ToPlayer())
+        if (pPlayer->HasCheatOption(PLAYER_CHEAT_NO_POWER))
+            m_powerCost = 0;
+
+    // Prepare data for triggers
+    prepareDataForTriggerSystem();
+
+    // Calculate cast time
+    m_casttime = m_spellInfo->GetCastTime(m_caster, this);
+
+    if (Player* pPlayerCaster = m_caster->ToPlayer())
+        if (pPlayerCaster->HasCheatOption(PLAYER_CHEAT_NO_CAST_TIME))
+            m_casttime = 0;
+
+    m_duration = m_spellInfo->CalculateDuration(m_caster);
+
+    // Set timer base at cast time
+    ReSetTimer();
+
+    if (!m_IsTriggeredSpell && m_casterUnit)
     {
-        /* Prepare not in vmangos */
-        return SPELL_CAST_OK;
+        m_casterUnit->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_ACTION_CANCELS, m_spellInfo->Id, false, !ShouldRemoveStealthAuras());
     }
+
+    OnSpellLaunch();
+
+    // add non-triggered (with cast time and without)
+    if (!m_IsTriggeredSpell)
+        m_caster->SetCurrentCastedSpell(this);
+
+    if (m_spellScript)
+        m_spellScript->OnSuccessfulStart(this);
+
+    if (!m_IsTriggeredSpell)
+    {
+        // will show cast bar
+        SendSpellStart();
+        // add gcd server side (client side is handled by client itself)
+        if (!m_caster->IsPlayer() || !static_cast<Player*>(m_caster)->HasCheatOption(PLAYER_CHEAT_NO_COOLDOWN))
+            m_caster->AddGCD(*m_spellInfo);
+
+        // For instant non-triggered spells, cast immediately instead of waiting for SpellEvent
+        if (m_timer == 0 && !m_spellInfo->IsNextMeleeSwingSpell() && !IsAutoRepeat())
+            cast();
+    }
+    // execute triggered without cast time explicitly in call point
+    else if (m_timer == 0)
+        cast(true);
+
+    return SPELL_CAST_OK;
 }
 
 bool BotUseItemSpell::OpenLockCheck()
@@ -311,7 +357,7 @@ bool UseAction::Execute(Event& event)
         for (const ObjectGuid& goGUID : nearestGOs)
         {
             GameObject* go = ai->GetGameObject(goGUID);
-            if (go && std::string(go->GetName()).find(useName))
+            if (go && std::string(go->GetName()).find(useName) != std::string::npos)
             {
                 const float distance = bot->GetDistance(go);
                 if (distance < closest)
@@ -488,70 +534,68 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
         return false;
     }
 
+    // Bind item on use if needed (same as HandleUseItemOpcode)
+    if (itemUsed && (proto->Bonding == BIND_WHEN_USE || proto->Bonding == BIND_WHEN_PICKED_UP || proto->Bonding == BIND_QUEST_ITEM))
+    {
+        if (!itemUsed->IsSoulBound())
+        {
+            itemUsed->SetState(ITEM_CHANGED, bot);
+            itemUsed->SetBinding(true);
+        }
+    }
+
+    // Interrupt any existing generic spell so the item use isn't blocked by SPELL_FAILED_SPELL_IN_PROGRESS
+    // (the real client prevents this via UI, but bots can have a pending spell from a prior AI action)
+    bot->InterruptSpell(CURRENT_GENERIC_SPELL, false);
+
+    // Cast item spells the same way as Player::CastItemUseSpell
+    uint8 successCasts = 0;
     Unit* unitTarget = nullptr;
     Item* itemTarget = nullptr;
     GameObject* gameObjectTarget = nullptr;
 
-    uint8 successCasts = 0;
     for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
     {
-        // No spell
         const auto& spellData = proto->Spells[i];
         if (!spellData.SpellId)
-        {
             continue;
-        }
 
-        // Wrong triggering type
-#ifdef MANGOSBOT_ZERO
-        if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
-#else
         if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
-#endif
-        {
             continue;
-        }
 
         const SpellEntry* spellInfo = sSpellMgr.GetSpellEntry(spellData.SpellId);
         if (!spellInfo)
-        {
             continue;
-        }
 
-        if ((!spellInfo->HasAttribute(SPELL_ATTR_NOT_IN_COMBAT_ONLY_PEACEFUL)) && bot->IsInCombat())
-        {
+        if (spellInfo->HasAttribute(SPELL_ATTR_NOT_IN_COMBAT_ONLY_PEACEFUL) && bot->IsInCombat())
             continue;
-        }
 
-        // Check if valid targets
+        // Build targets per spell
         bool validTarget = false;
         SpellCastTargets targets;
-        
-        // Try to figure out which targets are allowed if the spell doesn't provide it
+
         uint32 spellTargets = spellInfo->Targets;
         if (spellTargets == 0)
         {
-            // Unit target
-            if ((spellInfo->EffectImplicitTargetA[0] == TARGET_UNIT || spellInfo->EffectImplicitTargetA[0] == TARGET_UNIT_ENEMY) || // Unit Target
-                (proto->Class == ITEM_CLASS_CONSUMABLE && proto->SubClass == ITEM_SUBCLASS_SCROLL) || // Scrolls
-                (proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_EXPLOSIVES) || // Explosives
-                (spellData.SpellCategory == 150) || // First aid
-                (spellData.SpellCategory == 831)) // Soulstone 
+            if ((spellInfo->EffectImplicitTargetA[0] == TARGET_UNIT || spellInfo->EffectImplicitTargetA[0] == TARGET_UNIT_ENEMY) ||
+                (proto->Class == ITEM_CLASS_CONSUMABLE && proto->SubClass == ITEM_SUBCLASS_SCROLL) ||
+                (proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_EXPLOSIVES) ||
+                (spellData.SpellCategory == 150) ||
+                (spellData.SpellCategory == 831))
             {
                 spellTargets |= TARGET_FLAG_UNIT;
             }
 
-            // Location target
-            if ((spellInfo->EffectImplicitTargetA[0] == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC) || // Hostile Aoe Spell
-                (proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_EXPLOSIVES)) // Explosives
+            if ((spellInfo->EffectImplicitTargetA[0] == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC) ||
+                (proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_EXPLOSIVES))
             {
                 spellTargets |= TARGET_FLAG_DEST_LOCATION;
             }
 
-            // No target
-            if (spellTargets == 0 && 
-                (spellInfo->EffectImplicitTargetA[0] == TARGET_NONE || // No target
-                 spellInfo->EffectImplicitTargetA[0] == TARGET_UNIT_CASTER)) // Self Target
+            // Self/no target
+            if (spellTargets == 0 &&
+                (spellInfo->EffectImplicitTargetA[0] == TARGET_NONE ||
+                 spellInfo->EffectImplicitTargetA[0] == TARGET_UNIT_CASTER))
             {
                 validTarget = true;
             }
@@ -572,7 +616,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 validTarget = true;
             }
         }
-        
+
         if (spellTargets & TARGET_FLAG_UNIT && !validTarget)
         {
             if (unit && IsTargetValidForItemUse(itemId, unit))
@@ -582,7 +626,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 validTarget = true;
             }
         }
-        
+
         if ((spellTargets & TARGET_FLAG_GAMEOBJECT || spellTargets & TARGET_FLAG_LOCKED) && !validTarget)
         {
             if (gameObject && gameObject->isSpawned())
@@ -604,7 +648,6 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
             }
             else
             {
-                // Try to figure out the item target
                 Item* itemForSpell = AI_VALUE2(Item*, "item for spell", spellInfo->Id);
                 if (itemForSpell)
                 {
@@ -625,60 +668,37 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 }
             }
         }
-        
+
         if (!validTarget)
         {
             targets.setUnitTarget(bot);
-            targets.m_targetMask = TARGET_FLAG_SELF;
             validTarget = true;
         }
 
         if (validTarget)
         {
-            // Validate spellInfo is a proper sSpellTemplate entry before constructing (mirrors MANGOS_ASSERT in Spell::Spell)
             if (!spellInfo || spellInfo != sSpellMgr.GetSpellEntry(spellInfo->Id))
-            {
                 continue;
-            }
 
-            // Use triggered flag only for items with many spell casts and for not first cast
-            BotUseItemSpell* spell = new BotUseItemSpell(bot, spellInfo, (successCasts > 0) ? true : false);
-            /* m_clientCast not in vmangos */;
-            
-#ifdef MANGOSBOT_ONE
-            // used in item_template.spell_2 with spell_id with SPELL_GENERIC_LEARN in spell_1
-            if (spellInfo->Id == SPELL_ID_GENERIC_LEARN && proto->Spells[1].SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
-                spell->m_currentBasePoints[EFFECT_INDEX_0] = proto->Spells[1].SpellId; 
-#endif
-#ifdef MANGOSBOT_TWO
-            // used in item_template.spell_2 with spell_id with SPELL_GENERIC_LEARN in spell_1
-            if ((spellInfo->Id == SPELL_ID_GENERIC_LEARN
-                || spellInfo->Id == SPELL_ID_GENERIC_LEARN_PET) && proto->Spells[1].SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
-                spell->m_currentBasePoints[EFFECT_INDEX_0] = proto->Spells[1].SpellId;
-#endif
-
-            // Spend the item if used in the spell
-            if (itemUsed)
-            {
-                spell->SetCastItem(itemUsed);
-                /* SetUsedInSpell not in vmangos */;
-            }
-
-            // Stop the movement for casted items
-            const bool isCastedSpell = spell->GetCastedTime() > 0 || (spellInfo->HasAttribute(SPELL_ATTR_EX_IS_CHANNELED));
-            if (isCastedSpell)
-            {
+            // Stop movement for casted/channeled item spells
+            if (spellInfo->GetCastTime(bot, nullptr) > 0 || spellInfo->HasAttribute(SPELL_ATTR_EX_IS_CHANNELED))
                 ai->StopMoving();
+
+            bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_ITEM_USE_CANCELS, 0, false, spellInfo->HasAttribute(SPELL_ATTR_EX_ALLOW_WHILE_STEALTHED));
+
+            BotUseItemSpell* spell = new BotUseItemSpell(bot, spellInfo, (successCasts > 0));
+            spell->SetCastItem(itemUsed);
+            SpellCastResult result = spell->ForceSpellStart(&targets);
+
+            if (result != SPELL_CAST_OK)
+            {
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "UseItemAction: item %u spell %u prepare failed with result %u for bot %s",
+                    itemId, spellInfo->Id, result, bot->GetName());
             }
 
-            const SpellCastResult result = spell->ForceSpellStart(&targets);
-
-            // Check for using item on trade item
             bool successCast = result == SPELL_CAST_OK;
             if (result == SPELL_FAILED_DONT_REPORT && (targets.m_targetMask & TARGET_FLAG_TRADE_ITEM))
-            {
                 successCast = true;
-            }
 
             if (successCast)
             {
@@ -723,7 +743,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 replyArgs["%item"] = chat->formatItem(itemTarget);
                 replyStr << " " << BOT_TEXT("command_target_item");
             }
-            else if (unitTarget)
+            else if (unitTarget && unitTarget != bot)
             {
                 replyArgs["%unit"] = unitTarget->GetName();
                 replyStr << " " << BOT_TEXT("command_target_unit");
