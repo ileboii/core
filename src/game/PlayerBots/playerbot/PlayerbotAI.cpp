@@ -6712,22 +6712,31 @@ bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
     if (!spellInfo)
         return false;
 
-    if (!false &&
-        !spellInfo->HasEffect(SPELL_EFFECT_PERSISTENT_AREA_AURA))
+    bool hasApplicableEffect = false;
+    for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
     {
-        return false;
+        uint8 eff = spellInfo->Effect[i];
+        if (eff == SPELL_EFFECT_APPLY_AURA ||
+            eff == SPELL_EFFECT_PERSISTENT_AREA_AURA ||
+            IsAreaAuraEffect(eff))
+        {
+            hasApplicableEffect = true;
+            break;
+        }
     }
+    if (!hasApplicableEffect)
+        return false;
 
     SpellAuraHolder* holder = CreateSpellAuraHolder(spellInfo, unit, unit, unit);
 
     for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
     {
         uint8 eff = spellInfo->Effect[i];
-        if (eff >= MAX_SPELL_EFFECTS)
+        if (eff >= TOTAL_SPELL_EFFECTS)
             continue;
-        if (false /* IsAreaAuraEffect not in vmangos */ ||
-            eff == SPELL_EFFECT_APPLY_AURA ||
-            eff == SPELL_EFFECT_PERSISTENT_AREA_AURA)
+        if (eff == SPELL_EFFECT_APPLY_AURA ||
+            eff == SPELL_EFFECT_PERSISTENT_AREA_AURA ||
+            IsAreaAuraEffect(eff))
         {
             int32 basePoints = spellInfo->CalculateSimpleValue(SpellEffectIndex(i));
             int32 damage = basePoints;
@@ -6736,7 +6745,7 @@ bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
         }
     }
     if (!unit->AddSpellAuraHolder(holder))
-        delete holder;
+        holder = nullptr;
 
     return true;
 }
