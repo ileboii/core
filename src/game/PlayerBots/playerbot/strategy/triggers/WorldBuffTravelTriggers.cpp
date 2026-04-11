@@ -5,7 +5,7 @@
 
 using namespace ai;
 
-static bool IsNpcNearby(Player* bot, uint32 npcEntry)
+static bool IsNpcNearby(Player* bot, uint32 npcEntry, float range = INTERACTION_DISTANCE)
 {
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     if (!ai)
@@ -19,7 +19,7 @@ static bool IsNpcNearby(Player* bot, uint32 npcEntry)
             continue;
 
         if (unit->GetEntry() == npcEntry &&
-            bot->GetDistance(unit) <= INTERACTION_DISTANCE)
+            bot->GetDistance(unit) <= range)
             return true;
     }
     return false;
@@ -233,13 +233,16 @@ static bool IsInStepZone(Player* bot, WorldBuffTravelStep step)
         return zoneId == GetHomeZone(bot);
     case WorldBuffTravelStep::STEP_GRYPHON_MASTER:
         // Alliance only � Horde skips this step entirely
-        return horde ? false : IsNpcNearby(bot, NPC_DUNGAR_LONGDRINK);
+        return horde ? false : IsNpcNearby(bot, NPC_DUNGAR_LONGDRINK, FLIGHT_MASTER_DETECT_DISTANCE);
     case WorldBuffTravelStep::STEP_BOOTY_BAY:
         return areaId == AREA_BOOTY_BAY;
     case WorldBuffTravelStep::STEP_BRAGOK:
-        return IsNpcNearby(bot, NPC_BRAGOK);
+        return IsNpcNearby(bot, NPC_BRAGOK, FLIGHT_MASTER_DETECT_DISTANCE);
+    case WorldBuffTravelStep::STEP_BALDRUC:
+        // Alliance only — Horde skips this step entirely
+        return horde ? false : IsNpcNearby(bot, NPC_BALDRUC, FLIGHT_MASTER_DETECT_DISTANCE);
     case WorldBuffTravelStep::STEP_THYSSIANA:
-        return horde ? IsNpcNearby(bot, NPC_SHYN) : IsNpcNearby(bot, NPC_THYSSIANA);
+        return horde ? IsNpcNearby(bot, NPC_SHYN, FLIGHT_MASTER_DETECT_DISTANCE) : IsNpcNearby(bot, NPC_THYSSIANA, FLIGHT_MASTER_DETECT_DISTANCE);
     case WorldBuffTravelStep::STEP_FEATHERMOON:
         // Alliance only � Horde skips this step entirely
         return horde ? false : (zoneId == ZONE_FERALAS);
@@ -274,6 +277,7 @@ bool WorldBuffTravelZoneReachedTrigger::IsActive()
         s != WorldBuffTravelStep::STEP_GRYPHON_MASTER &&
         s != WorldBuffTravelStep::STEP_BOOTY_BAY &&
         s != WorldBuffTravelStep::STEP_BRAGOK &&
+        s != WorldBuffTravelStep::STEP_BALDRUC &&
         s != WorldBuffTravelStep::STEP_THYSSIANA &&
         s != WorldBuffTravelStep::STEP_FEATHERMOON &&
         s != WorldBuffTravelStep::STEP_FORGOTTEN_COAST &&
@@ -300,6 +304,7 @@ bool WorldBuffTravelNeedMoveTrigger::IsActive()
         s != WorldBuffTravelStep::STEP_GRYPHON_MASTER &&
         s != WorldBuffTravelStep::STEP_BOOTY_BAY &&
         s != WorldBuffTravelStep::STEP_BRAGOK &&
+        s != WorldBuffTravelStep::STEP_BALDRUC &&
         s != WorldBuffTravelStep::STEP_THYSSIANA &&
         s != WorldBuffTravelStep::STEP_FEATHERMOON &&
         s != WorldBuffTravelStep::STEP_FORGOTTEN_COAST &&

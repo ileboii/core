@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "playerbot/strategy/Strategy.h"
 
 namespace ai
@@ -9,6 +9,7 @@ namespace ai
         STEP_GRYPHON_MASTER,        // Waypoint: travel to Stormwind flight master (Alliance only, Horde skips)
         STEP_BOOTY_BAY,             // Spirit of Zandalar
         STEP_BRAGOK,                // Waypoint: travel to Ratchet flight master
+        STEP_BALDRUC,               // Waypoint: travel to Theramore flight master (Alliance only, Horde skips)
         STEP_THYSSIANA,             // Waypoint: travel to flight master (Alliance: Thyssiana, Horde: Shyn)
         STEP_FEATHERMOON,           // Waypoint: arrived in Feralas, head off the island (Alliance only, Horde skips)
         STEP_FORGOTTEN_COAST,       // Waypoint: reach Zorbin Fandazzle on Forgotten Coast (Alliance only, Horde skips)
@@ -43,6 +44,7 @@ namespace ai
     {
         NPC_DUNGAR_LONGDRINK = 352,      // Stormwind gryphon master (Alliance)
         NPC_BRAGOK = 16227,    // Ratchet flight master
+        NPC_BALDRUC = 4321,     // Theramore gryphon master (Alliance)
         NPC_THYSSIANA = 4319,     // Thalanaar flight master (Alliance)
         NPC_ZORBIN_FANDAZZLE = 14637,    // Forgotten Coast, Feralas (Alliance mainland waypoint)
         NPC_MISHELLENA = 12578,    // Felwood waypoint NPC (Alliance)
@@ -54,6 +56,7 @@ namespace ai
     enum WorldBuffTravelTaxiNodes : uint32
     {
         TAXI_NODE_BOOTY_BAY = 19,     // Booty Bay, Stranglethorn
+        TAXI_NODE_THERAMORE = 32,     // Theramore, Dustwallow Marsh (Alliance)
         TAXI_NODE_THALANAAR = 42,     // Thalanaar, Feralas (Alliance)
         TAXI_NODE_FEATHERMOON = 31,     // Feathermoon, Feralas (Alliance)
         TAXI_NODE_CAMP_MOJACHE = 44,     // Camp Mojache, Feralas (Horde)
@@ -90,6 +93,7 @@ namespace ai
     constexpr uint32 AREATRIGGER_DM_NORTH = 3193;
 
     constexpr float PORTAL_REGROUP_DISTANCE = 100.0f;
+    constexpr float FLIGHT_MASTER_DETECT_DISTANCE = 30.0f;
 
     inline bool IsHordeFaction(Player* player)
     {
@@ -144,7 +148,16 @@ namespace ai
     inline bool IsAllianceOnlyStep(WorldBuffTravelStep step)
     {
         return step == WorldBuffTravelStep::STEP_GRYPHON_MASTER
+            || step == WorldBuffTravelStep::STEP_BALDRUC
             || step == WorldBuffTravelStep::STEP_FEATHERMOON;
+    }
+
+    inline bool IsFlightMasterStep(WorldBuffTravelStep step)
+    {
+        return step == WorldBuffTravelStep::STEP_GRYPHON_MASTER
+            || step == WorldBuffTravelStep::STEP_BRAGOK
+            || step == WorldBuffTravelStep::STEP_BALDRUC
+            || step == WorldBuffTravelStep::STEP_THYSSIANA;
     }
 
     inline bool AreAllGroupMembersNearby(Player* player)

@@ -16,6 +16,7 @@ static const char* GetStepZoneName(WorldBuffTravelStep step, Player* bot)
     case WorldBuffTravelStep::STEP_GRYPHON_MASTER:    return horde ? "" : "Dungar Longdrink";
     case WorldBuffTravelStep::STEP_BOOTY_BAY:         return "Booty Bay";
     case WorldBuffTravelStep::STEP_BRAGOK:            return "Bragok";
+    case WorldBuffTravelStep::STEP_BALDRUC:            return horde ? "" : "Baldruc";
     case WorldBuffTravelStep::STEP_THYSSIANA:         return horde ? "Shyn" : "Thyssiana";
     case WorldBuffTravelStep::STEP_FEATHERMOON:       return horde ? "" : "Feathermoon Stronghold";
     case WorldBuffTravelStep::STEP_FORGOTTEN_COAST:   return horde ? "Bonfire" : "Zorbin Fandazzle";
@@ -31,6 +32,7 @@ static bool IsStepGoSearch(WorldBuffTravelStep step, Player* bot)
     bool horde = IsHordeFaction(bot);
 
     if (step == WorldBuffTravelStep::STEP_BRAGOK ||
+        step == WorldBuffTravelStep::STEP_BALDRUC ||
         step == WorldBuffTravelStep::STEP_THYSSIANA ||
         step == WorldBuffTravelStep::STEP_FELWOOD)
         return true;
@@ -53,6 +55,7 @@ static uint32 GetStepNpcEntry(WorldBuffTravelStep step, Player* bot)
     {
     case WorldBuffTravelStep::STEP_GRYPHON_MASTER:    return horde ? 0 : NPC_DUNGAR_LONGDRINK;
     case WorldBuffTravelStep::STEP_BRAGOK:            return NPC_BRAGOK;
+    case WorldBuffTravelStep::STEP_BALDRUC:            return horde ? 0 : NPC_BALDRUC;
     case WorldBuffTravelStep::STEP_THYSSIANA:         return horde ? NPC_SHYN : NPC_THYSSIANA;
     case WorldBuffTravelStep::STEP_FORGOTTEN_COAST:   return horde ? 0 : NPC_ZORBIN_FANDAZZLE;
     case WorldBuffTravelStep::STEP_FELWOOD:           return horde ? NPC_BRAKKAR : NPC_MISHELLENA;
@@ -198,7 +201,13 @@ void WorldBuffTravelApplyAction::ApplyBuffToSelfAndRealPlayers(uint32 spellId)
 bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 destTaxiNode)
 {
     if (bot->IsTaxiFlying())
-        return true;
+        return false;
+
+    if (bot->IsMounted())
+    {
+        ai->Unmount();
+        return false;
+    }
 
     std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs no los");
     for (auto& guid : npcs)
@@ -210,11 +219,21 @@ bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 de
         if (unit->GetEntry() != npcEntry)
             continue;
 
+        if (bot->GetDistance(unit) > INTERACTION_DISTANCE)
+        {
+            float x, y, z;
+            unit->GetContactPoint(bot, x, y, z, INTERACTION_DISTANCE - 1.0f);
+            bot->GetMotionMaster()->MovePoint(0, x, y, z);
+            return false;
+        }
+
         Creature* flightMaster = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_FLIGHTMASTER);
         if (!flightMaster)
             continue;
 
         bot->GetSession()->SendLearnNewTaxiNode(flightMaster);
+
+        bot->GetTaxi().SetTaximaskNode(destTaxiNode);
 
         uint32 srcNode = sObjectMgr.GetNearestTaxiNode(
             flightMaster->GetPositionX(), flightMaster->GetPositionY(),
@@ -358,7 +377,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
     return didSummon || (remainingToSummon > 0) || (pendingCount > 0);
 }
 
-void WorldBuffTravelApplyAction::ApplyBuffsForStep(WorldBuffTravelStep step)
+bool WorldBuffTravelApplyAction::ApplyBuffsForStep(WorldBuffTravelStep step)
 {
     bool horde = IsHordeFaction(bot);
 
@@ -371,10 +390,7 @@ void WorldBuffTravelApplyAction::ApplyBuffsForStep(WorldBuffTravelStep step)
     case WorldBuffTravelStep::STEP_GRYPHON_MASTER:
         // Alliance only
         if (!TakeFlightFromMaster(NPC_DUNGAR_LONGDRINK, TAXI_NODE_BOOTY_BAY))
-        {
-            ai->TellPlayer(GetMaster(), "Failed to take flight from Dungar Longdrink.");
-            return;
-        }
+            return false;
         ai->TellPlayer(GetMaster(), "Taking flight to Booty Bay!");
         break;
     case WorldBuffTravelStep::STEP_BOOTY_BAY:
@@ -385,21 +401,21 @@ void WorldBuffTravelApplyAction::ApplyBuffsForStep(WorldBuffTravelStep step)
         if (horde)
         {
             if (!TakeFlightFromMaster(NPC_BRAGOK, TAXI_NODE_CAMP_MOJACHE))
-            {
-                ai->TellPlayer(GetMaster(), "Failed to take flight from Bragok.");
-                return;
-            }
+                return false;
             ai->TellPlayer(GetMaster(), "Taking flight to Camp Mojache!");
         }
         else
         {
-            if (!TakeFlightFromMaster(NPC_BRAGOK, TAXI_NODE_THALANAAR))
-            {
-                ai->TellPlayer(GetMaster(), "Failed to take flight from Bragok.");
-                return;
-            }
-            ai->TellPlayer(GetMaster(), "Taking flight to Thalanaar!");
+            if (!TakeFlightFromMaster(NPC_BRAGOK, TAXI_NODE_THERAMORE))
+                return false;
+            ai->TellPlayer(GetMaster(), "Taking flight to Theramore!");
         }
+        break;
+    case WorldBuffTravelStep::STEP_BALDRUC:
+        // Alliance only
+        if (!TakeFlightFromMaster(NPC_BALDRUC, TAXI_NODE_THALANAAR))
+            return false;
+        ai->TellPlayer(GetMaster(), "Taking flight to Thalanaar!");
         break;
     case WorldBuffTravelStep::STEP_THYSSIANA:
         if (horde)
@@ -410,10 +426,7 @@ void WorldBuffTravelApplyAction::ApplyBuffsForStep(WorldBuffTravelStep step)
         else
         {
             if (!TakeFlightFromMaster(NPC_THYSSIANA, TAXI_NODE_FEATHERMOON))
-            {
-                ai->TellPlayer(GetMaster(), "Failed to take flight from Thyssiana.");
-                return;
-            }
+                return false;
             ai->TellPlayer(GetMaster(), "Taking flight to Feathermoon Stronghold!");
         }
         break;
@@ -446,6 +459,7 @@ void WorldBuffTravelApplyAction::ApplyBuffsForStep(WorldBuffTravelStep step)
     default:
         break;
     }
+    return true;
 }
 
 void WorldBuffTravelApplyAction::AdvanceStep()
@@ -490,6 +504,7 @@ bool WorldBuffTravelApplyAction::Execute(Event& event)
         step != WorldBuffTravelStep::STEP_GRYPHON_MASTER &&
         step != WorldBuffTravelStep::STEP_BOOTY_BAY &&
         step != WorldBuffTravelStep::STEP_BRAGOK &&
+        step != WorldBuffTravelStep::STEP_BALDRUC &&
         step != WorldBuffTravelStep::STEP_THYSSIANA &&
         step != WorldBuffTravelStep::STEP_FEATHERMOON &&
         step != WorldBuffTravelStep::STEP_FORGOTTEN_COAST &&
@@ -504,8 +519,8 @@ bool WorldBuffTravelApplyAction::Execute(Event& event)
         return true;
     }
 
-    ApplyBuffsForStep(step);
-    AdvanceStep();
+    if (ApplyBuffsForStep(step))
+        AdvanceStep();
     return true;
 }
 
@@ -674,6 +689,21 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
 
     if (dests.empty())
     {
+        uint32 npcEntry = GetStepNpcEntry(step, bot);
+        if (npcEntry)
+        {
+            ObjectGuid npcGuid = sObjectMgr.GetOneCreatureByEntry(npcEntry);
+            if (npcGuid)
+            {
+                CreatureData const* cData = sObjectMgr.GetCreatureData(npcGuid.GetCounter());
+                if (cData)
+                {
+                    ai->TellPlayer(GetMaster(), std::string("Traveling directly to ") + name + " for world buffs");
+                    return MoveTo(cData->position.mapId, cData->position.x, cData->position.y, cData->position.z);
+                }
+            }
+        }
+
         ai->TellPlayer(GetMaster(), std::string("Cannot find travel destination for ") + name);
         return false;
     }
