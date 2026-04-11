@@ -2372,7 +2372,7 @@ bool DebugAction::HandleFind(Event& event, Player* requester, const std::string&
     uint32 entry = stoi(link);
 
     Creature* creature = nullptr;
-    MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck creature_check(*bot, entry, 1000.0f, true, false);
+    MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck creature_check(*bot, entry, true, 1000.0f);
     MaNGOS::CreatureLastSearcher<MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck> searcher(creature, creature_check);
     Cell::VisitGridObjects(bot, searcher, 1000.0f);
 

@@ -1344,7 +1344,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
 
     ai->TellDebug(ai->GetMaster(), "Getting new destination ranges for travel quest", "debug travel");
 
-    std::vector<std::tuple<uint32, int32, float>> destinationFetches = { {(uint32)TravelDestinationPurpose::QuestGiver, 0, 400 + bot->GetLevel() * 10} };
+    std::vector<std::tuple<uint32, int32, float>> destinationFetches = { {(uint32)TravelDestinationPurpose::QuestGiver, 0, static_cast<float>(400 + bot->GetLevel() * 10)} };
 
     for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "group members"))
     {

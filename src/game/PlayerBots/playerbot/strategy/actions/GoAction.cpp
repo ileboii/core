@@ -714,7 +714,7 @@ bool GoAction::MoveToGps(std::string& param, Player* requester)
             Vector3 end = path.getEndPosition();
             Vector3 aend = path.getActualEndPosition();
 
-            const const PointsArray& points = path.getPath();
+            const PointsArray& points = path.getPath();
             PathType type = path.getPathType();
 
             std::ostringstream out;

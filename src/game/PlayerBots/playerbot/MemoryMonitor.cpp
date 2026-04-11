@@ -197,13 +197,13 @@ void MemoryMonitor::Browse()
     {
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[%s] = %zu", t.first.c_str(), t.second.size());
 
-        std::vector<std::pair<std::string, int>> top(10);
+        std::vector<std::pair<std::string, double>> top(10);
         std::partial_sort_copy(here[t.first].begin(),
             here[t.first].end(),
             top.begin(),
             top.end(),
-            [](std::pair<const std::string, int> const& l,
-                std::pair<const std::string, int> const& r)
+            [](std::pair<const std::string, double> const& l,
+                std::pair<const std::string, double> const& r)
             {
                 return l.second > r.second;
             });

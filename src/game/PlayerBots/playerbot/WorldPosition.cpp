@@ -289,7 +289,7 @@ std::vector<WorldPosition*> WorldPosition::GetNextPoint(std::vector<WorldPositio
 
     std::vector<uint32> weights;
 
-    std::transform(retVec.begin(), retVec.end(), std::back_inserter(weights), [this](WorldPosition* point) { return 200000 / (1 + this->distance(*point)); });
+    std::transform(retVec.begin(), retVec.end(), std::back_inserter(weights), [this](WorldPosition* point) { return static_cast<uint32>(200000 / (1 + this->distance(*point))); });
 
     //If any weight is 0 add 1 to all weights.
     for (auto& w : weights)
