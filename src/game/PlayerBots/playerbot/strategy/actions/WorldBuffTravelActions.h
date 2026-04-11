@@ -17,7 +17,7 @@ namespace ai
         bool isUseful() override { return true; }
 
     private:
-        void ApplyBuffsForStep(WorldBuffTravelStep step);
+        bool ApplyBuffsForStep(WorldBuffTravelStep step);
         void ApplyBuffToSelfAndRealPlayers(uint32 spellId);
         bool TakeFlightFromMaster(uint32 npcEntry, uint32 destTaxiNode);
         void AdvanceStep();
