@@ -39,7 +39,7 @@ class LinkedListElement
     public:
 
         LinkedListElement() : iNext(nullptr), iPrev(nullptr) { }
-        ~LinkedListElement() { delink(); }
+        ~LinkedListElement() noexcept { delink(); }
 
         bool hasNext() const  { return (iNext && iNext->iNext != nullptr); }
         bool hasPrev() const  { return (iPrev && iPrev->iPrev != nullptr); }

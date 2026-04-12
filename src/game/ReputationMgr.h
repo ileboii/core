@@ -62,7 +62,7 @@ class ReputationMgr
 {
     public:                                                 // constructors and global modifiers
         explicit ReputationMgr(Player* owner) : m_player(owner) {}
-        ~ReputationMgr() {}
+        ~ReputationMgr() noexcept {}
 
         void SaveToDB();
         void LoadFromDB(std::unique_ptr<QueryResult> result);

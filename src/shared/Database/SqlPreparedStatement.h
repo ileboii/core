@@ -65,7 +65,7 @@ class SqlStmtFieldData
 {
     public:
         SqlStmtFieldData() : m_type(FIELD_NONE) { m_binaryData.ui64 = 0; }
-        ~SqlStmtFieldData() {}
+        ~SqlStmtFieldData() noexcept {}
 
         template<typename T>
         SqlStmtFieldData(T param) { set(param); }
@@ -147,7 +147,7 @@ class SqlStmtParameters
         //reserve memory to contain all input parameters of stmt
         explicit SqlStmtParameters(int nParams);
 
-        ~SqlStmtParameters() {}
+        ~SqlStmtParameters() noexcept {}
 
         //get amount of bound parameters
         int boundParams() const { return int(m_params.size()); }
@@ -191,7 +191,7 @@ class SqlStatementID
 class SqlStatement
 {
     public:
-        ~SqlStatement() { delete m_pParams; }
+        ~SqlStatement() noexcept { delete m_pParams; }
 
         SqlStatement(SqlStatement const& index) : m_index(index.m_index), m_pDB(index.m_pDB), m_pParams(nullptr)
         {
@@ -310,7 +310,7 @@ class SqlStatement
 class SqlPreparedStatement
 {
     public:
-        virtual ~SqlPreparedStatement() {}
+        virtual ~SqlPreparedStatement() noexcept {}
 
         bool isPrepared() const { return m_bPrepared; }
         bool isQuery() const { return m_bIsQuery; }
@@ -343,7 +343,7 @@ class SqlPlainPreparedStatement : public SqlPreparedStatement
 {
     public:
         SqlPlainPreparedStatement(std::string const& fmt, SqlConnection& conn);
-        ~SqlPlainPreparedStatement() override {}
+        ~SqlPlainPreparedStatement() noexcept override {}
 
         //this statement is always prepared
         bool prepare() override { return true; }

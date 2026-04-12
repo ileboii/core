@@ -108,7 +108,7 @@ class AuctionHouseObject
 {
     public:
         AuctionHouseObject() {}
-        ~AuctionHouseObject()
+        ~AuctionHouseObject() noexcept
         {
             for (const auto& itr : AuctionsMap)
                 delete itr.second;

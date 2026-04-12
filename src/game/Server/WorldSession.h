@@ -163,7 +163,7 @@ class PacketFilter
 {
     public:
         explicit PacketFilter(WorldSession* pSession) : m_pSession(pSession), m_processLogout(false), m_processType(PACKET_PROCESS_MAX_TYPE) {}
-        virtual ~PacketFilter() {}
+        virtual ~PacketFilter() noexcept {}
 
         virtual bool Process(std::unique_ptr<ClientPacket const> const&) { return true; }
         inline bool ProcessLogout() const { return m_processLogout; }
@@ -184,7 +184,7 @@ class MapSessionFilter : public PacketFilter
             m_processLogout = false;
             m_processType = PACKET_PROCESS_MAP;
         }
-        ~MapSessionFilter() override {}
+        ~MapSessionFilter() noexcept override {}
 
         bool Process(std::unique_ptr<ClientPacket const> const& packet) override;
 };
@@ -199,7 +199,7 @@ class WorldSessionFilter : public PacketFilter
             m_processLogout = true;
             m_processType = PACKET_PROCESS_WORLD;
         }
-        ~WorldSessionFilter() override {}
+        ~WorldSessionFilter() noexcept override {}
 };
 
 // Player session in the World

@@ -665,7 +665,7 @@ struct CliCommandHolder
         memcpy(m_command, command, len);
     }
 
-    ~CliCommandHolder() { delete[] m_command; }
+    ~CliCommandHolder() noexcept { delete[] m_command; }
 };
 
 struct AccountPlayHistory

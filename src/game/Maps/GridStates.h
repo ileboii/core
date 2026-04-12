@@ -27,35 +27,35 @@
 class GridState
 {
     public:
-        virtual ~GridState() {}
+        virtual ~GridState() noexcept {}
         virtual void Update(Map&, NGridType&, GridInfo&, uint32 const& x, uint32 const& y, uint32 const& t_diff) const = 0;
 };
 
 class InvalidState : public GridState
 {
     public:
-        ~InvalidState() override {}
+        ~InvalidState() noexcept override {}
         void Update(Map&, NGridType&, GridInfo&, uint32 const& x, uint32 const& y, uint32 const& t_diff) const override;
 };
 
 class ActiveState : public GridState
 {
     public:
-        ~ActiveState() override {}
+        ~ActiveState() noexcept override {}
         void Update(Map&, NGridType&, GridInfo&, uint32 const& x, uint32 const& y, uint32 const& t_diff) const override;
 };
 
 class IdleState : public GridState
 {
     public:
-        ~IdleState() override {}
+        ~IdleState() noexcept override {}
         void Update(Map&, NGridType&, GridInfo&, uint32 const& x, uint32 const& y, uint32 const& t_diff) const override;
 };
 
 class RemovalState : public GridState
 {
     public:
-        ~RemovalState() override {}
+        ~RemovalState() noexcept override {}
         void Update(Map&, NGridType&, GridInfo&, uint32 const& x, uint32 const& y, uint32 const& t_diff) const override;
 };
 

@@ -30,7 +30,7 @@ class PlayerTaxi
 {
 public:
     PlayerTaxi();
-    ~PlayerTaxi() {}
+    ~PlayerTaxi() noexcept {}
     // Nodes
     void InitTaxiNodes(uint32 race, uint32 level);
     void LoadTaxiMask(char const* data);

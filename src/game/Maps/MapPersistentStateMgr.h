@@ -163,7 +163,7 @@ class WorldPersistentState : public MapPersistentState
         */
         explicit WorldPersistentState(uint16 MapId, uint16 instanceId) : MapPersistentState(MapId, instanceId) {}
 
-        ~WorldPersistentState() override {}
+        ~WorldPersistentState() noexcept override {}
     protected:
         bool CanBeUnload() const override;                           // overwrite MapPersistentState::CanBeUnload
 };
@@ -247,7 +247,7 @@ class BattleGroundPersistentState : public MapPersistentState
         BattleGroundPersistentState(uint16 MapId, uint32 InstanceId)
             : MapPersistentState(MapId, InstanceId) {}
 
-        ~BattleGroundPersistentState() override {}
+        ~BattleGroundPersistentState() noexcept override {}
     protected:
         bool CanBeUnload() const override;                           // overwrite MapPersistentState::CanBeUnload
 };

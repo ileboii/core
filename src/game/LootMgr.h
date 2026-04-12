@@ -181,7 +181,7 @@ class LootStore
     public:
         explicit LootStore(char const* name, char const* entryName, bool ratesAllowed)
             : m_name(name), m_entryName(entryName), m_ratesAllowed(ratesAllowed) {}
-        virtual ~LootStore() { Clear(); }
+        virtual ~LootStore() noexcept { Clear(); }
 
         void Verify() const;
 
@@ -291,7 +291,7 @@ struct Loot
         m_hasFFAQuestItems(false)
     {
     }
-    ~Loot() { clear(); }
+    ~Loot() noexcept { clear(); }
 
     // if loot becomes invalid this reference is used to inform the listener
     void addLootValidatorRef(LootValidatorRef* pLootValidatorRef)

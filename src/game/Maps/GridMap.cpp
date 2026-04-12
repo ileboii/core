@@ -68,7 +68,7 @@ GridMap::GridMap(): m_gridIntHeightMultiplier(0)
     m_liquid_map  = nullptr;
 }
 
-GridMap::~GridMap()
+GridMap::~GridMap() noexcept
 {
     unloadData();
 }
@@ -712,7 +712,7 @@ void TerrainInfo::LoadAll()
             Load(i, k);
 }
 
-TerrainInfo::~TerrainInfo()
+TerrainInfo::~TerrainInfo() noexcept
 {
     for (int k = 0; k < MAX_NUMBER_OF_GRIDS; ++k)
         for (const auto& itr : m_GridMaps)
@@ -1058,8 +1058,8 @@ bool TerrainInfo::IsSwimmable(float x, float y, float z, float radius /*= 1.5f*/
         GridMapLiquidData liquid_status;
         GridMapLiquidData* liquid_ptr = data ? data : &liquid_status;
         auto const status = getLiquidStatus(x, y, z, MAP_ALL_LIQUIDS, liquid_ptr);
-        if (status == LIQUID_MAP_IN_WATER || status == LIQUID_MAP_UNDER_WATER || status == LIQUID_MAP_WATER_WALK || 
-           ((status == LIQUID_MAP_ABOVE_WATER) && (liquid_ptr->level + JUMP_HEIGHT >= z)))
+        if ((status & LIQUID_MAP_IN_WATER) || (status & LIQUID_MAP_UNDER_WATER) || (status & LIQUID_MAP_WATER_WALK) || 
+           ((status & LIQUID_MAP_ABOVE_WATER) && (liquid_ptr->level + JUMP_HEIGHT >= z)))
         {
             if (liquid_ptr->level - liquid_ptr->depth_level > radius) // is unit have enough space to swim
                 return true;
@@ -1077,7 +1077,7 @@ bool TerrainInfo::IsInWater(float x, float y, float z, GridMapLiquidData* data) 
         GridMapLiquidData liquid_status;
         GridMapLiquidData* liquid_ptr = data ? data : &liquid_status;
         auto const status = getLiquidStatus(x, y, z, MAP_ALL_LIQUIDS, liquid_ptr);
-        if (status == LIQUID_MAP_IN_WATER || status == LIQUID_MAP_UNDER_WATER)
+        if ((status & LIQUID_MAP_IN_WATER) || (status & LIQUID_MAP_UNDER_WATER))
             return true;
     }
     return false;
@@ -1228,7 +1228,7 @@ TerrainManager::TerrainManager()
     mLiquidTypes[21] = std::make_unique<LiquidTypeEntry>(21, 25, 2, 28801);
 }
 
-TerrainManager::~TerrainManager()
+TerrainManager::~TerrainManager() noexcept
 {
     for (auto& it : i_TerrainMap)
         delete it.second;

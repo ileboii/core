@@ -134,7 +134,7 @@ struct CoordPair
             y_coord = LIMIT - 1;
     }
 
-    CoordPair& normalize()
+    CoordPair normalize()
     {
         x_coord = std::min(x_coord, LIMIT-1);
         y_coord = std::min(y_coord, LIMIT-1);

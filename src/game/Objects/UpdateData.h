@@ -97,7 +97,7 @@ class MovementData
 {
     public:
         MovementData() : m_buffer(1024) {}
-        ~MovementData() {}
+        ~MovementData() noexcept {}
         bool CanAddPacket(WorldPacket const& data);
         void AddPacket(WorldPacket const& data);
         bool BuildPacket(WorldPacket& data);

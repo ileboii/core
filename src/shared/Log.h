@@ -153,7 +153,7 @@ class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, std::m
     friend class MaNGOS::OperatorNew<Log>;
     Log();
 
-    ~Log()
+    ~Log() noexcept
     {
         for (auto& logFile : logFiles)
         {

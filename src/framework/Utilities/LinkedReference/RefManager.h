@@ -34,7 +34,7 @@ class RefManager : public LinkedListHead
 
         typedef LinkedListHead::Iterator<Reference<TO, FROM> > iterator;
         RefManager() {}
-        virtual ~RefManager() { clearReferences(); }
+        virtual ~RefManager() noexcept { clearReferences(); }
 
         Reference<TO, FROM>*       getFirst()       { return ((Reference<TO, FROM>      *) LinkedListHead::getFirst()); }
         Reference<TO, FROM> const* getFirst() const { return ((Reference<TO, FROM> const*) LinkedListHead::getFirst()); }

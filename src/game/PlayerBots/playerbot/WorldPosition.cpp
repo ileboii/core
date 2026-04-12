@@ -328,7 +328,7 @@ std::vector<WorldPosition> WorldPosition::GetNextPoint(std::vector<WorldPosition
     //std::transform(retVec.begin(), retVec.end(), std::back_inserter(weights), [center](WorldPosition point) { return 1 + 1000 * exp(-1 * pow(point.distance(center) / 400.0, 2)); });
 
     //List of weights based on distance (Twice the distance = half the weight). Caps out at 200.0000 range.
-    std::transform(retVec.begin(), retVec.end(), std::back_inserter(weights), [this](WorldPosition point) { return 200000 / (1 + this->distance(point)); });
+    std::transform(retVec.begin(), retVec.end(), std::back_inserter(weights), [this](WorldPosition point) { return static_cast<uint32>(200000 / (1 + this->distance(point))); });
 
     //If any weight is 0 add 1 to all weights.
     for (auto& w : weights)

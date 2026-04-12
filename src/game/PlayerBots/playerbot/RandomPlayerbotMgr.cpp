@@ -511,7 +511,7 @@ void RandomPlayerbotMgr::LogPlayerLocation()
                 {
                     auto& botMoveLog = playerBotMoveLog[bot->GetObjectGuid().GetCounter()];
 
-                    std::pair<int32, int32> curDisplayPos = std::make_pair(WorldPosition(bot).getDisplayX(), WorldPosition(bot).getDisplayY());
+                    std::pair<int32, int32> curDisplayPos = std::make_pair(static_cast<int32>(WorldPosition(bot).getDisplayX()), static_cast<int32>(WorldPosition(bot).getDisplayY()));
 
                     botMoveLog.push_back(curDisplayPos);
 

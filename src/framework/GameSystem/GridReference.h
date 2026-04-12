@@ -58,7 +58,7 @@ class GridReference : public Reference<GridRefManager<OBJECT>, OBJECT>
         {
         }
 
-        ~GridReference() override
+        ~GridReference() noexcept override
         {
             this->unlink();
         }

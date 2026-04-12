@@ -47,7 +47,7 @@ class Reference : public LinkedListElement
 
     public:
 
-        virtual ~Reference() {}
+        virtual ~Reference() noexcept {}
 
         // Create new link
         void link(TO* toObj, FROM* fromObj)

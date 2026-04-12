@@ -127,7 +127,7 @@ namespace IO
         }
 
         // Destructor
-        ~ReadableBuffer()
+        ~ReadableBuffer() noexcept
         {
             Destruct();
         }
@@ -279,7 +279,7 @@ namespace IO
             BufferUnion()
             {
             }
-            ~BufferUnion()
+            ~BufferUnion() noexcept
             {
             }
         };

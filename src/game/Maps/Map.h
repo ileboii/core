@@ -973,7 +973,7 @@ class WorldMap : public Map
 
     public:
         WorldMap(uint32 id, time_t expiry, uint32 instance = 0) : Map(id, expiry, instance) {}
-        ~WorldMap() override {}
+        ~WorldMap() noexcept override {}
 
         // can't be nullptr for loaded map
         WorldPersistentState* GetPersistanceState() const;

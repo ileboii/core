@@ -33,7 +33,7 @@ class Channel;
 class AbstractPlayer
 {
 public:
-    virtual ~AbstractPlayer() {}
+    virtual ~AbstractPlayer() noexcept {}
     virtual ObjectGuid GetObjectGuid() const = 0;
     virtual Team GetTeam() const = 0;
     virtual char const* GetName() const = 0;

@@ -39,7 +39,7 @@ T& MaNGOS::Singleton<T, ThreadingModel, CreatePolicy, LifeTimePolicy>::Instance(
     if (!si_instance)
     {
         // double-checked Locking pattern
-        Guard();
+        Guard _guard;
 
         if (!si_instance)
         {

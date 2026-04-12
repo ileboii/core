@@ -482,7 +482,7 @@ class WorldObject : public Object
                 WorldObject* const m_obj;
         };
 
-        virtual ~WorldObject () override {}
+        virtual ~WorldObject () noexcept override {}
 
         virtual void Update(uint32 /*update_diff*/, uint32 /*time_diff*/);
 

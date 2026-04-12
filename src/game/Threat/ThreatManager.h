@@ -154,7 +154,7 @@ protected:
     void update();
 public:
     ThreatContainer() { iDirty = false; }
-    ~ThreatContainer() { clearReferences(); }
+    ~ThreatContainer() noexcept { clearReferences(); }
 
     HostileReference* addThreat(Unit* pVictim, float threat);
 
@@ -184,7 +184,7 @@ public:
 
     explicit ThreatManager(Unit* pOwner);
 
-    ~ThreatManager() { clearReferences(); }
+    ~ThreatManager() noexcept { clearReferences(); }
 
     void clearReferences();
 

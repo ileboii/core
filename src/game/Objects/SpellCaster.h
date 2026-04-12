@@ -324,6 +324,7 @@ enum ProcessProcsAuraType
 class SpellCaster : public WorldObject
 {
 public:
+    ~SpellCaster() noexcept override = default;
     virtual uint32 GetLevel() const = 0;
     uint32 GetLevelForTarget(SpellCaster const* target = nullptr) const;
     uint16 GetSkillMaxForLevel(SpellCaster const* target = nullptr) const { return GetLevelForTarget(target) * 5; };

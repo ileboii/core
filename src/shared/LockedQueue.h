@@ -47,7 +47,7 @@ template <class T, class LockType, typename StorageType=std::deque<T> >
         }
 
         //! Destroy a LockedQueue.
-        virtual ~LockedQueue()
+        virtual ~LockedQueue() noexcept
         {
         }
 

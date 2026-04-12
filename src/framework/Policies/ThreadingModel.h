@@ -42,7 +42,7 @@ namespace MaNGOS
             {
             }
 
-            ~GeneralLock()
+            ~GeneralLock() noexcept
             {
             }
 

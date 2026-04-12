@@ -40,7 +40,7 @@ class Field
         Field() : mValue(nullptr), mType(DB_TYPE_UNKNOWN) {}
         Field(char const* value, enum DataTypes type) : mValue(value), mType(type) {}
 
-        ~Field() {}
+        ~Field() noexcept {}
 
         enum DataTypes GetType() const { return mType; }
         bool IsNULL() const { return mValue == nullptr; }

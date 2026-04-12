@@ -32,7 +32,7 @@ class QueryResult
         QueryResult(uint64 rowCount, uint32 fieldCount)
             : mCurrentRow(nullptr), mFieldCount(fieldCount), mRowCount(rowCount) {}
 
-        virtual ~QueryResult() {}
+        virtual ~QueryResult() noexcept {}
 
         virtual bool NextRow() = 0;
 

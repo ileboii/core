@@ -68,7 +68,7 @@ class SQLStorageBase
 
     protected:
         SQLStorageBase();
-        virtual ~SQLStorageBase() { Free(); }
+        virtual ~SQLStorageBase() noexcept { Free(); }
 
         void Initialize(char const* tableName, char const* entry_field, char const* src_format, char const* dst_format);
 
@@ -109,7 +109,7 @@ class SQLStorage : public SQLStorageBase
 
         SQLStorage(char const* src_fmt, char const* dst_fmt, char const* _entry_field, char const* sqlname);
 
-        ~SQLStorage() override { Free(); }
+        ~SQLStorage() noexcept override { Free(); }
 
         template<class T>
         T const* LookupEntry(uint32 id) const
@@ -146,7 +146,7 @@ class SQLHashStorage : public SQLStorageBase
         SQLHashStorage(char const* fmt, char const* _entry_field, char const* sqlname);
         SQLHashStorage(char const* src_fmt, char const* dst_fmt, char const* _entry_field, char const* sqlname);
 
-        ~SQLHashStorage() override { Free(); }
+        ~SQLHashStorage() noexcept override { Free(); }
 
         template<class T>
         T const* LookupEntry(uint32 id) const
@@ -188,7 +188,7 @@ class SQLMultiStorage : public SQLStorageBase
         SQLMultiStorage(char const* fmt, char const* _entry_field, char const* sqlname);
         SQLMultiStorage(char const* src_fmt, char const* dst_fmt, char const* _entry_field, char const* sqlname);
 
-        ~SQLMultiStorage() override { Free(); }
+        ~SQLMultiStorage() noexcept override { Free(); }
 
         // forward declaration
         template<typename T> class SQLMSIteratorBounds;

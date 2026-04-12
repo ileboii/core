@@ -122,7 +122,7 @@ class PoolGroup
     public:
         explicit PoolGroup() : poolId(0) { }
         void SetPoolId(uint32 pool_id) { poolId = pool_id; }
-        ~PoolGroup() {};
+        ~PoolGroup() noexcept {};
         bool isEmpty() const { return ExplicitlyChanced.empty() && EqualChanced.empty(); }
         void AddEntry(PoolObject& poolitem, uint32 maxentries);
         bool CheckPool() const;
@@ -153,7 +153,7 @@ class PoolManager
 {
     public:
         PoolManager();
-        ~PoolManager() {};
+        ~PoolManager() noexcept {};
 
         void LoadFromDB();
         void Initialize(MapPersistentState* state);         // called at new MapPersistentState object create

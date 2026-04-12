@@ -53,7 +53,7 @@ namespace MMAP
     struct MMapData
     {
         MMapData(dtNavMesh* mesh) : navMesh(mesh) {}
-        ~MMapData()
+        ~MMapData() noexcept
         {
             for (const auto& itr : navMeshQueries)
                 dtFreeNavMeshQuery(itr.second);

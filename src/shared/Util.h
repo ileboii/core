@@ -44,7 +44,7 @@ public:
 
 public:
     Tokenizer(std::string const& src, char const sep, uint32 vectorReserve = 0);
-    ~Tokenizer() { delete[] m_str; }
+    ~Tokenizer() noexcept { delete[] m_str; }
 
     const_iterator begin() const { return m_storage.begin(); }
     const_iterator end() const { return m_storage.end(); }

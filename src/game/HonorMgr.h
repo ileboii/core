@@ -56,7 +56,7 @@ class HonorMaintenancer
 {
     public:
         HonorMaintenancer() : m_lastMaintenanceDay(0), m_nextMaintenanceDay(0), m_markerToStart(false) {}
-        ~HonorMaintenancer() {}
+        ~HonorMaintenancer() noexcept {}
 
         void Initialize();
         void DoMaintenance();
@@ -155,7 +155,7 @@ class HonorMgr
 {
     public:
         explicit HonorMgr(Player* owner) : m_owner(owner) {}
-        ~HonorMgr() {}
+        ~HonorMgr() noexcept {}
 
         void Save();
         void SaveStoredData();

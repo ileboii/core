@@ -74,6 +74,10 @@ add_library(g3dlite STATIC
   ${g3dlite_SRCS}
 )
 
+if(MSVC)
+  target_compile_options(g3dlite PRIVATE /FS)
+endif()
+
 SET_TARGET_PROPERTIES (g3dlite PROPERTIES FOLDER "3rd Party")
 
 if(WIN32)

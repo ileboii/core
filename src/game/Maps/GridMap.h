@@ -104,7 +104,7 @@ class GridMap
     public:
 
         GridMap();
-        ~GridMap();
+        ~GridMap() noexcept;
 
         bool loadData(char const* filaname);
         void unloadData();
@@ -143,7 +143,7 @@ class TerrainInfo : public Referencable<AtomicLong>
 {
     public:
         TerrainInfo(uint32 mapid);
-        ~TerrainInfo();
+        ~TerrainInfo() noexcept;
 
         uint32 GetMapId() const { return m_mapId; }
 
@@ -247,7 +247,7 @@ class TerrainManager : public MaNGOS::Singleton<TerrainManager, MaNGOS::ClassLev
 
     private:
         TerrainManager();
-        ~TerrainManager();
+        ~TerrainManager() noexcept;
 
         TerrainManager(TerrainManager const&);
         TerrainManager& operator=(TerrainManager const&);
