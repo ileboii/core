@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
  * Copyright (C) 2009-2011 MaNGOSZero <https://github.com/mangos/zero>
  * Copyright (C) 2011-2016 Nostalrius <https://nostalrius.org>
@@ -1416,7 +1416,6 @@ class Player final: public Unit
         void UpdateFreeTalentPoints(bool resetIfNeed = true);
         uint32 GetResetTalentsCost() const;
         void UpdateResetTalentsMultiplier() const;
-        uint32 CalculateTalentsPoints() const;
         void SendTalentWipeConfirm(ObjectGuid trainerGuid) const;
     public:
         uint32 CalculateTalentsPoints() const;
