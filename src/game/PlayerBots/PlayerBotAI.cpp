@@ -26,6 +26,11 @@
 #include "Opcodes.h"
 #include "WorldPacket.h"
 
+PlayerBotAI::~PlayerBotAI()
+{
+    Remove();
+}
+
 bool PlayerBotAI::OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess)
 {
     sess->LoginPlayer(entry->playerGUID);

@@ -30,10 +30,7 @@ class PlayerBotAI: public PlayerAI
 {
     public:
         explicit PlayerBotAI(Player* pPlayer = nullptr) : PlayerAI(pPlayer), botEntry(nullptr) {}
-        virtual ~PlayerBotAI() override
-        {
-            Remove();
-        }
+        ~PlayerBotAI() override;
         void Remove() override;
 
         virtual bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess);

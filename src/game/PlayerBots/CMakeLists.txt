@@ -177,6 +177,12 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/aiplayerbot.conf.dist DESTINATION ${CO
 
 set_target_properties(${LIBRARY_NAME} PROPERTIES PROJECT_LABEL "PlayerBots")
 
+if(MSVC)
+  set_target_properties(${LIBRARY_NAME} PROPERTIES
+    COMPILE_PDB_NAME ${LIBRARY_NAME}
+    COMPILE_PDB_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endif()
+
 # Generate PCH
 if(PCH)
   target_precompile_headers(${LIBRARY_NAME} PRIVATE ${bots_PCH})
