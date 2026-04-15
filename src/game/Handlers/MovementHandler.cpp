@@ -411,6 +411,13 @@ void WorldSession::HandleForceSpeedChangeAckOpcodes(WorldPackets::Movement::Move
 {
     uint32 timeNow = World::GetCurrentMSTime();
     uint32 opcode = packet.GetOpcode();
+
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
+    float newSpeed = packet.speed;
+#else
+    float newSpeed = 0;
+#endif
+
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_9_4
     uint32 movementCounter = packet.movementCounter;
 #else
@@ -422,9 +429,6 @@ void WorldSession::HandleForceSpeedChangeAckOpcodes(WorldPackets::Movement::Move
     UnitMoveType move_type;
     switch (opcode)
     {
-        case CMSG_FORCE_WALK_SPEED_CHANGE_ACK:
-            move_type = MOVE_WALK;
-            break;
         case CMSG_FORCE_RUN_SPEED_CHANGE_ACK:
             move_type = MOVE_RUN;
             break;
@@ -434,12 +438,17 @@ void WorldSession::HandleForceSpeedChangeAckOpcodes(WorldPackets::Movement::Move
         case CMSG_FORCE_SWIM_SPEED_CHANGE_ACK:
             move_type = MOVE_SWIM;
             break;
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
+        case CMSG_FORCE_WALK_SPEED_CHANGE_ACK:
+            move_type = MOVE_WALK;
+            break;
         case CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK:
             move_type = MOVE_SWIM_BACK;
             break;
         case CMSG_FORCE_TURN_RATE_CHANGE_ACK:
             move_type = MOVE_TURN_RATE;
             break;
+#endif
         default:
             sLog.Out(LOG_MOVEMENT, LOG_LVL_ERROR, "WorldSession::HandleForceSpeedChangeAck: Unknown move type opcode: %u", opcode);
             return;
@@ -459,7 +468,11 @@ void WorldSession::HandleForceSpeedChangeAckOpcodes(WorldPackets::Movement::Move
         return;
     }
 
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
     if (!pMover->FindPendingMovementSpeedChange(packet.speed, movementCounter, move_type))
+#else
+    if (!pMover->FindPendingMovementSpeedChange(newSpeed, move_type))
+#endif
     {
         sLog.Player(this, LOG_MOVEMENT, LOG_LVL_ERROR, "WorldSession::HandleForceSpeedChangeAck: Client sent opcode %u with counter %u, but received data does not match pending change (current counter is %u).",
             opcode, movementCounter, pMover->GetMovementCounter());
@@ -486,7 +499,7 @@ void WorldSession::HandleForceSpeedChangeAckOpcodes(WorldPackets::Movement::Move
     // and after relocation we are now indoors, player will get
     // stuck with the faster speed from the aura after removal
     // because the speed never changed server side
-    float const newSpeedRate = packet.speed / baseMoveSpeed[move_type];
+    float const newSpeedRate = newSpeed / baseMoveSpeed[move_type];
     pMover->SetSpeedRateReal(move_type, newSpeedRate);
 
     if (canRelocate)
@@ -509,7 +522,7 @@ void WorldSession::HandleForceSpeedChangeAckOpcodes(WorldPackets::Movement::Move
     }
 
     // send the speed change to others (with updated position if all is fine)
-    MovementPacketSender::SendSpeedChangeToObservers(pMover, move_type, packet.speed);
+    MovementPacketSender::SendSpeedChangeToObservers(pMover, move_type, newSpeed);
 }
 
 /*

@@ -6868,8 +6868,7 @@ void Player::CheckDuelDistance(time_t currTime)
         {
             m_duel->outOfBound = currTime;
 
-            WorldPacket data(SMSG_DUEL_OUTOFBOUNDS, 0);
-            GetSession()->SendPacket(&data);
+            GetSession()->SendPacket(std::make_unique<WorldPackets::Duel::DuelOutOfBounds>());
         }
     }
     else
@@ -6879,8 +6878,7 @@ void Player::CheckDuelDistance(time_t currTime)
         {
             m_duel->outOfBound = 0;
 
-            WorldPacket data(SMSG_DUEL_INBOUNDS, 0);
-            GetSession()->SendPacket(&data);
+            GetSession()->SendPacket(std::make_unique<WorldPackets::Duel::DuelInBounds>());
         }
         else if (currTime >= (m_duel->outOfBound + 10))
         {
@@ -7922,6 +7920,7 @@ void Player::SendLoot(ObjectGuid guid, LootType lootType, Player const* pVictim)
             }
             break;
         }
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
         case HIGHGUID_CORPSE:                               // remove insignia
         {
             Corpse* bones = GetMap()->GetCorpse(guid);
@@ -7957,6 +7956,7 @@ void Player::SendLoot(ObjectGuid guid, LootType lootType, Player const* pVictim)
             bones->ForceValuesUpdateAtIndex(CORPSE_DYNFLAG_LOOTABLE);
             break;
         }
+#endif
         case HIGHGUID_UNIT:
         {
             Creature* creature = GetMap()->GetCreature(guid);
@@ -8171,15 +8171,14 @@ void Player::SendLoot(ObjectGuid guid, LootType lootType, Player const* pVictim)
 
 void Player::SendNotifyLootMoneyRemoved() const
 {
-    WorldPacket data(SMSG_LOOT_CLEAR_MONEY, 0);
-    GetSession()->SendPacket(&data);
+    GetSession()->SendPacket(std::make_unique<WorldPackets::Loot::LootClearMoney>());
 }
 
 void Player::SendLootMoneyNotify(uint32 amount) const
 {
-    WorldPacket data(SMSG_LOOT_MONEY_NOTIFY, 4);
-    data << uint32(amount);
-    GetSession()->SendPacket(&data);
+    auto packet = std::make_unique<WorldPackets::Loot::LootMoneyNotify>();
+    packet->amount = amount;
+    GetSession()->SendPacket(std::move(packet));
 }
 
 void Player::SendNotifyLootItemRemoved(uint8 lootSlot) const
@@ -8431,12 +8430,12 @@ void Player::SetBindPoint(ObjectGuid guid) const
 #endif
 }
 
-void Player::SendTalentWipeConfirm(ObjectGuid guid) const
+void Player::SendTalentWipeConfirm(ObjectGuid trainerGuid) const
 {
-    WorldPacket data(MSG_TALENT_WIPE_CONFIRM, (8 + 4));
-    data << ObjectGuid(guid);
-    data << uint32(GetResetTalentsCost());
-    GetSession()->SendPacket(&data);
+    auto packet = std::make_unique<WorldPackets::Skill::TalentWipeConfirmResponse>();
+    packet->trainerGuid = trainerGuid;
+    packet->cost = GetResetTalentsCost();
+    GetSession()->SendPacket(std::move(packet));
 }
 
 void Player::SendPetSkillWipeConfirm() const
@@ -13476,8 +13475,7 @@ bool Player::SatisfyQuestLog(bool msg) const
 
     if (msg)
     {
-        WorldPacket data(SMSG_QUESTLOG_FULL, 0);
-        GetSession()->SendPacket(&data);
+        GetSession()->SendPacket(std::make_unique<WorldPackets::Quest::QuestLogFull>());
     }
     return false;
 }
@@ -17155,38 +17153,32 @@ void Player::SavePositionInDB(ObjectGuid guid, uint32 mapId, float x, float y, f
 
 void Player::SendAttackSwingNotInRange() const
 {
-    WorldPacket data(SMSG_ATTACKSWING_NOTINRANGE, 0);
-    GetSession()->SendPacket(&data);
+    GetSession()->SendPacket(std::make_unique<WorldPackets::Combat::AttackSwingNotInRange>());
 }
 
 void Player::SendAttackSwingNotStanding() const
 {
-    WorldPacket data(SMSG_ATTACKSWING_NOTSTANDING, 0);
-    GetSession()->SendPacket(&data);
+    GetSession()->SendPacket(std::make_unique<WorldPackets::Combat::AttackSwingNotStanding>());
 }
 
 void Player::SendAttackSwingDeadTarget() const
 {
-    WorldPacket data(SMSG_ATTACKSWING_DEADTARGET, 0);
-    GetSession()->SendPacket(&data);
+    GetSession()->SendPacket(std::make_unique<WorldPackets::Combat::AttackSwingDeadTarget>());
 }
 
 void Player::SendAttackSwingCantAttack() const
 {
-    WorldPacket data(SMSG_ATTACKSWING_CANT_ATTACK, 0);
-    GetSession()->SendPacket(&data);
+    GetSession()->SendPacket(std::make_unique<WorldPackets::Combat::AttackSwingCantAttack>());
 }
 
 void Player::SendAttackSwingCancelAttack() const
 {
-    WorldPacket data(SMSG_CANCEL_COMBAT, 0);
-    GetSession()->SendPacket(&data);
+    GetSession()->SendPacket(std::make_unique<WorldPackets::Combat::CancelCombat>());
 }
 
 void Player::SendAttackSwingBadFacingAttack() const
 {
-    WorldPacket data(SMSG_ATTACKSWING_BADFACING, 0);
-    GetSession()->SendPacket(&data);
+    GetSession()->SendPacket(std::make_unique<WorldPackets::Combat::AttackSwingBadFacing>());
 }
 
 void Player::SendAutoRepeatCancel() const
@@ -21613,7 +21605,6 @@ bool Player::ChangeReputationsForRace(uint8 oldRace, uint8 newRace)
     if (!changeTeam)
         return true;
     Team newTeam = TeamForRace(newRace);
-#define SWAP_TYPE(type, val1, val2) { type tmp; tmp = val1; val1 = val2; val2 = tmp; }
     // Certaines reputs a inverser
     for (std::map<uint32, uint32>::const_iterator it = sObjectMgr.factionchange_reputations.begin(); it != sObjectMgr.factionchange_reputations.end(); ++it)
     {
@@ -21627,8 +21618,8 @@ bool Player::ChangeReputationsForRace(uint8 oldRace, uint8 newRace)
         if (!pNew || !pOld)
             continue;
         CHANGERACE_LOG("Changement reputation %u (%i) <-> %u (%i)", my_new_reputation->ID, pNew->Standing, my_old_reputation->ID, pOld->Standing);
-        SWAP_TYPE(uint32, pNew->Flags, pOld->Flags);
-        SWAP_TYPE(int32, pNew->Standing, pOld->Standing);
+        std::swap(pNew->Flags, pOld->Flags);
+        std::swap(pNew->Standing, pOld->Standing);
         pOld->needSave = true;
         pNew->needSave = true;
         GetReputationMgr().SendState(pOld);
@@ -22046,8 +22037,7 @@ void Player::TaxiStepFinished(bool lastPointReached)
         {
             if (m_taxi.SetTaximaskNode(sourcenode))
             {
-                WorldPacket data(SMSG_NEW_TAXI_PATH, 0);
-                GetSession()->SendPacket(&data);
+                GetSession()->SendPacket(std::make_unique<WorldPackets::Taxi::NewTaxiPath>());
             }
         }
 

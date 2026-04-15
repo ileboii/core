@@ -7,6 +7,7 @@ void WorldPackets::Battleground::BattlefieldListRequest::ReadFromWorldPacket(Wor
 #endif
 }
 
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
 void WorldPackets::Battleground::AreaSpiritHealerQuery::ReadFromWorldPacket(WorldPacket& recv_data)
 {
     recv_data >> guid;
@@ -16,6 +17,7 @@ void WorldPackets::Battleground::AreaSpiritHealerQueue::ReadFromWorldPacket(Worl
 {
     recv_data >> guid;
 }
+#endif
 
 void WorldPackets::Battleground::BattlemasterHello::ReadFromWorldPacket(WorldPacket& recv_data)
 {
@@ -30,12 +32,14 @@ void WorldPackets::Battleground::BattleFieldPort::ReadFromWorldPacket(WorldPacke
     recv_data >> action;
 }
 
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
 void WorldPackets::Battleground::LeaveBattlefield::ReadFromWorldPacket(WorldPacket& recv_data)
 {
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_8_4
     recv_data >> mapId;
 #endif
 }
+#endif
 
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_6_1
 void WorldPackets::Battleground::BattlemasterJoin::ReadFromWorldPacket(WorldPacket& recv_data)
@@ -51,3 +55,10 @@ void WorldPackets::Battleground::BattlefieldJoin::ReadFromWorldPacket(WorldPacke
 {
     recv_data >> mapId;
 }
+
+void WorldPackets::Battleground::GroupJoinedBattleground::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << result;
+}
+
+

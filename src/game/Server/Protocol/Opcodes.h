@@ -52,9 +52,11 @@ inline bool IsAnyMoveAckOpcode(uint16 opcode)
         case CMSG_MOVE_HOVER_ACK:
         case CMSG_MOVE_FEATHER_FALL_ACK:
         case CMSG_MOVE_WATER_WALK_ACK:
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
         case CMSG_FORCE_WALK_SPEED_CHANGE_ACK:
         case CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK:
         case CMSG_FORCE_TURN_RATE_CHANGE_ACK:
+#endif
             return true;
     }
 
@@ -83,9 +85,11 @@ inline bool IsSpeedAckOpcode(uint16 opcode)
         case CMSG_FORCE_RUN_SPEED_CHANGE_ACK:
         case CMSG_FORCE_RUN_BACK_SPEED_CHANGE_ACK:
         case CMSG_FORCE_SWIM_SPEED_CHANGE_ACK:
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
         case CMSG_FORCE_WALK_SPEED_CHANGE_ACK:
         case CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK:
         case CMSG_FORCE_TURN_RATE_CHANGE_ACK:
+#endif
             return true;
     }
 

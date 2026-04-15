@@ -396,7 +396,7 @@ Handlers BuildOpcodeList()
     DEFINE_HANDLER(CMSG_CANCEL_CHANNELLING,           STATUS_LOGGEDIN,  PACKET_PROCESS_SPELLS,        &WorldSession::HandleCancelChanneling);
     INVALID_PACKET(SMSG_AI_REACTION,                  UnhandleReason::SendByServer);
     DEFINE_HANDLER(CMSG_SET_SELECTION,                STATUS_LOGGEDIN,  PACKET_PROCESS_SPELLS,        &WorldSession::HandleSetSelectionOpcode);
-    INVALID_PACKET(CMSG_SET_TARGET_OBSOLETE,          UnhandleReason::Unhandled);
+    DEFINE_HANDLER(CMSG_SET_TARGET_OBSOLETE,          STATUS_LOGGEDIN,  PACKET_PROCESS_SPELLS,        &WorldSession::HandleSetMouseOverTargetOpcode);
     DEFINE_HANDLER(CMSG_ATTACKSWING,                  STATUS_LOGGEDIN,  PACKET_PROCESS_SPELLS,        &WorldSession::HandleAttackSwingOpcode);
     DEFINE_HANDLER(CMSG_ATTACKSTOP,                   STATUS_LOGGEDIN,  PACKET_PROCESS_SPELLS,        &WorldSession::HandleAttackStopOpcode);
     INVALID_PACKET(SMSG_ATTACKSTART,                  UnhandleReason::SendByServer);
@@ -728,7 +728,11 @@ Handlers BuildOpcodeList()
     INVALID_PACKET(SMSG_DAMAGE_CALC_LOG,              UnhandleReason::SendByServer);
     INVALID_PACKET(CMSG_ENABLE_DAMAGE_LOG,            UnhandleReason::Unhandled);
     DEFINE_HANDLER(CMSG_GROUP_CHANGE_SUB_GROUP,       STATUS_LOGGEDIN,  PACKET_PROCESS_GROUP,         &WorldSession::HandleGroupChangeSubGroupOpcode);
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
     DEFINE_HANDLER(CMSG_REQUEST_PARTY_MEMBER_STATS,   STATUS_LOGGEDIN,  PACKET_PROCESS_GROUP,         &WorldSession::HandleRequestPartyMemberStatsOpcode);
+#else
+    INVALID_PACKET(SMSG_RAID_MEMBER_STATS, UnhandleReason::SendByServer);
+#endif
     DEFINE_HANDLER(CMSG_GROUP_SWAP_SUB_GROUP,         STATUS_LOGGEDIN,  PACKET_PROCESS_GROUP,         &WorldSession::HandleGroupSwapSubGroupOpcode);
     INVALID_PACKET(CMSG_RESET_FACTION_CHEAT,          UnhandleReason::Unhandled);
     DEFINE_HANDLER(CMSG_AUTOSTORE_BANK_ITEM,          STATUS_LOGGEDIN,  PACKET_PROCESS_SELF_ITEMS,    &WorldSession::HandleAutoStoreBankItemOpcode);
@@ -817,6 +821,7 @@ Handlers BuildOpcodeList()
     DEFINE_HANDLER(CMSG_BATTLEFIELD_PORT,             STATUS_LOGGEDIN,  PACKET_PROCESS_WORLD,         &WorldSession::HandleBattleFieldPortOpcode);
     DEFINE_HANDLER(MSG_INSPECT_HONOR_STATS,           STATUS_LOGGEDIN,  PACKET_PROCESS_MAP,           &WorldSession::HandleInspectHonorStatsOpcode);
     DEFINE_HANDLER(CMSG_BATTLEMASTER_HELLO,           STATUS_LOGGEDIN,  PACKET_PROCESS_MAP,           &WorldSession::HandleBattlemasterHelloOpcode);
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
     INVALID_PACKET(CMSG_MOVE_START_SWIM_CHEAT,        UnhandleReason::Unhandled);
     INVALID_PACKET(CMSG_MOVE_STOP_SWIM_CHEAT,         UnhandleReason::Unhandled);
     INVALID_PACKET(SMSG_FORCE_WALK_SPEED_CHANGE,      UnhandleReason::SendByServer);
@@ -831,12 +836,15 @@ Handlers BuildOpcodeList()
     DEFINE_HANDLER(CMSG_AREA_SPIRIT_HEALER_QUEUE,     STATUS_LOGGEDIN,  PACKET_PROCESS_MAP,           &WorldSession::HandleAreaSpiritHealerQueueOpcode);
     INVALID_PACKET(SMSG_AREA_SPIRIT_HEALER_TIME,      UnhandleReason::SendByServer);
     INVALID_PACKET(CMSG_GM_UNTEACH,                   UnhandleReason::Unhandled);
+#endif
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
     INVALID_PACKET(SMSG_WARDEN_DATA,                  UnhandleReason::SendByServer);
     DEFINE_HANDLER(CMSG_WARDEN_DATA,                  STATUS_AUTHED,    PACKET_PROCESS_WORLD,         &WorldSession::HandleWardenDataOpcode);
 #endif
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
     INVALID_PACKET(SMSG_GROUP_JOINED_BATTLEGROUND,    UnhandleReason::SendByServer);
     DEFINE_HANDLER(MSG_BATTLEGROUND_PLAYER_POSITIONS, STATUS_LOGGEDIN,  PACKET_PROCESS_MAP,           &WorldSession::HandleBattleGroundPlayerPositionsOpcode);
+#endif
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
     INVALID_PACKET(SMSG_PARTY_MEMBER_STATS_FULL,      UnhandleReason::SendByServer);
 #endif

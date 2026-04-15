@@ -657,7 +657,7 @@ uint32 Unit::DealDamage(Unit* pVictim, uint32 damage, CleanDamage const* cleanDa
         if (damagetype != SELF_DAMAGE)
 #endif
             RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
-        
+
         // feign death does not break from environmental damage, tested on classic
         if (damagetype != SELF_DAMAGE)
             RemoveSpellsCausingAura(SPELL_AURA_FEIGN_DEATH);
@@ -892,7 +892,7 @@ uint32 Unit::DealDamage(Unit* pVictim, uint32 damage, CleanDamage const* cleanDa
                     // skip channeled spell (processed differently below)
                     if (i == CURRENT_CHANNELED_SPELL)
                         continue;
-    
+
                     if (Spell* spell = pVictim->GetCurrentSpell(CurrentSpellTypes(i)))
                     {
                         if (spell->getState() == SPELL_STATE_PREPARING)
@@ -4421,7 +4421,9 @@ void Unit::SendPeriodicAuraLog(SpellPeriodicAuraLogInfo const* pInfo, AuraType a
             data << uint32(pInfo->damage);                  // damage
             data << uint32(aura->GetSpellProto()->School);
             data << uint32(pInfo->absorb);                  // absorb
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
             data << int32(pInfo->resist);                   // resist
+#endif
             break;
         case SPELL_AURA_PERIODIC_HEAL:
         case SPELL_AURA_OBS_MOD_HEALTH:
@@ -7111,6 +7113,7 @@ bool Unit::FindPendingMovementKnockbackChange(MovementInfo& movementInfo, uint32
     return false;
 }
 
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
 bool Unit::FindPendingMovementSpeedChange(float speedReceived, uint32 movementCounter, UnitMoveType moveType)
 {
     for (auto pendingChange = m_pendingMovementChanges.begin(); pendingChange != m_pendingMovementChanges.end(); pendingChange++)
@@ -7142,6 +7145,35 @@ bool Unit::FindPendingMovementSpeedChange(float speedReceived, uint32 movementCo
 
     return false;
 }
+#else
+bool Unit::FindPendingMovementSpeedChange(float& newSpeed, UnitMoveType moveType)
+{
+    for (auto pendingChange = m_pendingMovementChanges.begin(); pendingChange != m_pendingMovementChanges.end(); pendingChange++)
+    {
+        UnitMoveType moveTypeSent;
+        switch (pendingChange->movementChangeType)
+        {
+            case SPEED_CHANGE_WALK:                 moveTypeSent = MOVE_WALK; break;
+            case SPEED_CHANGE_RUN:                  moveTypeSent = MOVE_RUN; break;
+            case SPEED_CHANGE_RUN_BACK:             moveTypeSent = MOVE_RUN_BACK; break;
+            case SPEED_CHANGE_SWIM:                 moveTypeSent = MOVE_SWIM; break;
+            case SPEED_CHANGE_SWIM_BACK:            moveTypeSent = MOVE_SWIM_BACK; break;
+            case RATE_CHANGE_TURN:                  moveTypeSent = MOVE_TURN_RATE; break;
+            default:
+                continue;
+        }
+
+        if (moveTypeSent != moveType)
+            continue;
+
+        newSpeed = pendingChange->newValue;
+        m_pendingMovementChanges.erase(pendingChange);
+        return true;
+    }
+
+    return false;
+}
+#endif
 
 Player* Unit::GetPlayerMovingMe()
 {
@@ -9234,7 +9266,7 @@ void Unit::SendPetCastFail(uint32 spellid, SpellCastResult msg)
     {
         WorldPacket data(SMSG_PET_CAST_FAILED, 4 + 1 + 1);
         data << uint32(spellid);
-        data << uint8(2); // 1.12: for SMSG_CAST_RESULT probably 2 = failure, 0 = success.
+        data << static_cast<uint8>(SPELL_RESULT_STATUS_FAIL);
         data << uint8(msg);
         pOwner->GetSession()->SendPacket(&data);
     }

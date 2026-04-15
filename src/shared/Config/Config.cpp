@@ -89,6 +89,7 @@ bool Config::ProcessLine(char const* line)
                     case '[': // section
                         return false;
                     case ' ': // skip white space
+                    case '\t':
                         break;
                     case '=': // name has been read
                         if (stage == STAGE_FIND_NAME)
@@ -129,6 +130,7 @@ bool Config::ProcessLine(char const* line)
                         }
                         break;
                     case ' ': // ignore white space until text found
+                    case '\t':
                         if (stage == STAGE_FIND_VALUE)
                             break;
                     default:
