@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/values/FreeMoveValues.h"
 #include "MoveToTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -250,7 +251,7 @@ bool MoveToTravelTargetAction::isUseful()
     }
 
     if (!travelTarget->IsForced())
-        if (!AI_VALUE2(bool, "can free move to", travelTarget->GetPosStr()))
+        if (!CanFreeMoveValue::CanFreeMoveTo(ai, *travelTarget->GetPosition()))
             return false;
 
     return true;

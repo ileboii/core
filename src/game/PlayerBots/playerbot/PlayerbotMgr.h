@@ -52,6 +52,8 @@ public:
     static std::unordered_map<std::string, std::string> GetCommandTexts();
 protected:
     virtual void OnBotLoginInternal(Player * const bot) = 0;
+    virtual void OnBotDeleted(uint32 botGuid, uint32 accountId);
+    virtual uint32 GetOrCreateAccount(Player* master, std::string& error);
     void Cleanup();   
 private:
     typedef std::list<std::string> (PlayerbotHolder::*HolderCommandHandler)(Player* master, const std::string param, AccountTypes security);
@@ -72,7 +74,8 @@ private:
     std::list<std::string> HandleGuild(Player* master, const std::string param, AccountTypes security);
     std::list<std::string> HandleRaid(Player* master, const std::string param, AccountTypes security);
     std::list<std::string> HandleRaidLeader(Player* master, const std::string param, AccountTypes security);
-    
+    std::list<std::string> HandleCreate(Player* master, const std::string param, AccountTypes security);
+    std::list<std::string> HandleGroup(Player* master, const std::string param, AccountTypes security);
 
     std::string HandleBotAlways(Player* bot, Player* master, const std::string param);
     std::string HandleBotDebug(Player* bot, Player* master, const std::string param);
@@ -86,6 +89,8 @@ private:
 
     std::string HandleBotAddLogin(Player* bot, Player* master, const std::string param);
     std::string HandleBotRemoveLogout(Player* bot, Player* master, const std::string param);
+    std::string HandleBotCreate(Player* bot, Player* master, const std::string param);
+    std::string HandleBotDelete(Player* bot, Player* master, const std::string param);
     std::string HandleBotGear(Player* bot, Player* master, const std::string param);
     std::string HandleBotTrainLearn(Player* bot, Player* master, const std::string param);
     std::string HandleBotFoodDrink(Player* bot, Player* master, const std::string param);

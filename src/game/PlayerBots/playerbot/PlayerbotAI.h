@@ -304,14 +304,6 @@ enum ActivityType
     MAX_ACTIVITY_TYPE
 };
 
-enum BotRoles
-{
-    BOT_ROLE_NONE = 0x00,
-    BOT_ROLE_TANK = 0x01,
-    BOT_ROLE_HEALER = 0x02,
-    BOT_ROLE_DPS = 0x04
-};
-
 class PacketHandlingHelper
 {
 public:
@@ -391,8 +383,8 @@ public:
     void ResetStrategies(bool autoLoad = true);
     void ReInitCurrentEngine();
     void Reset(bool full = false);
-    bool IsTank(Player* player, bool inGroup = true);
-    bool IsHeal(Player* player, bool inGroup = true);
+    static bool IsTank(Player* player, bool inGroup = true);
+    static bool IsHeal(Player* player, bool inGroup = true);
     bool IsRanged(Player* player, bool inGroup = true);
     Creature* GetCreature(ObjectGuid guid) const;
     Creature* GetAnyTypeCreature(ObjectGuid guid) const;
@@ -580,8 +572,9 @@ public:
     bool IsGroupLeader() { return bot->GetGroup() && bot->GetGroup()->GetLeaderGuid() == bot->GetObjectGuid(); }
 
     //Check if player is safe to use (thread-safe with Continents.Instanciate sub-maps).
-    bool IsSafe(Player* player) { return player && player->GetMapId() == bot->GetMapId() && player->GetInstanceId() == bot->GetInstanceId() && bot->FindMap() && player->FindMap() == bot->FindMap() && !player->IsBeingTeleported(); }
-    bool IsSafe(WorldObject* obj) { return obj && obj->GetMapId() == bot->GetMapId() && obj->GetInstanceId() == bot->GetInstanceId() && bot->FindMap() && obj->FindMap() == bot->FindMap() && (!obj->IsPlayer() || !((Player*)obj)->IsBeingTeleported()); }
+    static bool IsSafe(Player* player, WorldObject* obj) { return obj && obj->GetMapId() == player->GetMapId() && obj->GetInstanceId() == player->GetInstanceId() && player->FindMap() && obj->FindMap() == player->FindMap() && (!obj->IsPlayer() || !((Player*)obj)->IsBeingTeleported()); }
+    bool IsSafe(WorldObject* obj) { return IsSafe(bot, obj); }
+    bool IsSafe(Player* player) { return IsSafe(bot, (WorldObject*)player); }
 
     //Returns a semi-random (cycling) number that is fixed for each bot.
     uint32 GetFixedBotNumber(BotTypeNumber typeNumber, uint32 maxNum = 100, float cyclePerMin = 1, bool ignoreGuid = false); 

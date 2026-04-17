@@ -7900,7 +7900,7 @@ static const uint32 uPriorizedWeightStoneIds[8] =
  * FindStoneFor()
  * return Item* Returns sharpening/weight stone item eligible to enchant a bot weapon
  *
- * params:weapon Item* the weap�n the function should search and return a enchanting item for
+ * params:weapon Item* the weapï¿½n the function should search and return a enchanting item for
  * return nullptr if no relevant item is found in bot inventory, else return a sharpening or weight
  * stone based on the weapon subclass
  *
@@ -8154,36 +8154,98 @@ bool PlayerbotAI::CanMove()
 {
     // do not allow if not vehicle driver
     if (IsInVehicle() && !IsInVehicle(true))
+    {
         return false;
+    }
 
-    if (sServerFacade.IsFrozen(bot) ||
-        sServerFacade.IsInRoots(bot) ||
-        sServerFacade.IsFeared(bot) ||
-        sServerFacade.IsCharmed(bot) ||
-        bot->HasUnitState(UNIT_STATE_STUNNED) ||
-        bot->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION) ||
-        bot->IsPolymorphed() ||
-        bot->IsTaxiFlying() ||
-        (sServerFacade.UnitIsDead(bot) && !bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST)) ||
-        bot->IsBeingTeleported() ||
-        bot->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL) ||
-        bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CONFUSED) ||
-        IsJumping() ||
-#ifdef MANGOSBOT_ONE
-        bot->IsFalling() ||
-        bot->IsJumping())
-#else
-        bot->IsFalling())
-#endif
+    if (sServerFacade.IsFrozen(bot))
+    {
         return false;
+    }
+    if (sServerFacade.IsInRoots(bot))
+    {
+        return false;
+    }
+    if (sServerFacade.IsFeared(bot))
+    {
+        return false;
+    }
+    if (sServerFacade.IsCharmed(bot))
+    {
+        return false;
+    }
+    if (bot->HasUnitState(UNIT_STATE_STUNNED))
+    {
+        return false;
+    }
+    if (bot->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION))
+    {
+        return false;
+    }
+    if (bot->IsPolymorphed())
+    {
+        return false;
+    }
+    if (bot->IsTaxiFlying())
+    {
+        return false;
+    }
+    if (sServerFacade.UnitIsDead(bot) && !bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
+    {
+        return false;
+    }
+    if (bot->IsBeingTeleported())
+    {
+        return false;
+    }
+    if (bot->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL))
+    {
+        return false;
+    }
+    if (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CONFUSED))
+    {
+        return false;
+    }
+    if (IsJumping())
+    {
+        return false;
+    }
+#ifdef MANGOSBOT_ONE
+    if (bot->IsFalling())
+    {
+        return false;
+    }
+    if (bot->IsJumping())
+    {
+        return false;
+    }
+#else
+    if (bot->IsFalling())
+    {
+        return false;
+    }
+#endif
 
     MotionMaster& mm = *bot->GetMotionMaster();
+    MovementGeneratorType currentMotion = mm.GetCurrentMovementGeneratorType();
+
 #ifdef CMANGOS
-    return mm.GetCurrentMovementGeneratorType() != FLIGHT_MOTION_TYPE && mm.GetCurrentMovementGeneratorType() != FALL_MOTION_TYPE;
+    if (currentMotion == FLIGHT_MOTION_TYPE)
+    {
+        return false;
+    }
+    if (currentMotion == FALL_MOTION_TYPE)
+    {
+        return false;
+    }
 #endif
 #ifdef MANGOS
-    return mm.GetCurrentMovementGeneratorType() != FLIGHT_MOTION_TYPE;
+    if (currentMotion == FLIGHT_MOTION_TYPE)
+    {
+        return false;
+    }
 #endif
+    return true;
 }
 
 void PlayerbotAI::StopMoving()

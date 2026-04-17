@@ -791,21 +791,50 @@ void RandomPlayerbotMgr::ScaleBotActivity()
 
 void RandomPlayerbotMgr::LoginFreeBots()
 {
-
     if (!sPlayerbotAIConfig.freeAltBots.empty() && sPlayerbotAIConfig.botAutologin != BotAutoLogin::LOGIN_ONLY_ALWAYS_ACTIVE)
     {
-        for (auto bot : sPlayerbotAIConfig.freeAltBots)
-        {
-            Player* player = sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER,bot.second));
+        std::list<std::pair<uint32,uint32>> botsToRemove;
 
-            PlayerbotAI* ai = player ? player->GetPlayerbotAI() : NULL;
+        for (auto [accountId, botGuid] : sPlayerbotAIConfig.freeAltBots)
+        {
+            ObjectGuid guid(ObjectGuid(HIGHGUID_PLAYER, botGuid));
+            Player* player = sObjectMgr.GetPlayer(guid);
 
             if (!player)
             {
-                sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Add player %d", bot.second);
-                AddPlayerBot(bot.second, bot.first);
+                sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Add player %d", botGuid);
+                AddPlayerBot(botGuid, accountId);
+            }
+            else if (!player->IsBeingTeleported())
+            {
+                if (sRandomPlayerbotMgr.GetValue(botGuid, "create levelup"))
+                {
+                    PlayerbotFactory factory(player, player->GetLevel());
+                    factory.Randomize(false, false);
+                    sRandomPlayerbotMgr.SetValue(botGuid, "create levelup", 0);
+                }
+
+                if (sRandomPlayerbotMgr.GetValue(botGuid, "create group"))
+                {
+                    std::string groupWith = sRandomPlayerbotMgr.GetData(botGuid, "create group");
+                    if (!groupWith.empty())
+                    {
+                        Player* master = sObjectAccessor.FindPlayerByName(groupWith.c_str());
+                        if (master)
+                            player->GetPlayerbotAI()->DoSpecificAction("join", Event("create group", "", master));
+                    }
+                    sRandomPlayerbotMgr.SetValue(botGuid, "create group", 0);
+                }
+
+                BotAlwaysOnline always = BotAlwaysOnline(sRandomPlayerbotMgr.GetValue(botGuid, "always"));
+                if (always != BotAlwaysOnline::ACTIVE)
+                    botsToRemove.push_back({accountId, botGuid});
             }
         }
+
+        sPlayerbotAIConfig.freeAltBots.remove_if([&](const std::pair<uint32, uint32>& entry) {
+            return std::find(botsToRemove.begin(), botsToRemove.end(), entry) != botsToRemove.end();
+        });
     }
 }
 
@@ -3290,7 +3319,7 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* handler, cha
             return true;
     }
 
-    std::list<std::string> messages = sRandomPlayerbotMgr.HandlePlayerbotCommand(args, NULL, static_cast<CliHandler*>(handler) ? static_cast<CliHandler*>(handler)->GetAccessLevel() : SEC_PLAYER);
+    std::list<std::string> messages = sRandomPlayerbotMgr.HandlePlayerbotCommand(args, handler->GetSession() ? handler->GetSession()->GetPlayer():nullptr, static_cast<CliHandler*>(handler) ? static_cast<CliHandler*>(handler)->GetAccessLevel() : SEC_PLAYER);
     for (std::list<std::string>::iterator i = messages.begin(); i != messages.end(); ++i)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "%s", i->c_str());
@@ -4375,4 +4404,107 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleLoginDebug(std::string p
     std::string msg = "Login debug toggled.";
     messages.push_back(msg);
     return messages;
+}
+
+
+uint32 RandomPlayerbotMgr::GetOrCreateAccount(Player* master, std::string& error)
+{
+    uint32 maxCharsPerAccount = 9;
+#ifdef MANGOSBOT_TWO
+    maxCharsPerAccount = 10;
+#endif
+
+    auto accountNrQr = LoginDatabase.PQuery("SELECT max(cast(replace(lower(username), lower('%s'), '') as unsigned) + 1 - 1) maxAccountNr FROM account WHERE replace(lower(username), lower('%s'), '') != 0", sPlayerbotAIConfig.randomBotAccountPrefix.c_str(), sPlayerbotAIConfig.randomBotAccountPrefix.c_str());
+
+    if (!accountNrQr)
+    {
+        error = "Failed to find last " + sPlayerbotAIConfig.randomBotAccountPrefix + " account nr.";
+        return 0;
+    }
+
+    Field* fields = accountNrQr->Fetch();
+    uint32 accountNumber = sPlayerbotAIConfig.randomBotAccountCount + 1;
+    uint32 maxAccountNum = fields[0].GetUInt32();
+
+    for (uint32 i = 0; i < 10000; i++)
+    {
+        std::ostringstream accountNameStr;
+        accountNameStr << sPlayerbotAIConfig.randomBotAccountPrefix << accountNumber;
+        std::string accountName = accountNameStr.str();
+
+        uint32 accountId = sAccountMgr.GetId(accountName);
+
+        if (!accountId)
+        {
+            std::string password;
+            if (sPlayerbotAIConfig.randomBotRandomPassword)
+            {
+                for (int i = 0; i < 10; i++)
+                    password += (char)urand('!', 'z');
+            }
+            else
+                password = accountName;
+
+            AccountOpResult result = sAccountMgr.CreateAccount(accountName, password);
+
+            if (result == AOR_OK)
+            {
+                uint32 accountId = sAccountMgr.GetId(accountName);
+                if (accountId)
+                {
+                    sPlayerbotAIConfig.randomBotAccounts.push_back(accountId);
+                    return accountId;
+                }
+            }
+
+            error = "Failed to create account";
+            return 0;
+        }
+
+        uint32 charCount = sAccountMgr.GetCharactersCount(accountId);
+
+        if (charCount < maxCharsPerAccount)
+        {
+            if (!sPlayerbotAIConfig.IsInRandomAccountList(accountId))
+            {
+                sPlayerbotAIConfig.randomBotAccounts.push_back(accountId);
+            }
+            return accountId;
+        }
+
+        accountNumber++;
+    }
+
+    error = "Failed to find a suitable account.";
+    return 0;
+}
+
+void RandomPlayerbotMgr::OnBotDeleted(uint32 botGuid, uint32 accountId)
+{
+    if (accountId > 0 && sPlayerbotAIConfig.IsInRandomAccountList(accountId))
+    {
+        if (sAccountMgr.GetCharactersCount(accountId) == 0)
+        {
+            std::ostringstream prefix;
+            prefix << sPlayerbotAIConfig.randomBotAccountPrefix;
+            size_t prefixLen = prefix.str().length();
+
+            auto result = LoginDatabase.PQuery("SELECT username FROM account WHERE id = '%u'", accountId);
+            if (result)
+            {
+                std::string username = result->Fetch()[0].GetString();
+                if (username.substr(0, prefixLen) == prefix.str())
+                {
+                    uint32 accountNum = std::stoul(username.substr(prefixLen));
+                    if (accountNum >= sPlayerbotAIConfig.randomBotAccountCount)
+                    {
+                        sAccountMgr.DeleteAccount(accountId);
+                        sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "Deleted empty random bot account: %s (id: %u)", username.c_str(), accountId);
+                    }
+                }
+            }
+        }
+    }
+
+    CharacterDatabase.PExecute("DELETE FROM ai_playerbot_random_bots WHERE bot = '%u'", botGuid);
 }
