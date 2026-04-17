@@ -249,6 +249,16 @@ bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 de
 
         bot->SetMoney(savedMoney);
 
+        if (!didFly)
+        {
+            TaxiNodesEntry const* destNode = sObjectMgr.GetTaxiNodeEntry(destTaxiNode);
+            if (destNode)
+            {
+                bot->TeleportTo(destNode->map_id, destNode->x, destNode->y, destNode->z, bot->GetOrientation());
+                return true;
+            }
+        }
+
         return didFly;
     }
 
