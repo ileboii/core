@@ -68,8 +68,11 @@ void SqlDelayThread::run()
         if ((lastAliveCheck + aliveCheckInterval) <= Clock::now())
         {
             sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Run database reachability check");
-            m_dbEngine->Ping();
-            /* ignore result */ m_dbConnection->Query("SELECT 1"); // TODO: Why is this here, when its already check in m_dbEngine->Ping(); ???
+            // Only ping our own connection. Do NOT call m_dbEngine->Ping() here
+            // because it locks ALL connections (async + query pool), which causes
+            // a deadlock when another thread holds a query connection lock while
+            // waiting for this delay thread to process its queue.
+            /* ignore result */ m_dbConnection->Query("SELECT 1");
             lastAliveCheck = Clock::now();
         }
     }
