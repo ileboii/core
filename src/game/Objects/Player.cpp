@@ -22813,3 +22813,15 @@ void Player::ClearTemporaryWarWithFactions()
         m_temporaryAtWarFactions.clear();
     }
 }
+
+bool Player::IsInactivePlayerbot() const
+{
+    if (!m_playerbotAI)
+        return false;
+    // AllowActivity / IsRealPlayer are non-const (cache-updating), but
+    // the observable semantics for our purposes are const.
+    PlayerbotAI* ai = const_cast<PlayerbotAI*>(m_playerbotAI);
+    if (ai->IsRealPlayer())
+        return false;
+    return !ai->AllowActivity();
+}

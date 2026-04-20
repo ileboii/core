@@ -23,6 +23,8 @@
 #include "Pet.h"
 #include "Totem.h"
 #include "Player.h"
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/PlayerbotAIConfig.h"
 #include "Log.h"
 #include "Opcodes.h"
 #include "WorldPacket.h"
@@ -6404,6 +6406,20 @@ bool Unit::IsTargetableBy(WorldObject const* pCaster, bool forAoE, bool checkAli
 
             if (!forAoE && HasUnitState(UNIT_STATE_FEIGN_DEATH))
                 return false;
+
+            // Inactive playerbots must not be targetable by creature aggro/attacks.
+            // This prevents idle/far-away bots from being pulled into combat by
+            // mobs, which otherwise forces them out of the inactive state and
+            // causes server load. Gated on the existing DisableBotOptimizations
+            // flag so operators can revert to vanilla behavior if desired.
+            if (!sPlayerbotAIConfig.disableBotOptimizations)
+            {
+                if (Player const* pBotPlayer = ToPlayer())
+                {
+                    if (pBotPlayer->IsInactivePlayerbot())
+                        return false;
+                }
+            }
         }
 
         // attacker flags prevent attacking victim too

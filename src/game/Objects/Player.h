@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
  * Copyright (C) 2009-2011 MaNGOSZero <https://github.com/mangos/zero>
  * Copyright (C) 2011-2016 Nostalrius <https://nostalrius.org>
@@ -2500,6 +2500,9 @@ class Player final: public Unit
         PlayerbotMgr* GetPlayerbotMgr() const { return m_playerbotMgr; }
         void SetPlayerbotMgr(PlayerbotMgr* mgr) { m_playerbotMgr = mgr; }
         bool isRealPlayer() const { return m_playerbotAI == nullptr; }
+        // True if this player is a random playerbot that is currently not
+        // allowed to perform activity (used to keep mobs from aggroing idle bots).
+        bool IsInactivePlayerbot() const;
     private:
         PlayerbotAI* m_playerbotAI = nullptr;
         PlayerbotMgr* m_playerbotMgr = nullptr;

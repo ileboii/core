@@ -56,6 +56,7 @@
 #include "world/world_event_wareffort.h"
 #include "CreatureGroups.h"
 #include "Geometry.h"
+#include "PlayerBots/playerbot/PlayerbotAIConfig.h"
 
 Map::~Map()
 {
@@ -790,7 +791,12 @@ inline void Map::UpdateActiveCellsAsynch(uint32 now, uint32 diff)
 
     // Mark all cells that need update
     for (m_mapRefIter = m_mapRefManager.begin(); m_mapRefIter != m_mapRefManager.end(); ++m_mapRefIter)
-        MarkCellsAroundObject(m_mapRefIter->getSource());
+    {
+        Player* plr = m_mapRefIter->getSource();
+        if (!sPlayerbotAIConfig.disableBotOptimizations && !plr->isRealPlayer())
+            continue;
+        MarkCellsAroundObject(plr);
+    }
 
     for (m_activeNonPlayersIter = m_activeNonPlayers.begin(); m_activeNonPlayersIter != m_activeNonPlayers.end(); ++m_activeNonPlayersIter)
         MarkCellsAroundObject(*m_activeNonPlayersIter);
@@ -817,6 +823,13 @@ inline void Map::UpdateActiveCellsSynch(uint32 now, uint32 diff)
     for (m_mapRefIter = m_mapRefManager.begin(); m_mapRefIter != m_mapRefManager.end(); ++m_mapRefIter)
     {
         Player* plr = m_mapRefIter->getSource();
+        if (!sPlayerbotAIConfig.disableBotOptimizations && !plr->isRealPlayer())
+        {
+            // Only ensure the grid is loaded for bots, skip full cell updates
+            // so mobs around inactive bots don't get updated and can't aggro.
+            EnsureGridLoaded(plr->GetCurrentCell());
+            continue;
+        }
         UpdateCellsAroundObject(now, diff, plr);
     }
 
