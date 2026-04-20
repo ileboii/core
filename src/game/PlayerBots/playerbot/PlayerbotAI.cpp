@@ -1957,7 +1957,16 @@ void PlayerbotAI::DoNextAction(bool min)
 
     bool minimal = !AllowActivity();
 
-    currentEngine->DoNextAction(NULL, 0, (minimal || min), bot->IsTaxiFlying());
+    bool needsTravelTarget = false;
+    if (minimal && sPlayerbotAIConfig.enableMinimalMove)
+    {
+        if (!aiObjectContext->GetValue<bool>("travel target active")->Get())
+            needsTravelTarget = true;
+        else if (aiObjectContext->GetValue<LastMovement&>("last movement")->Get().lastPath.empty())
+            needsTravelTarget = true;
+    }
+
+    currentEngine->DoNextAction(NULL, 0, ((minimal && !needsTravelTarget) || min), bot->IsTaxiFlying());
 
     if (!bot->IsInWorld()) //Teleport out of bg
         return;

@@ -198,7 +198,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
 bool MoveToTravelTargetAction::isUseful()
 {
-    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
+    if (!sPlayerbotAIConfig.enableMinimalMove && !ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
     if (!AI_VALUE(bool, "travel target traveling"))
