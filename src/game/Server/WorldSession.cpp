@@ -132,6 +132,15 @@ void WorldSession::SendPacket(std::unique_ptr<ServerPacket> packet)
         return;
     }
 
+    // Playerbot AI packet handling
+    if (GetPlayer())
+    {
+        if (GetPlayer()->GetPlayerbotAI())
+            GetPlayer()->GetPlayerbotAI()->HandleBotOutgoingPacket(buffer);
+        else if (GetPlayer()->GetPlayerbotMgr())
+            GetPlayer()->GetPlayerbotMgr()->HandleMasterOutgoingPacket(buffer);
+    }
+
     if (!m_socket)
     {
         if (GetBot() && GetBot()->ai)
