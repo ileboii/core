@@ -1957,22 +1957,39 @@ void PlayerbotAI::DoNextAction(bool min)
 
     bool minimal = !AllowActivity();
 
-    bool needsTravelTarget = false;
+    bool needsFullTick = false;
     if (minimal && sPlayerbotAIConfig.enableMinimalMove)
     {
-        if (!aiObjectContext->GetValue<bool>("travel target active")->Get())
-            needsTravelTarget = true;
-        else if (aiObjectContext->GetValue<LastMovement&>("last movement")->Get().lastPath.empty())
-            needsTravelTarget = true;
+        TravelTarget* travelTarget = aiObjectContext->GetValue<TravelTarget*>("travel target")->Get();
+        if (!travelTarget->IsActive())
+        {
+            TravelStatus status = travelTarget->GetStatus();
+            if (status == TravelStatus::TRAVEL_STATUS_NONE || status == TravelStatus::TRAVEL_STATUS_EXPIRED)
+                needsFullTick = true;
+        }
     }
 
-    currentEngine->DoNextAction(NULL, 0, ((minimal && !needsTravelTarget) || min), bot->IsTaxiFlying());
+    currentEngine->DoNextAction(NULL, 0, ((minimal && !needsFullTick) || min), bot->IsTaxiFlying());
 
     if (!bot->IsInWorld()) //Teleport out of bg
         return;
 
     if (minimal)
     {
+        if (sPlayerbotAIConfig.enableMinimalMove && !needsFullTick)
+        {
+            TravelTarget* travelTarget = aiObjectContext->GetValue<TravelTarget*>("travel target")->Get();
+            if (!travelTarget->IsActive())
+            {
+                if (travelTarget->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
+                    DoSpecificAction("choose travel target", Event(), true);
+            }
+            else if (aiObjectContext->GetValue<LastMovement&>("last movement")->Get().lastPath.empty())
+            {
+                DoSpecificAction("move to travel target", Event(), true);
+            }
+        }
+
         if (!MovementAction::MinimalMove(this) && !bot->IsAFK() && !bot->InBattleGround() && !HasRealPlayerMaster())
             bot->ToggleAFK();
 
