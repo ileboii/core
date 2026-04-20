@@ -70,6 +70,7 @@ namespace ai
     class GuidPosition;
     class IterateItemsVisitor;
     class FindItemVisitor;
+    class LastMovement;
 
 	class MinValueCalculator {
 	public:
@@ -601,7 +602,8 @@ public:
     void SetMaster(Player* master) { this->master = master; this->masterGuid = master ? master->GetObjectGuid() : ObjectGuid(); }
     ObjectGuid GetMasterGuid() const { return masterGuid; }
     AiObjectContext* GetAiObjectContext() { return aiObjectContext; }
-    void SetAiObjectContext(AiObjectContext* aiObjectContext) { this->aiObjectContext = aiObjectContext; }
+    void SetAiObjectContext(AiObjectContext* aiObjectContext) { this->aiObjectContext = aiObjectContext; m_cachedLastMovement = nullptr; }
+    ai::LastMovement& GetLastMovement();
     ChatHelper* GetChatHelper() { return &chatHelper; }
     bool IsOpposing(Player* player);
     static bool IsOpposing(uint8 race1, uint8 race2);
@@ -710,6 +712,7 @@ protected:
     bool m_recordMessages = false;
     std::vector<std::string> m_recordedMessages;
     Event lastEvent;
+    ai::LastMovement* m_cachedLastMovement = nullptr;
 
 public:
     void RecordMessages(bool record) { m_recordMessages = record; if (!record) m_recordedMessages.clear(); }

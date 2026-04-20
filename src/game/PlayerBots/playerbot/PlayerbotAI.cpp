@@ -5740,39 +5740,48 @@ uint32 PlayerbotAI::GetMaxPreferedGuildSize()
     return (maxSize * (100 - memberMod)) / 100;
 }
 
+ai::LastMovement& PlayerbotAI::GetLastMovement()
+{
+    if (!m_cachedLastMovement)
+        m_cachedLastMovement = &aiObjectContext->GetValue<ai::LastMovement&>("last movement")->Get();
+    return *m_cachedLastMovement;
+}
+
 bool PlayerbotAI::HasPlayerNearby(WorldPosition pos, float range)
 {
     if (!range)
         range = pos.getVisibilityDistance();
 
     float sqRange = range * range;
-    bool nearPlayer = false;
+    uint32 const botMapId = bot->GetMapId();
+    uint32 const botInstanceId = bot->GetInstanceId();
     for (auto& i : sRandomPlayerbotMgr.GetPlayersSnapshot())
     {
         Player* player = i.second;
         if (!player->IsInWorld())
             continue;
 
-        if (!player->IsGameMaster() || !player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM))
+        // Filter out invisible GMs.
+        if (player->IsGameMaster() && player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM))
+            continue;
+
+        if (player->GetMapId() != botMapId || player->GetInstanceId() != botInstanceId)
+            continue;
+
+        if (pos.sqDistance(WorldPosition(player)) < sqRange)
+            return true;
+
+        // if player is far check farsight/cinematic camera
+        Camera& viewPoint = player->GetCamera();
+        WorldObject* viewObj = viewPoint.GetBody();
+        if (viewObj && viewObj != player)
         {
-            if (player->GetMapId() != bot->GetMapId() || player->GetInstanceId() != bot->GetInstanceId())
-                continue;
-
-            if (pos.sqDistance(WorldPosition(player)) < sqRange)
-                nearPlayer = true;
-
-            // if player is far check farsight/cinematic camera
-            Camera& viewPoint = player->GetCamera();
-            WorldObject* viewObj = viewPoint.GetBody();
-            if (viewObj && viewObj != player)
-            {
-                if (pos.sqDistance(WorldPosition(viewObj)) < sqRange)
-                    nearPlayer = true;
-            }
+            if (pos.sqDistance(WorldPosition(viewObj)) < sqRange)
+                return true;
         }
     }
 
-    return nearPlayer;
+    return false;
 }
 
 bool PlayerbotAI::HasPlayerNearby(float range)

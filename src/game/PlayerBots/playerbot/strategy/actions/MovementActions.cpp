@@ -448,14 +448,13 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
     if (!sPlayerbotAIConfig.enableMinimalMove)
         return false;
 
-    auto pmo1 = sPerformanceMonitor.start(PERF_MON_ACTION, "minimalMove", ai);
-
-    AiObjectContext* context = ai->GetAiObjectContext();
     Player* bot = ai->GetBot();
-    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+
 
     if (bot->IsTaxiFlying())
         return false;
+
+    LastMovement& lastMove = ai->GetLastMovement();
 
     if (lastMove.lastPath.empty())
         return false;
@@ -464,6 +463,8 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
     if (lastMove.nextTeleport > now)
         return false;
+
+    auto pmo1 = sPerformanceMonitor.start(PERF_MON_ACTION, "minimalMove", ai);
 
     lastMove.nextTeleport = now + sPlayerbotAIConfig.passiveDelay/1000; //For teleports/transports/ect 
 
