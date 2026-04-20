@@ -49,18 +49,24 @@ std::list<ObjectGuid> NearestGameObjects::Calculate()
 {
     std::list<GameObject*> targets;
 
+    CellPair pair(MaNGOS::ComputeCellPair(bot->GetPositionX(), bot->GetPositionY()));
+    Cell cell(pair);
+    cell.SetNoCreate();
+
     if (!qualifier.empty())
     {
         uint32 gameObjectID = stoi(qualifier);
         GameObjectsInObjectRangeCheck u_check(bot, range, gameObjectID);
         GameObjectListSearcher<GameObjectsInObjectRangeCheck> searcher(targets, u_check);
-        /* searcher not available */
+        TypeContainerVisitor<GameObjectListSearcher<GameObjectsInObjectRangeCheck>, GridTypeMapContainer> visitor(searcher);
+        cell.Visit(pair, visitor, *(bot->GetMap()), *bot, range);
     }
     else
     {
         AnyGameObjectInObjectRangeCheck u_check(bot, range);
         GameObjectListSearcher<AnyGameObjectInObjectRangeCheck> searcher(targets, u_check);
-        /* searcher not available */
+        TypeContainerVisitor<GameObjectListSearcher<AnyGameObjectInObjectRangeCheck>, GridTypeMapContainer> visitor(searcher);
+        cell.Visit(pair, visitor, *(bot->GetMap()), *bot, range);
     }
 
     std::list<ObjectGuid> result;
