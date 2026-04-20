@@ -5,9 +5,9 @@ namespace ai
 {
     enum DeadValueConstants
     {
-        DEATH_COUNT_BEFORE_EVAC = 15,
-        DEATH_COUNT_BEFORE_TRYING_ANOTHER_GRAVEYARD = 10,
-        DEATH_COUNT_BEFORE_REVIVING_AT_SPIRIT_HEALER = 8
+        DEATH_COUNT_BEFORE_EVAC = 30,
+        DEATH_COUNT_BEFORE_TRYING_ANOTHER_GRAVEYARD = 20,
+        DEATH_COUNT_BEFORE_REVIVING_AT_SPIRIT_HEALER = 25
     };
 
     class GraveyardValue : public GuidPositionCalculatedValue, public Qualified

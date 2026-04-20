@@ -206,11 +206,6 @@ bool FindCorpseAction::Execute(Event& event)
         {
 
             moved = MoveTo(moveToPos.getMapId(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), false, false);
-
-            if (!moved && !ai->HasActivePlayerMaster()) //We could not move to coprse. Try spirithealer instead.
-            {
-                moved = ai->DoSpecificAction("spirit healer", Event(), true);
-            }
         }
     }
 
