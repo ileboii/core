@@ -4759,6 +4759,10 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
     if (!applySickness)
         return;
 
+    // Check playerbot immune spell list for resurrection sickness
+    if (m_playerbotAI && m_playerbotAI->IsImmuneToSpell(SPELL_ID_PASSIVE_RESURRECTION_SICKNESS))
+        return;
+
     //Characters from level 1-10 are not affected by resurrection sickness.
     //Characters from level 11-19 will suffer from one minute of sickness
     //for each level they are above 10.

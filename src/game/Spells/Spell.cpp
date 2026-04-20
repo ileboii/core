@@ -47,6 +47,7 @@
 #include "TradeData.h"
 #include "Geometry.h"
 #include "Anticheat.h"
+#include "PlayerBots/playerbot/PlayerbotAI.h"
 
 using namespace Spells;
 
@@ -5486,6 +5487,14 @@ SpellCastResult Spell::CheckCast(bool strict)
         if ((m_spellInfo->MaxTargetLevel > 0) && (int32(target->GetLevel()) > m_spellInfo->MaxTargetLevel))
             return SPELL_FAILED_HIGHLEVEL;
 
+        // Check playerbot immune spell list
+        if (target->IsPlayer())
+        {
+            PlayerbotAI* bot = static_cast<Player*>(target)->GetPlayerbotAI();
+            if (bot && bot->IsImmuneToSpell(m_spellInfo->Id))
+                return SPELL_FAILED_IMMUNE;
+        }
+
 #if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_11_2
         // World of Warcraft Client Patch 1.12.0 (2006-08-22)
         // - Pickpocket can now be used on targets that are in combat, as long as the rogue remains stealthed.
@@ -7689,6 +7698,14 @@ bool Spell::CheckTarget(Unit* target, SpellEffectIndex eff)
     if (target->GetTypeId() != TYPEID_PLAYER && m_spellInfo->HasAttribute(SPELL_ATTR_EX3_ONLY_ON_PLAYER)
         && m_spellInfo->EffectImplicitTargetA[eff] != TARGET_UNIT_SCRIPT_NEAR_CASTER && m_spellInfo->EffectImplicitTargetA[eff] != TARGET_UNIT_CASTER)
         return false;
+
+    // Check playerbot immune spell list
+    if (target->IsPlayer())
+    {
+        PlayerbotAI* bot = static_cast<Player*>(target)->GetPlayerbotAI();
+        if (bot && bot->IsImmuneToSpell(m_spellInfo->Id))
+            return false;
+    }
 
     if (m_spellScript)
         return m_spellScript->OnCheckTarget(this, target, eff);
