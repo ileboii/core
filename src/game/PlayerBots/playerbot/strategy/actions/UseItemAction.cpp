@@ -298,7 +298,11 @@ bool UseAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(goGUID);
             if (go)
             {
-                const float distance = bot->GetDistance(go);
+                // Use center-to-center distance so small-bounding-radius
+                // objects (like mage portals) aren't beaten by nearby but
+                // much larger gameobjects whose bounding radius swallows
+                // most of the distance (e.g. trees, crates, walls).
+                const float distance = bot->GetDistance3dToCenter(go);
                 if (distance < closest)
                 {
                     targetGameObject = go;
@@ -359,7 +363,8 @@ bool UseAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(goGUID);
             if (go && std::string(go->GetName()).find(useName) != std::string::npos)
             {
-                const float distance = bot->GetDistance(go);
+                // See comment in the "go" branch above: compare center-to-center.
+                const float distance = bot->GetDistance3dToCenter(go);
                 if (distance < closest)
                 {
                     targetGameObject = go;
@@ -933,10 +938,18 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
         }
     }
 
-    std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
-    *packet << guid;
-    bot->GetSession()->SendPacket(&*packet);
-    
+    // Trigger the use server-side directly. Going through the opcode handler
+    // (HandleGameObjectUseOpcode) applies IsAtInteractDistance, which tests
+    // the gameobject's display bounding box - bots standing off to the side
+    // of e.g. a mage portal (GAMEOBJECT_TYPE_SPELLCASTER) fall outside that
+    // box and the portal silently does nothing for them. SendPacket doesn't
+    // work either, because on a bot session (no socket) it forwards the
+    // packet outbound to a non-existent client rather than invoking the
+    // server handler. The bot was explicitly commanded to use this object,
+    // so invoke Use() on the gameobject directly - same approach used by
+    // the chest/door branches above.
+    gameObject->Use(bot);
+
     std::ostringstream out; out << "Using " << chat->formatGameobject(gameObject);
     ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
     return true;
