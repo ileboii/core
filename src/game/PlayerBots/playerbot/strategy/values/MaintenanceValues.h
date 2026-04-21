@@ -73,7 +73,7 @@ namespace ai
     class CanSellValue : public BoolCalculatedValue
     {
     public:
-        CanSellValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can sell",2) {}
+        CanSellValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can sell",5) {}
         virtual bool Calculate() override { return ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT) && AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)) > 0; };
     };
 
@@ -94,8 +94,18 @@ namespace ai
     class CanAHSellValue : public BoolCalculatedValue
     {
     public:
-        CanAHSellValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can ah sell", 2) {}
-        virtual bool Calculate() override { return ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT) && AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_AH)) > 1 && AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::ah) > GetAuctionDeposit(); };
+        CanAHSellValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can ah sell", 5) {}
+        virtual bool Calculate() override
+        {
+            if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
+                return false;
+            if (AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_AH)) <= 1)
+                return false;
+            uint32 freeMoney = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::ah);
+            if (freeMoney == 0)
+                return false;
+            return freeMoney > GetAuctionDeposit();
+        }
 
         uint32 GetAuctionDeposit()
         {

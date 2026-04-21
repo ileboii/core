@@ -248,7 +248,7 @@ bool NeedTravelPurposeValue::Calculate()
 {
     TravelDestinationPurpose purpose = TravelDestinationPurpose(stoi(getQualifier()));
 
-    const std::map<TravelDestinationPurpose, SkillType> gatheringSkills =
+    static const std::map<TravelDestinationPurpose, SkillType> gatheringSkills =
     { {TravelDestinationPurpose::GatherFishing, SKILL_FISHING}
         , {TravelDestinationPurpose::GatherSkinning, SKILL_SKINNING}
         , {TravelDestinationPurpose::GatherMining, SKILL_MINING}

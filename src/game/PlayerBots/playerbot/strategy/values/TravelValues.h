@@ -159,7 +159,7 @@ namespace ai
     class NeedTravelPurposeValue : public BoolCalculatedValue, public Qualified
     {
     public:
-        NeedTravelPurposeValue(PlayerbotAI* ai, std::string name = "need travel purpose", int checkInterval = 5) : BoolCalculatedValue(ai, name, checkInterval), Qualified() {};
+        NeedTravelPurposeValue(PlayerbotAI* ai, std::string name = "need travel purpose", int checkInterval = 15) : BoolCalculatedValue(ai, name, checkInterval), Qualified() {};
 
         virtual bool Calculate() override;
     };
@@ -167,7 +167,7 @@ namespace ai
     class ShouldTravelNamedValue : public BoolCalculatedValue, public Qualified
     {
     public:
-        ShouldTravelNamedValue(PlayerbotAI* ai, std::string name = "should travel named", int checkInterval = 5) : BoolCalculatedValue(ai, name, checkInterval), Qualified() {};
+        ShouldTravelNamedValue(PlayerbotAI* ai, std::string name = "should travel named", int checkInterval = 15) : BoolCalculatedValue(ai, name, checkInterval), Qualified() {};
 
         virtual bool Calculate() override;
     };
