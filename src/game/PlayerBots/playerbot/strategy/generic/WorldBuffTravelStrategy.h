@@ -57,9 +57,9 @@ namespace ai
     {
         TAXI_NODE_BOOTY_BAY = 19,     // Booty Bay, Stranglethorn
         TAXI_NODE_THERAMORE = 32,     // Theramore, Dustwallow Marsh (Alliance)
-        TAXI_NODE_THALANAAR = 42,     // Thalanaar, Feralas (Alliance)
-        TAXI_NODE_FEATHERMOON = 31,     // Feathermoon, Feralas (Alliance)
-        TAXI_NODE_CAMP_MOJACHE = 44,     // Camp Mojache, Feralas (Horde)
+        TAXI_NODE_THALANAAR = 31,     // Thalanaar, Feralas (Alliance)
+        TAXI_NODE_FEATHERMOON = 41,     // Feathermoon, Feralas (Alliance)
+        TAXI_NODE_CAMP_MOJACHE = 42,     // Camp Mojache, Feralas (Horde)
     };
 
     // Game object entry IDs
