@@ -142,6 +142,47 @@ static GameObject* FindNearbyPortalGO(PlayerbotAI* ai, Player* bot,
     return nullptr;
 }
 
+static bool IsRaidRegroupedAtStep(Player* bot, WorldBuffTravelStep step)
+{
+    if (!bot)
+        return false;
+
+    Group* group = bot->GetGroup();
+    if (!group)
+        return true;
+
+    uint8 stepU = static_cast<uint8>(step);
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!member || member == bot)
+            continue;
+
+        if (!member->IsAlive())
+            continue;
+
+        PlayerbotAI* memberAI = member->GetPlayerbotAI();
+        if (memberAI)
+        {
+            uint8 memberStep = memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Get();
+            if (memberStep > stepU)
+                continue;
+        }
+
+        if (member->GetMapId() != bot->GetMapId())
+            return false;
+
+        if (member->IsTaxiFlying())
+            return false;
+
+        if (bot->GetDistance(member) > PORTAL_REGROUP_DISTANCE)
+            return false;
+    }
+
+    return true;
+}
+
 static bool SyncStepFromNearbyHigherGroupMembers(Player* bot, PlayerbotAI* ai)
 {
     if (!bot || !ai)
@@ -188,9 +229,6 @@ static bool SyncStepFromNearbyHigherGroupMembers(Player* bot, PlayerbotAI* ai)
     if (maxStep > buffCap)
         maxStep = buffCap;
 
-    // Never advance past a flight-master step we haven't taken yet — otherwise
-    // the bot will try to walk between continents / across hostile zones with
-    // terrible pathing instead of taking the intended flight path.
     uint8 flightCap = static_cast<uint8>(
         GetMaxAllowedStepForFlight(static_cast<WorldBuffTravelStep>(myStep)));
     if (maxStep > flightCap)
@@ -570,8 +608,6 @@ void WorldBuffTravelApplyAction::AdvanceStep()
     if (jumpTarget > buffCap)
         jumpTarget = buffCap;
 
-    // Never jump past a flight-master step we haven't taken yet — force the
-    // bot to visit the flight master and take the intended flight path.
     uint8 flightCap = static_cast<uint8>(
         GetMaxAllowedStepForFlight(static_cast<WorldBuffTravelStep>(step)));
     if (jumpTarget > flightCap)
@@ -642,7 +678,7 @@ bool WorldBuffTravelApplyAction::Execute(Event& event)
         return true;
     }
 
-    if (IsWarlockSummonStep(step) && !AreAllGroupMembersNearby(bot))
+    if (IsWarlockSummonStep(step) && !IsRaidRegroupedAtStep(bot, step))
     {
         static std::map<ObjectGuid, time_t> lastRegroupTell;
         time_t now = time(nullptr);
