@@ -24,6 +24,8 @@ namespace ai
             lastPath = other.lastPath;
             nextTeleport = other.nextTeleport;
             lastFlee = other.lastFlee;
+            nextPlayerNearbyCheck = other.nextPlayerNearbyCheck;
+            cachedPlayerNearby = other.cachedPlayerNearby;
             moveEvent = Event();
         }
 
@@ -37,6 +39,8 @@ namespace ai
             lastTransportEntry = 0;
             lastFlee = 0;
             nextTeleport = 0;
+            nextPlayerNearbyCheck = 0;
+            cachedPlayerNearby = false;
             moveEvent = Event();
         }
 
@@ -65,6 +69,8 @@ namespace ai
         WorldPosition lastMoveShort;
         TravelPath lastPath;
         time_t nextTeleport;
+        time_t nextPlayerNearbyCheck = 0;
+        bool cachedPlayerNearby = false;
         Event moveEvent;
     };
 

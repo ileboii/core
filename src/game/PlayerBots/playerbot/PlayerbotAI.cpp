@@ -5755,10 +5755,12 @@ bool PlayerbotAI::HasPlayerNearby(WorldPosition pos, float range)
     float sqRange = range * range;
     uint32 const botMapId = bot->GetMapId();
     uint32 const botInstanceId = bot->GetInstanceId();
-    for (auto& i : sRandomPlayerbotMgr.GetPlayersSnapshot())
+
+    std::shared_lock<std::shared_mutex> lock(sRandomPlayerbotMgr.GetPlayersMutex());
+    for (auto& i : sRandomPlayerbotMgr.GetPlayers())
     {
         Player* player = i.second;
-        if (!player->IsInWorld())
+        if (!player || !player->IsInWorld())
             continue;
 
         // Filter out invisible GMs.
@@ -5794,10 +5796,11 @@ bool PlayerbotAI::HasManyPlayersNearby(uint32 trigerrValue, float range)
     float sqRange = range * range;
     uint32 found = 0;
 
-    for (auto& i : sRandomPlayerbotMgr.GetPlayersSnapshot())
+    std::shared_lock<std::shared_mutex> lock(sRandomPlayerbotMgr.GetPlayersMutex());
+    for (auto& i : sRandomPlayerbotMgr.GetPlayers())
     {
         Player* player = i.second;
-        if (!player->IsInWorld())
+        if (!player || !player->IsInWorld())
             continue;
 
         if ((!player->IsGameMaster() || !player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM)) && player->GetMapId() == bot->GetMapId() && player->GetInstanceId() == bot->GetInstanceId() && sServerFacade.GetDistance2d(player, bot) < sqRange)

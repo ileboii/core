@@ -555,8 +555,22 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
     if (!nextStep->isWalkable())
         return false;
 
-    if (ai->HasPlayerNearby(nextStep->point, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_YELL)))
-        return true;
+    {
+        bool playerNearby;
+        if (now >= lastMove.nextPlayerNearbyCheck)
+        {
+            playerNearby = ai->HasPlayerNearby(nextStep->point, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_YELL));
+            lastMove.cachedPlayerNearby = playerNearby;
+            lastMove.nextPlayerNearbyCheck = now + 1;
+        }
+        else
+        {
+            playerNearby = lastMove.cachedPlayerNearby;
+        }
+
+        if (playerNearby)
+            return true;
+    }
 
     bot->TeleportTo(nextStep->point);
 
