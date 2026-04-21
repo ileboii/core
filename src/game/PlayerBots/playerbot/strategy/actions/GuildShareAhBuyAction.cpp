@@ -289,20 +289,29 @@ bool GuildShareAhBuyAction::Execute(Event& event)
     {
         AuctionEntry* auction = bestCandidate.auction;
 
-        /* UpdateBid not in vmangos */;
+        WorldPacket packet;
+        packet << auctioneer->GetObjectGuid();
+        packet << auction->Id;
+        packet << bestCandidate.buyout;
 
-        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(bestCandidate.itemId);
-        std::ostringstream out;
-        out << "Bought " << bestCandidate.count << "x ";
-        if (proto)
-            out << proto->Name1;
-        else
-            out << "item #" << bestCandidate.itemId;
-        out << " from AH for guild share list (" << (bestCandidate.buyout / 10000) << "g)";
+        uint32 oldMoney = bot->GetMoney();
+        bot->GetSession()->HandleAuctionPlaceBid(MakeTypedPacket<WorldPackets::AuctionHouse::AuctionPlaceBid>(packet));
 
-        ai->TellPlayerNoFacing(GetMaster(), out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        if (bot->GetMoney() < oldMoney)
+        {
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(bestCandidate.itemId);
+            std::ostringstream out;
+            out << "Bought " << bestCandidate.count << "x ";
+            if (proto)
+                out << proto->Name1;
+            else
+                out << "item #" << bestCandidate.itemId;
+            out << " from AH for guild share list (" << (bestCandidate.buyout / 10000) << "g)";
 
-        bought = true;
+            ai->TellPlayerNoFacing(GetMaster(), out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+
+            bought = true;
+        }
     }
 
     sRandomPlayerbotMgr.m_ahActionMutex.unlock();
