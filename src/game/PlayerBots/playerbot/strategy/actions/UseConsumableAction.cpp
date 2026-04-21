@@ -268,6 +268,41 @@ bool UseConsumableAction::ClassifyConsumable(const ItemPrototype* proto, Consuma
         }
     }
 
+    {
+        uint32 flaskSpellId = 0;
+        for (int i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+        {
+            uint32 spellId = proto->Spells[i].SpellId;
+            if (!spellId)
+                continue;
+
+            std::vector<uint32> possibleAuras;
+            CollectPossibleAuraIds(spellId, possibleAuras);
+            for (uint32 auraId : possibleAuras)
+            {
+                for (uint32 flaskAura : knownFlaskAuras)
+                {
+                    if (auraId == flaskAura)
+                    {
+                        flaskSpellId = spellId;
+                        break;
+                    }
+                }
+                if (flaskSpellId)
+                    break;
+            }
+            if (flaskSpellId)
+                break;
+        }
+
+        if (flaskSpellId)
+        {
+            outSpellId = flaskSpellId;
+            outType = ConsumableType::Flask;
+            return true;
+        }
+    }
+
     if (proto->SubClass == ITEM_SUBCLASS_FLASK)
     {
         bool isRealFlask = false;
@@ -707,56 +742,22 @@ std::vector<ConsumableCandidate> UseConsumableAction::CollectCandidates()
 {
     std::vector<ConsumableCandidate> results;
 
-    for (int bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+    auto tryAddItem = [&](Item* item)
     {
-        Bag* pBag = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
-        if (!pBag)
-            continue;
-
-        for (uint32 slot = 0; slot < pBag->GetBagSize(); ++slot)
-        {
-            Item* item = bot->GetItemByPos(bag, slot);
-            if (!item)
-                continue;
-
-            const ItemPrototype* proto = item->GetProto();
-            if (!proto || proto->Class != ITEM_CLASS_CONSUMABLE)
-                continue;
-
-            if (bot->CanUseItem(proto) != EQUIP_ERR_OK)
-                continue;
-
-            ConsumableType type;
-            uint32 spellId;
-            if (!ClassifyConsumable(proto, type, spellId))
-                continue;
-
-            ConsumableCandidate c;
-            c.item = item;
-            c.spellId = spellId;
-            c.type = type;
-            c.score = 0.0f;
-            results.push_back(c);
-        }
-    }
-
-    for (uint32 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
-    {
-        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
         if (!item)
-            continue;
+            return;
 
         const ItemPrototype* proto = item->GetProto();
         if (!proto || proto->Class != ITEM_CLASS_CONSUMABLE)
-            continue;
+            return;
 
         if (bot->CanUseItem(proto) != EQUIP_ERR_OK)
-            continue;
+            return;
 
         ConsumableType type;
         uint32 spellId;
         if (!ClassifyConsumable(proto, type, spellId))
-            continue;
+            return;
 
         ConsumableCandidate c;
         c.item = item;
@@ -764,7 +765,20 @@ std::vector<ConsumableCandidate> UseConsumableAction::CollectCandidates()
         c.type = type;
         c.score = 0.0f;
         results.push_back(c);
+    };
+
+    for (int bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+    {
+        Bag* pBag = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+        if (!pBag)
+            continue;
+
+        for (uint32 slot = 0; slot < pBag->GetBagSize(); ++slot)
+            tryAddItem(bot->GetItemByPos(bag, slot));
     }
+
+    for (uint32 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        tryAddItem(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
 
     return results;
 }
