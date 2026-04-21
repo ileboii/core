@@ -1109,8 +1109,11 @@ void PlayerbotMgr::OnPlayerLogin(Player* player)
 
     if (sPlayerbotAIConfig.IsFreeAltBot(player))
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Enabling selfbot on login for %s", player->GetName());
-        HandlePlayerbotCommand("self", player);
+        if (!player->GetPlayerbotAI())
+        {
+            sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Enabling selfbot on login for %s", player->GetName());
+            HandlePlayerbotCommand("self", player);
+        }
     }
 
     if (sPlayerbotAIConfig.botAutologin == BotAutoLogin::DISABLED)
