@@ -642,6 +642,20 @@ bool WorldBuffTravelApplyAction::Execute(Event& event)
         return true;
     }
 
+    if (IsWarlockSummonStep(step) && !AreAllGroupMembersNearby(bot))
+    {
+        static std::map<ObjectGuid, time_t> lastRegroupTell;
+        time_t now = time(nullptr);
+        ObjectGuid botGuid = bot->GetObjectGuid();
+        auto it = lastRegroupTell.find(botGuid);
+        if (it == lastRegroupTell.end() || now >= it->second)
+        {
+            ai->TellPlayer(GetMaster(), "Waiting for the raid to regroup before proceeding...");
+            lastRegroupTell[botGuid] = now + 5;
+        }
+        return true;
+    }
+
     if (ApplyBuffsForStep(step))
         AdvanceStep();
     return true;
