@@ -266,6 +266,9 @@ static bool IsInStepZone(Player* bot, WorldBuffTravelStep step)
 
 bool WorldBuffTravelZoneReachedTrigger::IsActive()
 {
+    if (bot->IsTaxiFlying())
+        return false;
+
     uint8 step = AI_VALUE(uint8, "world buff travel step");
     WorldBuffTravelStep s = static_cast<WorldBuffTravelStep>(step);
 
@@ -389,6 +392,14 @@ bool WorldBuffTravelDMPortalUseTrigger::IsActive()
 
     if (!HasAllDMTributeBuffs(bot))
         return false;
+
+    // Also fire once the bot has actually been teleported into the portal
+    // destination zone (Darnassus / Orgrimmar). WorldBuffTravelDMTakePortalAction
+    // needs to run there to advance the step from STEP_DM_PORTAL to
+    // STEP_FELWOOD; otherwise the bot would stay at STEP_DM_PORTAL forever
+    // because no portal GO is nearby anymore.
+    if (bot->GetZoneId() == GetDMPortalDestZone(bot))
+        return true;
 
     return IsPortalNearby(bot, GetDMPortalKeyword(bot));
 }

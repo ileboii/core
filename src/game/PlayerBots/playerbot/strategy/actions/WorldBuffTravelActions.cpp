@@ -230,7 +230,7 @@ static bool SyncStepFromNearbyHigherGroupMembers(Player* bot, PlayerbotAI* ai)
         maxStep = buffCap;
 
     uint8 flightCap = static_cast<uint8>(
-        GetMaxAllowedStepForFlight(static_cast<WorldBuffTravelStep>(myStep)));
+        GetMaxAllowedStepForCheckpoint(static_cast<WorldBuffTravelStep>(myStep), bot));
     if (maxStep > flightCap)
         maxStep = flightCap;
 
@@ -373,18 +373,15 @@ bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 de
 }
 
 // If bot is a warlock at a regrouping step, summon far away group members and sync their step.
-bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep step)
+// Free-standing helper so both WorldBuffTravelApplyAction (at the step's
+// destination) and WorldBuffTravelSetTargetAction (during long travels
+// toward the destination) can call it, keeping stragglers together.
+static bool TrySummonFarAwayMembersImpl(Player* bot, PlayerbotAI* ai, Player* master, WorldBuffTravelStep step)
 {
     if (bot->GetClass() != CLASS_WARLOCK)
         return false;
 
-    if (step != WorldBuffTravelStep::STEP_BOOTY_BAY &&
-        step != WorldBuffTravelStep::STEP_BRAGOK &&
-        step != WorldBuffTravelStep::STEP_FORGOTTEN_COAST &&
-        step != WorldBuffTravelStep::STEP_DM_TRAVEL &&
-        step != WorldBuffTravelStep::STEP_DM_PORTAL &&
-        step != WorldBuffTravelStep::STEP_SONGFLOWER &&
-        step != WorldBuffTravelStep::STEP_PORTAL_HOME)
+    if (!IsWarlockSummonStep(step))
         return false;
 
     const Group* group = bot->GetGroup();
@@ -464,7 +461,6 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
     bool didSummon = false;
     if (toSummon)
     {
-
         PlayerbotAI* memberAI = toSummon->GetPlayerbotAI();
         if (memberAI)
         {
@@ -480,7 +476,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
 
         if (SummonPlayerToSummoner(bot, toSummon, ai))
         {
-            ai->TellPlayer(GetMaster(), "Summoning " + std::string(toSummon->GetName()) + " to the group!");
+            ai->TellPlayer(master, "Summoning " + std::string(toSummon->GetName()) + " to the group!");
 
             if (memberAI)
                 memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Set(warlockStep);
@@ -497,6 +493,12 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
         lastSummonAttempt.erase(botGuid);
 
     return didSummon || (remainingToSummon > 0) || (pendingCount > 0);
+}
+
+// If bot is a warlock at a regrouping step, summon far away group members and sync their step.
+bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep step)
+{
+    return TrySummonFarAwayMembersImpl(bot, ai, GetMaster(), step);
 }
 
 bool WorldBuffTravelApplyAction::ApplyBuffsForStep(WorldBuffTravelStep step)
@@ -553,9 +555,50 @@ bool WorldBuffTravelApplyAction::ApplyBuffsForStep(WorldBuffTravelStep step)
         }
         break;
     case WorldBuffTravelStep::STEP_FEATHERMOON:
-        // Alliance only
-        ai->TellPlayer(GetMaster(), "Arrived at Feathermoon Stronghold. Heading to Feralas mainland...");
+    {
+        bool onIsland = bot->GetMapId() == FEATHERMOON_FERRY_MAP &&
+            bot->GetPositionY() > FEATHERMOON_ISLAND_MAINLAND_Y_BOUNDARY;
+
+        if (bot->GetTransport())
+        {
+            WorldPosition mainlandDock(FEATHERMOON_FERRY_MAP,
+                FEATHERMOON_MAINLAND_DOCK_X,
+                FEATHERMOON_MAINLAND_DOCK_Y,
+                FEATHERMOON_MAINLAND_DOCK_Z, 0.0f);
+
+            if (MovementAction::UseTransport(ai, 0, mainlandDock, true))
+            {
+                ai->TellPlayer(GetMaster(), "Arrived on the Feralas mainland via the Feathermoon boat!");
+                break;
+            }
+            return false;
+        }
+
+        if (onIsland)
+        {
+            WorldPosition islandDock(FEATHERMOON_FERRY_MAP,
+                FEATHERMOON_ISLAND_DOCK_X,
+                FEATHERMOON_ISLAND_DOCK_Y,
+                FEATHERMOON_ISLAND_DOCK_Z, 0.0f);
+
+            if (MovementAction::UseTransport(ai, 0, islandDock, true))
+            {
+                ai->TellPlayer(GetMaster(), "Boarded the Feathermoon boat to the Feralas mainland...");
+                return false;
+            }
+
+            bot->TeleportTo(FEATHERMOON_FERRY_MAP,
+                FEATHERMOON_MAINLAND_DOCK_X,
+                FEATHERMOON_MAINLAND_DOCK_Y,
+                FEATHERMOON_MAINLAND_DOCK_Z,
+                bot->GetOrientation());
+            ai->TellPlayer(GetMaster(), "Feathermoon boat not docked; teleporting to the Feralas mainland...");
+            return false;
+        }
+
+        ai->TellPlayer(GetMaster(), "Arrived on the Feralas mainland. Heading to Dire Maul...");
         break;
+    }
     case WorldBuffTravelStep::STEP_FORGOTTEN_COAST:
         if (horde)
             ai->TellPlayer(GetMaster(), "Reached Dire Maul in Feralas. Heading to Dire Maul North...");
@@ -609,7 +652,7 @@ void WorldBuffTravelApplyAction::AdvanceStep()
         jumpTarget = buffCap;
 
     uint8 flightCap = static_cast<uint8>(
-        GetMaxAllowedStepForFlight(static_cast<WorldBuffTravelStep>(step)));
+        GetMaxAllowedStepForCheckpoint(static_cast<WorldBuffTravelStep>(step), bot));
     if (jumpTarget > flightCap)
         jumpTarget = flightCap;
 
@@ -648,6 +691,9 @@ void WorldBuffTravelApplyAction::AdvanceStep()
 
 bool WorldBuffTravelApplyAction::Execute(Event& event)
 {
+    if (bot->IsTaxiFlying())
+        return false;
+
     SyncStepFromNearbyHigherGroupMembers(bot, ai);
 
     uint8 rawStep = AI_VALUE(uint8, "world buff travel step");
@@ -705,6 +751,12 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
     WorldBuffTravelStep step = static_cast<WorldBuffTravelStep>(rawStep);
 
     bool horde = IsHordeFaction(bot);
+
+    // Warlocks keep pulling stragglers in during long travel legs (e.g. the
+    // walk to Dire Maul North), not just once they arrive at the step's
+    // destination. The helper is self-cooldown'd so calling it every tick is
+    // cheap; it only tries to summon one member at a time.
+    TrySummonFarAwayMembersImpl(bot, ai, GetMaster(), step);
 
     const char* name = GetStepZoneName(step, bot);
     if (!name || !name[0])
@@ -850,16 +902,24 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
             travelTarget->SetForced(false);
             travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
 
-            GameObjectData const* goData = sObjectMgr.GetGOData(GO_DM_NORTH_DOOR_GUID);
-            if (!goData)
+            if (zoneId == ZONE_FERALAS)
             {
-                ai->TellPlayer(GetMaster(), "Cannot find Dire Maul North door");
+                const char* portalName = horde ? "Orgrimmar" : "Darnassus";
+                ai->TellPlayer(GetMaster(),
+                    std::string("Portal to ") + portalName +
+                    " didn't teleport us — retrying at Dire Maul North...");
+                context->GetValue<uint8>("world buff travel step")->Set(
+                    static_cast<uint8>(WorldBuffTravelStep::STEP_DM_PORTAL));
+
+                GameObjectData const* goData = sObjectMgr.GetGOData(GO_DM_NORTH_DOOR_GUID);
+                if (goData)
+                {
+                    return MoveTo(goData->position.mapId,
+                        goData->position.x, goData->position.y, goData->position.z);
+                }
                 return false;
             }
 
-            const char* portalName = horde ? "Orgrimmar" : "Darnassus";
-            ai->TellPlayer(GetMaster(), std::string("Regrouping at Dire Maul North before portal to ") + portalName + "...");
-            return MoveTo(goData->position.mapId, goData->position.x, goData->position.y, goData->position.z);
         }
     }
 
@@ -973,6 +1033,14 @@ bool WorldBuffTravelDMTakePortalAction::Execute(Event& event)
 
     if (bot->IsBeingTeleported())
         return true;
+    if (bot->GetZoneId() == GetDMPortalDestZone(bot))
+    {
+        const char* keyword = GetDMPortalKeyword(bot);
+        ai->TellPlayer(GetMaster(), std::string("Arrived in ") + keyword + " via portal. Heading to Felwood...");
+        context->GetValue<uint8>("world buff travel step")->Set(
+            static_cast<uint8>(WorldBuffTravelStep::STEP_FELWOOD));
+        return true;
+    }
 
     const char* keyword = GetDMPortalKeyword(bot);
 
@@ -985,13 +1053,19 @@ bool WorldBuffTravelDMTakePortalAction::Execute(Event& event)
             return MoveTo(portalGO->GetMapId(), portalGO->GetPositionX(),
                 portalGO->GetPositionY(), portalGO->GetPositionZ());
 
-        std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
-        *packet << portalGO->GetObjectGuid();
-        bot->GetSession()->SendPacket(&*packet);
+        // Directly invoke GameObject::Use(bot) instead of sending
+        // CMSG_GAMEOBJ_USE. The session-level opcode handler applies extra
+        // sanity checks (exact interaction-box bounds, GO_FLAG_NO_INTERACT,
+        // PlayerCanUse, IsSelfMover, etc.) that frequently reject bots
+        // trying to click a mage portal; the direct call still respects the
+        // GO's own partyOnly raid check inside Use() so only same-raid
+        // members can teleport.
+        portalGO->Use(bot);
 
         ai->TellPlayer(GetMaster(), std::string("Taking the portal to ") + keyword + "!");
-        context->GetValue<uint8>("world buff travel step")->Set(
-            static_cast<uint8>(WorldBuffTravelStep::STEP_FELWOOD));
+        // Don't advance the step here — the zone-change check at the top of
+        // this function will advance to STEP_FELWOOD once the teleport lands.
+        // If Use() didn't teleport us, the action re-fires next tick.
         return true;
     }
 
@@ -1054,9 +1128,9 @@ bool WorldBuffTravelTakePortalAction::Execute(Event& event)
             return MoveTo(portalGO->GetMapId(), portalGO->GetPositionX(),
                 portalGO->GetPositionY(), portalGO->GetPositionZ());
 
-        std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
-        *packet << portalGO->GetObjectGuid();
-        bot->GetSession()->SendPacket(&*packet);
+        // Directly invoke GameObject::Use(bot) — see the DM-portal action
+        // for why we skip the session CMSG_GAMEOBJ_USE path.
+        portalGO->Use(bot);
 
         ai->TellPlayer(GetMaster(), "Taking the portal home!");
         context->GetValue<uint8>("world buff travel step")->Set(

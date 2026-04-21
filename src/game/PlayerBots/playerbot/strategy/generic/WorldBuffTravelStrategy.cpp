@@ -1,4 +1,4 @@
-﻿#include "playerbot/playerbot.h"
+#include "playerbot/playerbot.h"
 #include "WorldBuffTravelStrategy.h"
 #include "playerbot/TravelMgr.h"
 
@@ -79,9 +79,14 @@ void WorldBuffTravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
 void WorldBuffTravelStrategy::OnStrategyAdded(BotState state)
 {
     WorldBuffTravelStep startStep = GetFirstNeededStep(ai->GetBot());
+    uint8 startStepU = static_cast<uint8>(startStep);
 
-    ai->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Set(
-        static_cast<uint8>(startStep));
+    uint8 currentStep = ai->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Get();
+    if (currentStep == static_cast<uint8>(WorldBuffTravelStep::STEP_DONE) ||
+        currentStep < startStepU)
+    {
+        ai->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Set(startStepU);
+    }
 }
 
 void WorldBuffTravelStrategy::OnStrategyRemoved(BotState state)

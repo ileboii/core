@@ -100,6 +100,15 @@ namespace ai
     constexpr float  BOOTY_BAY_FLIGHT_MASTER_Y = 553.0f;
     constexpr float  BOOTY_BAY_FLIGHT_MASTER_Z = 9.0f;
 
+    constexpr uint32 FEATHERMOON_FERRY_MAP = 1;
+    constexpr float  FEATHERMOON_ISLAND_DOCK_X = -4211.15f;
+    constexpr float  FEATHERMOON_ISLAND_DOCK_Y = 3287.06f;
+    constexpr float  FEATHERMOON_ISLAND_DOCK_Z = 5.75628f;
+    constexpr float  FEATHERMOON_MAINLAND_DOCK_X = -4347.53f;
+    constexpr float  FEATHERMOON_MAINLAND_DOCK_Y = 2430.49f;
+    constexpr float  FEATHERMOON_MAINLAND_DOCK_Z = 6.36079f;
+    constexpr float  FEATHERMOON_ISLAND_MAINLAND_Y_BOUNDARY = 2850.0f;
+
     inline bool IsHordeFaction(Player* player)
     {
         return player->GetTeam() == HORDE;
@@ -268,6 +277,40 @@ namespace ai
         {
             WorldBuffTravelStep cand = static_cast<WorldBuffTravelStep>(s);
             if (IsFlightMasterStep(cand))
+                return cand;
+        }
+        return WorldBuffTravelStep::STEP_DONE;
+    }
+
+    inline bool IsMandatoryCheckpointStep(WorldBuffTravelStep step, Player* player)
+    {
+        if (IsFlightMasterStep(step))
+        {
+            if (IsHordeFaction(player) && IsAllianceOnlyStep(step))
+                return false;
+            return true;
+        }
+
+        if (step == WorldBuffTravelStep::STEP_FEATHERMOON)
+            return !IsHordeFaction(player);
+
+        if (step == WorldBuffTravelStep::STEP_FORGOTTEN_COAST)
+            return true;
+
+        return false;
+    }
+
+    inline WorldBuffTravelStep GetMaxAllowedStepForCheckpoint(WorldBuffTravelStep currentStep, Player* player)
+    {
+        if (IsMandatoryCheckpointStep(currentStep, player))
+            return currentStep;
+
+        uint8 start = static_cast<uint8>(currentStep) + 1;
+        uint8 endExclusive = static_cast<uint8>(WorldBuffTravelStep::STEP_DONE);
+        for (uint8 s = start; s < endExclusive; ++s)
+        {
+            WorldBuffTravelStep cand = static_cast<WorldBuffTravelStep>(s);
+            if (IsMandatoryCheckpointStep(cand, player))
                 return cand;
         }
         return WorldBuffTravelStep::STEP_DONE;
