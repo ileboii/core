@@ -76,6 +76,19 @@ bool SellAction::Sell(Player* requester, Item* item)
 {
     bool didSell = false;
 
+    // Never sell items the user has flagged to keep or force-equip.
+    ForceItemUsage forceUsage = AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", item->GetProto()->ItemId, ForceItemUsage::FORCE_USAGE_NONE);
+    if (forceUsage == ForceItemUsage::FORCE_USAGE_KEEP || forceUsage == ForceItemUsage::FORCE_USAGE_EQUIP)
+    {
+        if (ai->HasActivePlayerMaster() && requester)
+        {
+            std::ostringstream keepOut;
+            keepOut << "Keeping " << chat->formatItem(item);
+            ai->TellPlayer(requester, keepOut, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        }
+        return false;
+    }
+
     std::ostringstream out;
     std::list<ObjectGuid> vendors = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest npcs")->Get();
 
