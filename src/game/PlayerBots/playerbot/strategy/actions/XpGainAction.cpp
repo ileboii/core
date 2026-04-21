@@ -33,7 +33,11 @@ bool XpGainAction::Execute(Event& event)
         sPlayerbotAIConfig.logEvent(ai, "XpGainAction", guid, std::to_string(xpgain));
     }
 
-    int32 bonusXpgain = (int32)xpgain * (sPlayerbotAIConfig.playerbotsXPrate - 1.0f);
+    // type == 0 -> kill xp, type != 0 -> non-kill (quest) xp
+    float xpRate = (type == 0) ? sPlayerbotAIConfig.playerbotsKillXPrate
+                               : sPlayerbotAIConfig.playerbotsXPrate;
+
+    int32 bonusXpgain = (int32)xpgain * (xpRate - 1.0f);
 
     std::ostringstream out;
     out << "Gained ";
@@ -44,7 +48,7 @@ bool XpGainAction::Execute(Event& event)
     out << std::to_string(bot->GetUInt32Value(PLAYER_NEXT_LEVEL_XP));
 
     ai->TellDebug(requester, out.str(),"debug xp");
-    
+
     AI_VALUE(LootObjectStack*, "available loot")->Add(guid);
     ai->AccelerateRespawn(guid);
 
@@ -56,7 +60,7 @@ bool XpGainAction::Execute(Event& event)
         BroadcastHelper::BroadcastCreatureKill(ai, bot, creature);
     }
 
-    if (!sRandomPlayerbotMgr.IsFreeBot(bot) || sPlayerbotAIConfig.playerbotsXPrate == 1)
+    if (!sRandomPlayerbotMgr.IsFreeBot(bot) || xpRate == 1.0f)
         return false;
 
     if (!type)

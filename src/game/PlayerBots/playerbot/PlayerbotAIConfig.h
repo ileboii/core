@@ -233,6 +233,7 @@ public:
     int32 levelCheck;
 	bool randomBotPreQuests;
     float playerbotsXPrate;
+    float playerbotsKillXPrate;
     bool disableBotOptimizations;
     bool disableActivityPriorities;
     bool forceActiveWhenNearPlayer;

@@ -492,6 +492,7 @@ bool PlayerbotAIConfig::Initialize()
     instantRandomize = config.GetBoolDefault("AiPlayerbot.InstantRandomize", true);
     randomBotRandomPassword = config.GetBoolDefault("AiPlayerbot.RandomBotRandomPassword", true);
     playerbotsXPrate = config.GetFloatDefault("AiPlayerbot.XPRate", 1.0f);
+    playerbotsKillXPrate = config.GetFloatDefault("AiPlayerbot.KillXPRate", 1.0f);
     disableBotOptimizations = config.GetBoolDefault("AiPlayerbot.DisableBotOptimizations", false);
     disableActivityPriorities = config.GetBoolDefault("AiPlayerbot.DisableActivityPriorities", false);
     forceActiveWhenNearPlayer = config.GetBoolDefault("AiPlayerbot.ForceActiveWhenNearPlayer", false);
