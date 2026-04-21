@@ -370,9 +370,14 @@ void PlayerbotHolder::DisablePlayerBot(uint32 guid, bool logOutPlayer)
         WorldSession* botWorldSessionPtr = bot->GetSession();
         playerBots[guid] = nullptr;    // deletes bot player ptr inside this WorldSession PlayerBotMap
 
-        if (bot->GetPlayerbotAI()) 
+        if (bot->GetPlayerbotAI())
         {
-            // RemovePlayerbotAI managed differently in vmangos
+            // Detach the PlayerbotAI from the player so Player::Update stops
+            // driving bot behavior. In vmangos there is no RemovePlayerbotAI()
+            // helper, so we delete and null the AI pointer directly.
+            PlayerbotAI* ai = bot->GetPlayerbotAI();
+            bot->SetPlayerbotAI(nullptr);
+            delete ai;
         }
     }
 }
@@ -1329,8 +1334,22 @@ std::list<std::string> PlayerbotHolder::HandleSelf(Player* master, const std::st
 
     if (master->GetPlayerbotAI())
     {
+        // The bot may be tracked in this PlayerbotMgr (normal self-bot case)
+        // or in the global RandomPlayerbotMgr (always-bot / free alt bot that
+        // was auto-spawned on server start). Call both so the PlayerbotAI is
+        // actually detached regardless of which holder owns it.
         DisablePlayerBot(master->GetGUIDLow(), false);
-       
+        sRandomPlayerbotMgr.DisablePlayerBot(master->GetGUIDLow(), false);
+
+        // As a final safeguard, if neither holder tracked the bot (so the AI
+        // wasn't detached above) but the player still has a PlayerbotAI,
+        // remove it directly so Player::Update stops driving bot behavior.
+        if (PlayerbotAI* ai = master->GetPlayerbotAI())
+        {
+            master->SetPlayerbotAI(nullptr);
+            delete ai;
+        }
+
         if (sRandomPlayerbotMgr.GetValue(master->GetObjectGuid().GetCounter(), "selfbot"))
         {
             messages.push_back("Disable player ai (on login)");

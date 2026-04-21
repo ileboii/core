@@ -707,11 +707,14 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder *holder)
             pGroup->SendLootStartRollsForPlayer(pCurrChar);
 
     // Playerbot integration: create PlayerbotMgr for real players only.
-    // Check for a valid socket to exclude bot sessions that haven't had
-    // their PlayerbotAI set yet (isRealPlayer() would incorrectly return
-    // true for them, leading to ResetStrategies on other bots from the
-    // wrong thread).
-    if (GetSocket() && pCurrChar->isRealPlayer() && sPlayerbotAIConfig.enabled)
+    // A valid socket is the authoritative indicator of a real player session
+    // (bot sessions have no socket). We intentionally do NOT additionally
+    // gate this on isRealPlayer(): when a real player takes over a character
+    // that was already online as a bot (alreadyOnline path), the Player
+    // object still holds the bot's PlayerbotAI, which would otherwise
+    // prevent the PlayerbotMgr from being created and break commands like
+    // `.bot self` with "you cannot control bots yet".
+    if (GetSocket() && sPlayerbotAIConfig.enabled)
     {
         if (!pCurrChar->GetPlayerbotMgr())
         {
