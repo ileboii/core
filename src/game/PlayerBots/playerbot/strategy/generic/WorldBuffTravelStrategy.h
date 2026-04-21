@@ -95,6 +95,11 @@ namespace ai
     constexpr float PORTAL_REGROUP_DISTANCE = 100.0f;
     constexpr float FLIGHT_MASTER_DETECT_DISTANCE = 30.0f;
 
+    constexpr uint32 BOOTY_BAY_FLIGHT_MASTER_MAP = 0;
+    constexpr float  BOOTY_BAY_FLIGHT_MASTER_X = -14449.0f;
+    constexpr float  BOOTY_BAY_FLIGHT_MASTER_Y = 553.0f;
+    constexpr float  BOOTY_BAY_FLIGHT_MASTER_Z = 9.0f;
+
     inline bool IsHordeFaction(Player* player)
     {
         return player->GetTeam() == HORDE;
@@ -221,6 +226,50 @@ namespace ai
         if (zoneId != homeZone)
             return WorldBuffTravelStep::STEP_PORTAL_HOME;
 
+        return WorldBuffTravelStep::STEP_DONE;
+    }
+
+    inline WorldBuffTravelStep GetMaxAllowedStepForBuffs(Player* player)
+    {
+        if (!player->HasAura(SPELL_RALLYING_CRY))
+            return WorldBuffTravelStep::STEP_STORMWIND;
+
+        if (!player->HasAura(SPELL_SPIRIT_OF_ZANDALAR))
+            return WorldBuffTravelStep::STEP_BOOTY_BAY;
+
+        if (!HasAllDMTributeBuffs(player))
+            return WorldBuffTravelStep::STEP_DM_TRAVEL;
+
+        if (!player->HasAura(SPELL_SONGFLOWER))
+            return WorldBuffTravelStep::STEP_SONGFLOWER;
+
+        return WorldBuffTravelStep::STEP_DONE;
+    }
+
+    inline bool IsWarlockSummonStep(WorldBuffTravelStep step)
+    {
+        return step == WorldBuffTravelStep::STEP_BOOTY_BAY
+            || step == WorldBuffTravelStep::STEP_BRAGOK
+            || step == WorldBuffTravelStep::STEP_FORGOTTEN_COAST
+            || step == WorldBuffTravelStep::STEP_DM_TRAVEL
+            || step == WorldBuffTravelStep::STEP_DM_PORTAL
+            || step == WorldBuffTravelStep::STEP_SONGFLOWER
+            || step == WorldBuffTravelStep::STEP_PORTAL_HOME;
+    }
+
+    inline WorldBuffTravelStep GetMaxAllowedStepForFlight(WorldBuffTravelStep currentStep)
+    {
+        if (IsFlightMasterStep(currentStep))
+            return currentStep;
+
+        uint8 start = static_cast<uint8>(currentStep) + 1;
+        uint8 endExclusive = static_cast<uint8>(WorldBuffTravelStep::STEP_DONE);
+        for (uint8 s = start; s < endExclusive; ++s)
+        {
+            WorldBuffTravelStep cand = static_cast<WorldBuffTravelStep>(s);
+            if (IsFlightMasterStep(cand))
+                return cand;
+        }
         return WorldBuffTravelStep::STEP_DONE;
     }
 

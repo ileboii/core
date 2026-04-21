@@ -142,6 +142,75 @@ static GameObject* FindNearbyPortalGO(PlayerbotAI* ai, Player* bot,
     return nullptr;
 }
 
+static bool SyncStepFromNearbyHigherGroupMembers(Player* bot, PlayerbotAI* ai)
+{
+    if (!bot || !ai)
+        return false;
+
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    if (bot->IsBeingTeleported() || bot->IsTaxiFlying())
+        return false;
+
+    uint8 myStep = ai->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Get();
+    uint8 maxStep = myStep;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!member || member == bot)
+            continue;
+
+        if (!member->IsAlive())
+            continue;
+
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+
+        if (bot->GetDistance(member) > PORTAL_REGROUP_DISTANCE)
+            continue;
+
+        PlayerbotAI* memberAI = member->GetPlayerbotAI();
+        if (!memberAI)
+            continue;
+
+        uint8 memberStep = memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Get();
+        if (memberStep > maxStep && memberStep < static_cast<uint8>(WorldBuffTravelStep::STEP_DONE))
+            maxStep = memberStep;
+    }
+
+    if (maxStep <= myStep)
+        return false;
+
+    uint8 buffCap = static_cast<uint8>(GetMaxAllowedStepForBuffs(bot));
+    if (maxStep > buffCap)
+        maxStep = buffCap;
+
+    // Never advance past a flight-master step we haven't taken yet — otherwise
+    // the bot will try to walk between continents / across hostile zones with
+    // terrible pathing instead of taking the intended flight path.
+    uint8 flightCap = static_cast<uint8>(
+        GetMaxAllowedStepForFlight(static_cast<WorldBuffTravelStep>(myStep)));
+    if (maxStep > flightCap)
+        maxStep = flightCap;
+
+    if (maxStep <= myStep)
+        return false;
+
+    ai->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Set(maxStep);
+
+    TravelTarget* travelTarget = ai->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
+    if (travelTarget)
+    {
+        travelTarget->SetForced(false);
+        travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
+    }
+
+    return true;
+}
+
 static bool SummonPlayerToSummoner(Player* summoner, Player* target, PlayerbotAI* summonerAI)
 {
     if (!summoner || !target || summoner == target)
@@ -272,6 +341,8 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
         return false;
 
     if (step != WorldBuffTravelStep::STEP_BOOTY_BAY &&
+        step != WorldBuffTravelStep::STEP_BRAGOK &&
+        step != WorldBuffTravelStep::STEP_FORGOTTEN_COAST &&
         step != WorldBuffTravelStep::STEP_DM_TRAVEL &&
         step != WorldBuffTravelStep::STEP_DM_PORTAL &&
         step != WorldBuffTravelStep::STEP_SONGFLOWER &&
@@ -355,23 +426,26 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
     bool didSummon = false;
     if (toSummon)
     {
+
+        PlayerbotAI* memberAI = toSummon->GetPlayerbotAI();
+        if (memberAI)
+        {
+            memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Set(warlockStep);
+
+            TravelTarget* memberTravel = memberAI->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
+            if (memberTravel)
+            {
+                memberTravel->SetForced(false);
+                memberTravel->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
+            }
+        }
+
         if (SummonPlayerToSummoner(bot, toSummon, ai))
         {
             ai->TellPlayer(GetMaster(), "Summoning " + std::string(toSummon->GetName()) + " to the group!");
 
-            // Sync the summoned member's step to the warlock's step
-            PlayerbotAI* memberAI = toSummon->GetPlayerbotAI();
             if (memberAI)
-            {
                 memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Set(warlockStep);
-
-                TravelTarget* memberTravel = memberAI->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
-                if (memberTravel)
-                {
-                    memberTravel->SetForced(false);
-                    memberTravel->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
-                }
-            }
 
             didSummon = true;
         }
@@ -490,10 +564,47 @@ void WorldBuffTravelApplyAction::AdvanceStep()
     }
 
     WorldBuffTravelStep nextNeeded = GetFirstNeededStep(bot);
-    if (static_cast<uint8>(nextNeeded) > step)
+    uint8 jumpTarget = static_cast<uint8>(nextNeeded);
+
+    uint8 buffCap = static_cast<uint8>(GetMaxAllowedStepForBuffs(bot));
+    if (jumpTarget > buffCap)
+        jumpTarget = buffCap;
+
+    // Never jump past a flight-master step we haven't taken yet — force the
+    // bot to visit the flight master and take the intended flight path.
+    uint8 flightCap = static_cast<uint8>(
+        GetMaxAllowedStepForFlight(static_cast<WorldBuffTravelStep>(step)));
+    if (jumpTarget > flightCap)
+        jumpTarget = flightCap;
+
+    if (bot->GetClass() == CLASS_WARLOCK && jumpTarget > step)
+    {
+        if (Group* group = bot->GetGroup())
+        {
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->getSource();
+                if (!member || member == bot)
+                    continue;
+
+                PlayerbotAI* memberAI = member->GetPlayerbotAI();
+                if (!memberAI)
+                    continue;
+
+                uint8 memberStep = memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Get();
+                if (memberStep < step)
+                {
+                    jumpTarget = step;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (jumpTarget > step)
     {
         ai->TellPlayer(GetMaster(), "Already have upcoming buffs, skipping ahead...");
-        step = static_cast<uint8>(nextNeeded);
+        step = jumpTarget;
     }
 
     context->GetValue<uint8>("world buff travel step")->Set(step);
@@ -501,6 +612,8 @@ void WorldBuffTravelApplyAction::AdvanceStep()
 
 bool WorldBuffTravelApplyAction::Execute(Event& event)
 {
+    SyncStepFromNearbyHigherGroupMembers(bot, ai);
+
     uint8 rawStep = AI_VALUE(uint8, "world buff travel step");
     WorldBuffTravelStep step = static_cast<WorldBuffTravelStep>(rawStep);
 
@@ -536,6 +649,8 @@ bool WorldBuffTravelApplyAction::Execute(Event& event)
 
 bool WorldBuffTravelSetTargetAction::Execute(Event& event)
 {
+    SyncStepFromNearbyHigherGroupMembers(bot, ai);
+
     uint8 rawStep = AI_VALUE(uint8, "world buff travel step");
     WorldBuffTravelStep step = static_cast<WorldBuffTravelStep>(rawStep);
 
@@ -615,6 +730,15 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
 
         ai->TellPlayer(GetMaster(), "Traveling to nearest Songflower for world buffs");
         return MoveTo(goData->position.mapId, goData->position.x, goData->position.y, goData->position.z);
+    }
+
+    if (step == WorldBuffTravelStep::STEP_BOOTY_BAY)
+    {
+        ai->TellPlayer(GetMaster(), "Traveling to Booty Bay for world buffs");
+        return MoveTo(BOOTY_BAY_FLIGHT_MASTER_MAP,
+            BOOTY_BAY_FLIGHT_MASTER_X,
+            BOOTY_BAY_FLIGHT_MASTER_Y,
+            BOOTY_BAY_FLIGHT_MASTER_Z);
     }
 
     if (step == WorldBuffTravelStep::STEP_FORGOTTEN_COAST && horde)
