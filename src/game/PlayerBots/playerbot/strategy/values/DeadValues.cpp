@@ -66,7 +66,19 @@ WorldSafeLocsEntry const* GraveyardValue::GetAnotherAppropriateClosestGraveyard(
     // far
     WorldSafeLocsEntry const* entryFar = nullptr;
 
-    Corpse* corpse = bot->GetCorpse(); //
+    Corpse* corpse = bot->GetCorpse();
+    if (!corpse)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_DETAIL,
+            "ERROR: No corpse in GetAnotherAppropriateClosestGraveyard - bot #%d %s:%d <%s>",
+            bot->GetGUIDLow(),
+            bot->GetTeam() == ALLIANCE ? "A" : "H",
+            bot->GetLevel(),
+            bot->GetName()
+        );
+        return nullptr;
+    }
+
     uint32 botMapId = corpse->GetMapId();
     uint32 botZoneId = corpse->GetZoneId();
 
