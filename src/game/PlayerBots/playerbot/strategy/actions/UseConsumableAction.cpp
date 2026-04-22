@@ -358,6 +358,9 @@ bool UseConsumableAction::ClassifyConsumable(const ItemPrototype* proto, Consuma
 
     if (proto->SubClass == ITEM_SUBCLASS_ELIXIR)
     {
+        if (IsProtectionConsumable(proto))
+            return false;
+
         for (int i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
         {
             uint32 spellId = proto->Spells[i].SpellId;
