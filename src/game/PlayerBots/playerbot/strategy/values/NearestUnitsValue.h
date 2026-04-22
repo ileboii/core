@@ -13,7 +13,7 @@ namespace ai
 	{
 	public:
         NearestUnitsValue(PlayerbotAI* ai, std::string name = "nearest units", float range = sPlayerbotAIConfig.sightDistance, bool ignoreLos = false) :
-            ObjectGuidListCalculatedValue(ai, name, 2), range(range), ignoreLos(ignoreLos) {}
+            ObjectGuidListCalculatedValue(ai, name, 4), range(range), ignoreLos(ignoreLos) {}
 
 	public:
         virtual std::list<ObjectGuid> Calculate() override
