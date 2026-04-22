@@ -63,7 +63,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             if (!botAi)
                 continue;
 
-            std::string valueName = "attackers" + !qualifier.empty() ? "::" + qualifier : "";
+            std::string valueName = qualifier.empty() ? "attackers" : ("attackers::" + qualifier);
 
             // Ignore bots without the value.
             if (!PHAS_AI_VALUE(valueName))
@@ -249,9 +249,10 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
         }
 
         // Get the current attackers of the player
-        /* getAttackers not available in vmangos */ if (false) if (Unit* attacker = (Unit*)nullptr)
+        for (Unit* attacker : player->GetAttackers())
         {
-            units.insert(attacker);
+            if (attacker)
+                units.insert(attacker);
         }
 
         // Add the duel opponent (Only consider the owner bot)
@@ -264,9 +265,10 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
         Pet* pet = player->GetPet();
         if (pet && sServerFacade.GetDistance2d(bot, pet) <= GetRange())
         {
-            /* getAttackers not available in vmangos */ if (false) if (Unit* attacker = (Unit*)nullptr)
+            for (Unit* attacker : pet->GetAttackers())
             {
-                units.insert(attacker);
+                if (attacker)
+                    units.insert(attacker);
             }
         }
 

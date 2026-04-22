@@ -260,6 +260,10 @@ bool NoThreatTrigger::IsActive()
 
 bool AoeTrigger::IsActive()
 {
+    // Cheap bailout: if we don't even have `amount` attackers in total we can't cluster that many.
+    if ((int)AI_VALUE(uint8, "attackers count") < amount)
+        return false;
+
     std::list<ObjectGuid> aoeEnemies = AoeCountValue::FindMaxDensity(bot, range);
     return aoeEnemies.size() >= amount;
 }

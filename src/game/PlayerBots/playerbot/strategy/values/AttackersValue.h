@@ -19,7 +19,7 @@ namespace ai
         };
 
 	public:
-        AttackersValue(PlayerbotAI* ai, std::string name = "attackers", int interval = 4) : ObjectGuidListCalculatedValue(ai, name, interval), Qualified() {}
+        AttackersValue(PlayerbotAI* ai, std::string name = "attackers", int interval = 2) : ObjectGuidListCalculatedValue(ai, name, interval), Qualified() {}
         virtual std::list<ObjectGuid> Calculate() override;
 
         static bool IsValid(Unit* target, Player* player, Player* owner = nullptr, bool checkInCombat = true, bool validatePossibleTarget = true);

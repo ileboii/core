@@ -9,50 +9,74 @@ using namespace ai;
 
 std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)
 {
-    int maxCount = 0;
-    ObjectGuid maxGroup;
-    std::map<ObjectGuid, std::list<ObjectGuid> > groups;
-    if (bot)
-    {
-        std::list<ObjectGuid> units = *bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers");
-        
-        for (std::list<ObjectGuid>::iterator i = units.begin(); i != units.end(); ++i)
-        {
-            Unit* unit = bot->GetPlayerbotAI()->GetUnit(*i);
-            if (unit)
-            {
-                float distanceToPlayer = sServerFacade.GetDistance2d(unit, bot);
-                if (sServerFacade.IsDistanceLessOrEqualThan(distanceToPlayer, range))
-                {
-                    for (std::list<ObjectGuid>::iterator j = units.begin(); j != units.end(); ++j)
-                    {
-                        Unit* other = bot->GetPlayerbotAI()->GetUnit(*j);
-                        if (other)
-                        {
-                            float d = sServerFacade.GetDistance2d(unit, other);
-                            if (sServerFacade.IsDistanceLessOrEqualThan(d, sPlayerbotAIConfig.aoeRadius * 2.0f))
-                            {
-                                groups[*i].push_back(*j);
-                            }
-                        }
-                    }
+    if (!bot)
+        return std::list<ObjectGuid>();
 
-                    if (maxCount < groups[*i].size())
-                    {
-                        maxCount = groups[*i].size();
-                        maxGroup = *i;
-                    }
-                }
-            }
+    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    std::list<ObjectGuid> const units = *ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers");
+    if (units.empty())
+        return std::list<ObjectGuid>();
+
+    // Prefetch units once so we don't pay for GetUnit() 2*N^2 times and filter by range to bot.
+    struct CachedUnit { ObjectGuid guid; Unit* unit; float x; float y; };
+    std::vector<CachedUnit> cached;
+    cached.reserve(units.size());
+    for (ObjectGuid const& guid : units)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit)
+            continue;
+
+        float const distanceToPlayer = sServerFacade.GetDistance2d(unit, bot);
+        if (!sServerFacade.IsDistanceLessOrEqualThan(distanceToPlayer, range))
+            continue;
+
+        cached.push_back({ guid, unit, unit->GetPositionX(), unit->GetPositionY() });
+    }
+
+    if (cached.empty())
+        return std::list<ObjectGuid>();
+
+    float const clusterRadius = sPlayerbotAIConfig.aoeRadius * 2.0f;
+    float const clusterRadiusSq = clusterRadius * clusterRadius;
+
+    size_t maxCount = 0;
+    size_t maxIndex = 0;
+    std::vector<std::vector<size_t>> clusters(cached.size());
+
+    for (size_t i = 0; i < cached.size(); ++i)
+    {
+        // Can't beat the current best even if every remaining unit clusters around i.
+        if (cached.size() - i <= maxCount)
+            break;
+
+        auto& bucket = clusters[i];
+        bucket.reserve(cached.size());
+        float const xi = cached[i].x;
+        float const yi = cached[i].y;
+        for (size_t j = 0; j < cached.size(); ++j)
+        {
+            float const dx = xi - cached[j].x;
+            float const dy = yi - cached[j].y;
+            if (dx * dx + dy * dy <= clusterRadiusSq)
+                bucket.push_back(j);
+        }
+
+        if (bucket.size() > maxCount)
+        {
+            maxCount = bucket.size();
+            maxIndex = i;
         }
     }
 
     if (!maxCount)
-    {
         return std::list<ObjectGuid>();
-    }
 
-    return groups[maxGroup];
+    std::list<ObjectGuid> result;
+    for (size_t idx : clusters[maxIndex])
+        result.push_back(cached[idx].guid);
+
+    return result;
 }
 
 WorldLocation AoePositionValue::Calculate()

@@ -8,7 +8,7 @@ using namespace ai;
 
 uint8 MyAttackerCountValue::Calculate()
 {
-    return 0 /* getAttackers not in vmangos */;
+    return (uint8)bot->GetAttackers().size();
 }
 
 bool HasAggroValue::Calculate()
