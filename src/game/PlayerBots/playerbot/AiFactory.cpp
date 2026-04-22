@@ -275,49 +275,35 @@ BotRoles AiFactory::GetPlayerRoles(const Player* player)
     uint8 cls = player->GetClass();
     uint8 tab = GetPlayerSpecTab(player);
 
-    BotRoles role = BOT_ROLE_NONE;
     switch (cls)
     {
         case CLASS_WARRIOR: {
             if (tab == 2 || player->HasAura(71)) // Defensive stance
-            {
-                role = BOT_ROLE_TANK;
-            }
+                return BOT_ROLE_TANK;
             break;
         }
 
         case CLASS_PALADIN: {
             if (tab == 1 || player->HasAura(25780)) // Righteous fury
-            {
-                role = BOT_ROLE_TANK;
-            }
-
+                return BOT_ROLE_TANK;
             break;
         }
 
         case CLASS_DRUID: {
             if (player->HasAura(5487) || player->HasAura(9634)) // Bear form, Dire bear form
-            {
-                role = BOT_ROLE_TANK;
-            }
-
+                return BOT_ROLE_TANK;
             break;
         }
 
 #ifdef MANGOSBOT_TWO
         case CLASS_DEATH_KNIGHT: {
             if (player->HasAura(48263)) // Frost presence
-            {
-                role = BOT_ROLE_TANK;
-            }
-
+                return BOT_ROLE_TANK;
             break;
         }
 #endif
-        default: {
-            role = GetPlayerRoles(cls,tab);
+        default:
             break;
-        }
     }
 
     return GetPlayerRoles(cls, tab);
