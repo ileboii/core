@@ -12,6 +12,9 @@ bool ImbueWithStoneAction::Execute(Event& event)
     if (bot->IsInCombat() || bot->GetLevel() > 70)
         return false;
 
+    if (!bot->GetMap() || !bot->GetMap()->IsDungeon())
+        return false;
+
     // remove stealth
     if (bot->HasAura(SPELL_AURA_MOD_STEALTH))
         bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
@@ -91,6 +94,9 @@ bool ImbueWithStoneAction::isUseful()
     if (bot->GetLevel() > 70)
         return false;
 
+    if (!bot->GetMap() || !bot->GetMap()->IsDungeon())
+        return false;
+
 #ifndef MANGOSBOT_TWO
     // Deny mainhand stone use if bot is a Shaman over 30 or grouped with one over 32 (TBC/Vanilla only)
     if (bot->GetClass() == CLASS_SHAMAN && bot->GetLevel() > 30)
@@ -156,6 +162,9 @@ bool ImbueWithOilAction::Execute(Event& event)
     if (bot->IsInCombat() || bot->GetLevel() > 70)
         return false;
 
+    if (!bot->GetMap() || !bot->GetMap()->IsDungeon())
+        return false;
+
     // remove stealth
     if (bot->HasAura(SPELL_AURA_MOD_STEALTH))
         bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
@@ -182,7 +191,10 @@ bool ImbueWithOilAction::isUseful()
 {
     if (bot->GetLevel() > 70)
         return false;
-    
+
+    if (!bot->GetMap() || !bot->GetMap()->IsDungeon())
+        return false;
+
     Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
     if (weapon && weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0)
     {
