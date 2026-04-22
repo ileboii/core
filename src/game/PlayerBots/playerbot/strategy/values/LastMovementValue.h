@@ -26,6 +26,7 @@ namespace ai
             lastFlee = other.lastFlee;
             nextPlayerNearbyCheck = other.nextPlayerNearbyCheck;
             cachedPlayerNearby = other.cachedPlayerNearby;
+            nextMinimalRepath = other.nextMinimalRepath;
             moveEvent = Event();
         }
 
@@ -41,6 +42,7 @@ namespace ai
             nextTeleport = 0;
             nextPlayerNearbyCheck = 0;
             cachedPlayerNearby = false;
+            nextMinimalRepath = 0;
             moveEvent = Event();
         }
 
@@ -71,6 +73,7 @@ namespace ai
         time_t nextTeleport;
         time_t nextPlayerNearbyCheck = 0;
         bool cachedPlayerNearby = false;
+        time_t nextMinimalRepath = 0;
         Event moveEvent;
     };
 

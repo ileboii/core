@@ -86,7 +86,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
 bool ChooseTravelTargetAction::isUseful()
 {
-    if (!sPlayerbotAIConfig.enableMinimalMove && !ai->AllowActivity(TRAVEL_ACTIVITY))
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
     if (!AI_VALUE(bool, "can move around"))
@@ -728,7 +728,7 @@ bool RequestTravelTargetAction::isUseful() {
     if (bot->InBattleGround())
         return false;
 
-    if (!sPlayerbotAIConfig.enableMinimalMove && !ai->AllowActivity(TRAVEL_ACTIVITY))
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
     if (AI_VALUE(TravelTarget*, "travel target")->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)

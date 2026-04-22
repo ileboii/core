@@ -28,10 +28,39 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     WorldPosition botLocation(bot);
     WorldPosition location = *target->GetPosition();
-    
+
+    {
+        LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+        bool isMoving =
+#ifndef MANGOSBOT_ZERO
+            bot->IsMovingIgnoreFlying();
+#else
+            bot->IsMoving();
+#endif
+
+        if (isMoving && !lastMove.lastPath.empty())
+        {
+            WorldPosition pathEnd = lastMove.lastPath.getBack();
+            if (pathEnd.getMapId() == location.getMapId() &&
+                pathEnd.distance(location) <= sPlayerbotAIConfig.targetPosRecalcDistance * 2.0f)
+            {
+                float remainingDist = botLocation.distance(location);
+                float waitDist = std::min(remainingDist, (float)sPlayerbotAIConfig.sightDistance);
+                float duration = 1000.0f * MoveDelay(waitDist) + sPlayerbotAIConfig.reactDelay;
+                if (duration > sPlayerbotAIConfig.maxWaitForMove)
+                    duration = (float)sPlayerbotAIConfig.maxWaitForMove;
+                if (duration < (float)sPlayerbotAIConfig.reactDelay)
+                    duration = (float)sPlayerbotAIConfig.reactDelay;
+                SetDuration((uint32)duration);
+                return true;
+            }
+        }
+    }
+
     Group* group = bot->GetGroup();
     if (ai->IsGroupLeader() && !urand(0, 1) && !bot->IsInCombat())
-    {        
+    {
+        const WorldPosition targetPos = *target->GetPosition();
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->getSource();
@@ -49,7 +78,6 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                 continue;
 
             WorldPosition memberPos(member);
-            WorldPosition targetPos = *target->GetPosition();
 
             float memberDistance = std::min(botLocation.distance(memberPos), location.distance(memberPos));
 
@@ -198,7 +226,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
 bool MoveToTravelTargetAction::isUseful()
 {
-    if (!sPlayerbotAIConfig.enableMinimalMove && !ai->AllowActivity(TRAVEL_ACTIVITY))
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
     if (!AI_VALUE(bool, "travel target traveling"))

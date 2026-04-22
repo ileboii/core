@@ -1984,9 +1984,18 @@ void PlayerbotAI::DoNextAction(bool min)
                 if (travelTarget->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
                     DoSpecificAction("choose travel target", Event(), true);
             }
-            else if (aiObjectContext->GetValue<LastMovement&>("last movement")->Get().lastPath.empty())
+            else
             {
-                DoSpecificAction("move to travel target", Event(), true);
+                LastMovement& lm = aiObjectContext->GetValue<LastMovement&>("last movement")->Get();
+                if (lm.lastPath.empty())
+                {
+                    time_t now = time(0);
+                    if (now >= lm.nextMinimalRepath)
+                    {
+                        DoSpecificAction("move to travel target", Event(), true);
+                        lm.nextMinimalRepath = now + 3;
+                    }
+                }
             }
         }
 
