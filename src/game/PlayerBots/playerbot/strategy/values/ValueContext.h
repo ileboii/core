@@ -400,6 +400,7 @@ namespace ai
             creators["guild share quest reward order"] = [](PlayerbotAI* ai) { return new GuildShareQuestRewardOrderValue(ai); };
             creators["guild share quest reward item"] = [](PlayerbotAI* ai) { return new GuildShareQuestRewardItemValue(ai); };
             creators["needs guild quest order accept"] = [](PlayerbotAI* ai) { return new NeedsGuildQuestOrderAcceptValue(ai); };
+            creators["needs guild quest order turn in"] = [](PlayerbotAI* ai) { return new NeedsGuildQuestOrderTurnInValue(ai); };
             creators["needs profession reagents"] = [](PlayerbotAI* ai) { return new NeedsProfessionReagentsValue(ai); };
 
             creators["experience"] = [](PlayerbotAI* ai) { return new ExperienceValue(ai); };

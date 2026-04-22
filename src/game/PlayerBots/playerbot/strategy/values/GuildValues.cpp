@@ -47,9 +47,10 @@ uint32 GuildOrderValue::FindItemByName(const std::string& name)
 
     uint32 substringMatch = 0;
 
-    for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+    for (auto const& kv : sObjectMgr.GetItemPrototypeMap())
     {
-        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+        uint32 itemId = kv.first;
+        ItemPrototype const* proto = &kv.second;
         if (!proto)
             continue;
 
@@ -334,13 +335,13 @@ GuildOrder GuildOrderValue::Calculate()
 
     if (note.empty())
     {
-        GuildOrder craftOrder = AI_VALUE(GuildOrder, "guild share craft order");
-        if (craftOrder.IsValid())
-            return craftOrder;
-
         GuildOrder questRewardOrder = AI_VALUE(GuildOrder, "guild share quest reward order");
         if (questRewardOrder.IsValid())
             return questRewardOrder;
+
+        GuildOrder craftOrder = AI_VALUE(GuildOrder, "guild share craft order");
+        if (craftOrder.IsValid())
+            return craftOrder;
 
         return AI_VALUE(GuildOrder, "guild share farm order");
     }
@@ -405,13 +406,13 @@ GuildOrder GuildOrderValue::Calculate()
 
     if (!order.IsValid())
     {
-        GuildOrder craftOrder = AI_VALUE(GuildOrder, "guild share craft order");
-        if (craftOrder.IsValid())
-            return craftOrder;
-
         GuildOrder questRewardOrder = AI_VALUE(GuildOrder, "guild share quest reward order");
         if (questRewardOrder.IsValid())
             return questRewardOrder;
+
+        GuildOrder craftOrder = AI_VALUE(GuildOrder, "guild share craft order");
+        if (craftOrder.IsValid())
+            return craftOrder;
 
         return AI_VALUE(GuildOrder, "guild share farm order");
     }
@@ -608,6 +609,15 @@ std::vector<GuildShareItemEntry> GuildShareListValue::Calculate()
                 continue;
             }
 
+            if (ItemPrototype const* resolvedProto = sObjectMgr.GetItemPrototype(itemId))
+            {
+                if (resolvedProto->Class == ITEM_CLASS_RECIPE)
+                {
+                    sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "GuildShareList: ignoring recipe item '%s' (%u)", resolvedProto->Name1, itemId);
+                    continue;
+                }
+            }
+
             GuildShareItemEntry entry;
             entry.filter = roleFilter;
             entry.playerClass = playerClass;
@@ -670,6 +680,10 @@ GuildOrder GuildShareCraftOrderValue::Calculate()
         if (!proto)
             continue;
 
+        // Never treat recipe items as share-list craft targets.
+        if (proto->Class == ITEM_CLASS_RECIPE)
+            continue;
+
         candidates.push_back({ itemId, needed, proto->Name1 });
     }
 
@@ -730,6 +744,10 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
         if (!shareProto)
             continue;
 
+        // Never farm recipe items as share-list targets.
+        if (shareProto->Class == ITEM_CLASS_RECIPE)
+            continue;
+
         std::vector<std::pair<uint32, uint32>> reagents = ItemUsageValue::GetAllReagentItemIdsForCraftingItem(shareProto);
 
         if (reagents.empty())
@@ -786,6 +804,10 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
     {
         ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(reagentId);
         if (!reagentProto)
+            continue;
+
+        // Never farm recipe items.
+        if (reagentProto->Class == ITEM_CLASS_RECIPE)
             continue;
 
         uint32 currentCount = ai->GetInventoryItemsCountWithId(reagentId);
@@ -912,6 +934,12 @@ GuildOrder GuildShareQuestRewardOrderValue::Calculate()
         if (!entry.MatchesPlayer(bot))
             continue;
 
+        if (ItemPrototype const* entryProto = sObjectMgr.GetItemPrototype(entry.itemId))
+        {
+            if (entryProto->Class == ITEM_CLASS_RECIPE)
+                continue;
+        }
+
         uint32 currentCount = ai->GetInventoryItemsCountWithId(entry.itemId);
         if (currentCount >= entry.amount)
             continue;
@@ -920,15 +948,6 @@ GuildOrder GuildShareQuestRewardOrderValue::Calculate()
 
         auto questRewards = FindRepeatableQuestsRewardingItem(entry.itemId);
         if (questRewards.empty())
-            continue;
-
-        std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", entry.itemId);
-        if (!dropEntries.empty())
-            continue;
-
-        std::set<uint32> singleItemSet = { entry.itemId };
-        std::unordered_map<uint32, uint32> craftSpells = BuildCraftSpellMap(bot, singleItemSet);
-        if (!craftSpells.empty())
             continue;
 
         for (const auto& [questId, rewardIdx] : questRewards)

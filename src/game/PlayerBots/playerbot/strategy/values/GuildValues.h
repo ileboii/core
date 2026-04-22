@@ -126,7 +126,7 @@ namespace ai
             }
 
             QuestStatus status = bot->GetQuestStatus(order.questId);
-            // Quest already in log (incomplete or complete) — no need to accept.
+            // Quest already in log (incomplete or complete) â€” no need to accept.
             if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE)
                 return false;
 
@@ -138,6 +138,38 @@ namespace ai
                 return false;
 
             if (!bot->SatisfyQuestLog(false))
+                return false;
+
+            return true;
+        }
+    };
+
+    class NeedsGuildQuestOrderTurnInValue : public BoolCalculatedValue
+    {
+    public:
+        NeedsGuildQuestOrderTurnInValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "needs guild quest order turn in", 5) {}
+
+        bool Calculate() override
+        {
+            GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+            if (!order.IsQuestRewardOrder() || !order.questId)
+                return false;
+
+            if (order.amount > 0 && order.rewardItemId)
+            {
+                uint32 currentCount = ai->GetInventoryItemsCountWithId(order.rewardItemId);
+                if (currentCount >= order.amount)
+                    return false;
+            }
+
+            if (bot->GetQuestStatus(order.questId) != QUEST_STATUS_COMPLETE)
+                return false;
+
+            Quest const* quest = sObjectMgr.GetQuestTemplate(order.questId);
+            if (!quest)
+                return false;
+
+            if (!bot->CanRewardQuest(quest, false))
                 return false;
 
             return true;

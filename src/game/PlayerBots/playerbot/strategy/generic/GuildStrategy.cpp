@@ -40,4 +40,8 @@ void GuildStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
     triggers.push_back(new TriggerNode(
         "very often",
         NextAction::array(0, new NextAction("guild accept quest order", 11.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "very often",
+        NextAction::array(0, new NextAction("guild turn in quest order", 11.0f), NULL)));
 }
