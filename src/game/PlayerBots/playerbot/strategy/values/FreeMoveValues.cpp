@@ -17,8 +17,7 @@ GuidPosition FreeMoveCenterValue::Calculate()
         if (!followTarget)
             return bot;
 
-        //Use bot as center when follow target is on a different map.
-        if (followTarget->GetMapId() != bot->GetMapId()) 
+        if (followTarget->GetMapId() != bot->GetMapId())
             return bot;
 
         Player* player = dynamic_cast<Player*>(followTarget);
@@ -87,6 +86,14 @@ bool CanFreeMoveValue::CanFreeMove(PlayerbotAI* ai, WorldPosition dest, float ra
         return true;
 
     AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (ai->HasStrategy("follow", ai->GetState()) ||
+        ai->HasStrategy("wander", ai->GetState()))
+    {
+        Unit* followTarget = AI_VALUE(Unit*, "follow target");
+        if (followTarget && followTarget->GetMapId() != ai->GetBot()->GetMapId())
+            return false;
+    }
 
     GuidPosition center = AI_VALUE(GuidPosition, "free move center");
     return center.distance(dest) < range;

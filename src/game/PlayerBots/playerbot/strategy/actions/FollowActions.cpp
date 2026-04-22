@@ -27,8 +27,13 @@ bool FollowAction::Execute(Event& event)
             }
         }
     }
-    else
-        moved = Follow(followTarget, 0, 0);
+    else if (followTarget)
+    {
+        moved = MoveTo(followTarget->GetMapId(),
+                       followTarget->GetPositionX(),
+                       followTarget->GetPositionY(),
+                       followTarget->GetPositionZ());
+    }
 
     return moved;
 }
