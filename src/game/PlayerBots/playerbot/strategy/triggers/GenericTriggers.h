@@ -1171,7 +1171,7 @@ namespace ai
     class PerceptionTrigger : public BuffTrigger
     {
     public:
-        PerceptionTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "perception") {}
+        PerceptionTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "perception", 5) {}
 
         virtual bool IsActive() override
         {
