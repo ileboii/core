@@ -85,8 +85,7 @@ if (target->GetVictim() && target->GetVictim()->GetObjectGuid() == bot->GetObjec
                 float angle = target->GetOrientation() + M_PI;
                 if (!count) return angle;
 
-                float increment = M_PI / 4 / count;
-                return round((angle + index * increment - M_PI / 4) * 10.0f) / 10.0f;
+                return round((angle - M_PI / 4 + (M_PI / 2 / count) * (index + 0.5f)) * 10.0f) / 10.0f;
             }
 
             float angle = GetFollowAngle() + target->GetOrientation();
@@ -175,8 +174,7 @@ if (target->GetVictim() && target->GetVictim()->GetObjectGuid() == bot->GetObjec
             float angle = target->GetOrientation() + M_PI;
             if (!count) return angle;
 
-            float increment = M_PI / 4 / count;
-            return round((angle + index * increment - M_PI / 4) * 10.0f) / 10.0f;
+            return round((angle - M_PI / 4 + (M_PI / 2 / count) * (index + 0.5f)) * 10.0f) / 10.0f;
         }
     };
 };
