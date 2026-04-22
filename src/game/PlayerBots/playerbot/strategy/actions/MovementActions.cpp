@@ -2552,7 +2552,21 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 #endif
 
     if (ai->HasStrategy("behind", BotState::BOT_STATE_COMBAT))
-        angle = GetFollowAngle() / 3 + obj->GetOrientation() + M_PI;
+        angle = GetFollowAngle() / 3 + M_PI;
+
+    if (obj->IsUnit() && sServerFacade.IsHostileTo(bot, static_cast<Unit*>(obj)))
+    {
+        Stance* stance = AI_VALUE(Stance*, "stance");
+        if (stance && stance->getName() == "behind")
+        {
+            WorldLocation stanceLoc = stance->GetLocation();
+            if (!Formation::IsNullLocation(stanceLoc))
+            {
+                float absAngle = atan2(stanceLoc.y - obj->GetPositionY(), stanceLoc.x - obj->GetPositionX());
+                angle = absAngle - static_cast<Unit*>(obj)->GetOrientation();
+            }
+        }
+    }
 
     // If the bot has the turnback stance active and the target is hostile, move to the
     // stance position (opposite side of the mob from the ranged group center) instead of
@@ -2653,7 +2667,8 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     {
         if (!bot->IsStopped() &&
             sServerFacade.GetChaseTarget(bot) == obj && 
-            sServerFacade.GetChaseOffset(bot) == distance)
+            sServerFacade.GetChaseOffset(bot) == distance &&
+            sServerFacade.GetChaseAngle(bot) == angle)
         {
             bot->SetTargetGuid(obj->GetObjectGuid()); //Needed to keep chase going in combat.
             bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.
