@@ -1957,48 +1957,22 @@ void PlayerbotAI::DoNextAction(bool min)
 
     bool minimal = !AllowActivity();
 
-    bool needsFullTick = false;
+    bool needsTravelTarget = false;
     if (minimal && sPlayerbotAIConfig.enableMinimalMove)
     {
-        TravelTarget* travelTarget = aiObjectContext->GetValue<TravelTarget*>("travel target")->Get();
-        if (!travelTarget->IsActive())
-        {
-            TravelStatus status = travelTarget->GetStatus();
-            if (status == TravelStatus::TRAVEL_STATUS_NONE || status == TravelStatus::TRAVEL_STATUS_EXPIRED)
-                needsFullTick = true;
-        }
+        if (!aiObjectContext->GetValue<bool>("travel target active")->Get())
+            needsTravelTarget = true;
+        else if (aiObjectContext->GetValue<LastMovement&>("last movement")->Get().lastPath.empty())
+            needsTravelTarget = true;
     }
 
-    currentEngine->DoNextAction(NULL, 0, ((minimal && !needsFullTick) || min), bot->IsTaxiFlying());
+    currentEngine->DoNextAction(NULL, 0, ((minimal && !needsTravelTarget) || min), bot->IsTaxiFlying());
 
     if (!bot->IsInWorld()) //Teleport out of bg
         return;
 
     if (minimal)
     {
-        if (sPlayerbotAIConfig.enableMinimalMove && !needsFullTick)
-        {
-            TravelTarget* travelTarget = aiObjectContext->GetValue<TravelTarget*>("travel target")->Get();
-            if (!travelTarget->IsActive())
-            {
-                if (travelTarget->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
-                    DoSpecificAction("choose travel target", Event(), true);
-            }
-            else
-            {
-                LastMovement& lm = aiObjectContext->GetValue<LastMovement&>("last movement")->Get();
-                if (lm.lastPath.empty())
-                {
-                    time_t now = time(0);
-                    if (now >= lm.nextMinimalRepath)
-                    {
-                        DoSpecificAction("move to travel target", Event(), true);
-                        lm.nextMinimalRepath = now + 3;
-                    }
-                }
-            }
-        }
-
         if (!MovementAction::MinimalMove(this) && !bot->IsAFK() && !bot->InBattleGround() && !HasRealPlayerMaster())
             bot->ToggleAFK();
 
