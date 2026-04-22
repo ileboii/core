@@ -120,23 +120,33 @@ if (target->GetVictim() && target->GetVictim()->GetObjectGuid() == bot->GetObjec
         {
             Unit* target = GetTarget();
             Group* group = bot->GetGroup();
+            if (!group)
+                return target->GetOrientation();
+
+            float sumX = 0.0f, sumY = 0.0f;
             int count = 0;
-            float angle = 0.0f;
-            if (group)
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
             {
-                for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
-                {
-                    Player* member = ref->getSource();
-                    if (member && ai->IsSafe(member) && member != bot && ai->IsRanged(member))
-                    {
-                        angle += target->GetAngle(member);
-                        count++;
-                    }
-                }
+                Player* member = ref->getSource();
+                if (!member || !ai->IsSafe(member) || member == bot)
+                    continue;
+                if (!ai->IsRanged(member))
+                    continue;
+                sumX += member->GetPositionX();
+                sumY += member->GetPositionY();
+                count++;
             }
 
-            if (!count) return target->GetOrientation();
-            return round((angle / count) * 10.0f) / 10.0f + M_PI;
+            if (!count)
+                return target->GetOrientation();
+
+            float centerX = sumX / count;
+            float centerY = sumY / count;
+
+            float angleToRaid = atan2(centerY - target->GetPositionY(),
+                                      centerX - target->GetPositionX());
+
+            return angleToRaid + (float)M_PI;
         }
     };
 

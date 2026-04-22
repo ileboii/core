@@ -2554,7 +2554,26 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (ai->HasStrategy("behind", BotState::BOT_STATE_COMBAT))
         angle = GetFollowAngle() / 3 + obj->GetOrientation() + M_PI;
 
-    UpdateMovementState();
+    // If the bot has the turnback stance active and the target is hostile, move to the
+    // stance position (opposite side of the mob from the ranged group center) instead of
+    // chasing the mob directly. This is the key step that was missing: ChaseTo was always
+    // heading straight at the target, completely bypassing the stance system.
+    // Only apply this when not ranged (i.e. the bot is the one tanking in melee).
+    if (!ai->IsRanged(bot) && obj->IsUnit() && sServerFacade.IsHostileTo(bot, static_cast<Unit*>(obj)))
+    {
+        Stance* stance = AI_VALUE(Stance*, "stance");
+        if (stance && stance->getName() == "turnback")
+        {
+            WorldLocation stanceLoc = stance->GetLocation();
+            if (!Formation::IsNullLocation(stanceLoc) && stanceLoc.mapId != uint32(-1))
+            {
+                float distToStance = bot->GetDistance2d(stanceLoc.x, stanceLoc.y);
+                if (distToStance > sPlayerbotAIConfig.targetPosRecalcDistance)
+                    return MoveTo(stanceLoc.mapId, stanceLoc.x, stanceLoc.y, stanceLoc.z);
+                return true;
+            }
+        }
+    }
 
     bot->HandleEmoteState(0);
     if (!(bot->GetStandState() == UNIT_STAND_STATE_STAND))
