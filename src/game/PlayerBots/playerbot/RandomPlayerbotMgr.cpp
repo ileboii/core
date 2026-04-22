@@ -3366,6 +3366,16 @@ void RandomPlayerbotMgr::HandleCommand(uint32 type, const std::string& text, Pla
             return;
         }
 
+        if (type == CHAT_MSG_PARTY && !bot->IsInSameGroupWith(&fromPlayer))
+        {
+            return;
+        }
+
+        if ((type == CHAT_MSG_RAID || type == CHAT_MSG_RAID_LEADER) && !bot->IsInSameRaidWith(&fromPlayer))
+        {
+            return;
+        }
+
         if (!channelName.empty())
         {
             if (ChannelMgr* cMgr = channelMgr(bot->GetTeam()))
