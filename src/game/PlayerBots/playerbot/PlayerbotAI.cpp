@@ -3601,7 +3601,7 @@ bool PlayerbotAI::HasAura(std::string name, Unit* unit, bool maxStack, bool chec
         if (auras.empty())
             continue;
 
-        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); i++)
+        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); ++i)
         {
             Aura* aura = *i;
             if (!aura)
@@ -3779,7 +3779,7 @@ std::vector<Aura*> PlayerbotAI::GetAuras(Unit* unit, bool allAuras, bool positiv
         if (auras.empty())
             continue;
 
-        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); i++)
+        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); ++i)
         {
             Aura* aura = *i;
             if (aura)
@@ -4082,9 +4082,9 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
             }
         }
 
+        bool immune = target->IsImmuneToSpell(spellInfo, false);
         if (!damage)
         {
-            bool immune = target->IsImmuneToSpell(spellInfo, false);
             if (!immune)
      {
   for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
@@ -4100,6 +4100,21 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
 
            return false;
    }
+        }
+        else
+        {
+            if (!immune)
+                immune = target->IsImmuneToDamage(spellInfo->GetSpellSchoolMask(), spellInfo);
+
+            if (immune)
+            {
+                if (checkResult)
+                {
+                    *checkResult = SPELL_FAILED_IMMUNE;
+                }
+
+                return false;
+            }
         }
 
         if (!ignoreRange && bot != target && sServerFacade.GetDistance2d(bot, target) > sPlayerbotAIConfig.sightDistance)
@@ -5381,11 +5396,12 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
 			const SpellEntry* entry = aura->GetSpellProto();
 			uint32 spellId = entry->Id;
 
-			bool isPositiveSpell = IsPositiveSpell(spellId);
-			if (isPositiveSpell && isFriend)
+            bool isPositiveSpell = IsPositiveSpell(spellId);
+            bool isPositiveAuraEffect = entry->IsPositiveEffect(SpellEffectIndex(aura->GetEffIndex()));
+            if ((isPositiveSpell || isPositiveAuraEffect) && isFriend)
 				continue;
 
-			if (!isPositiveSpell && !isFriend)
+            if (!isPositiveSpell && !isPositiveAuraEffect && !isFriend)
 				continue;
 
 			if (sPlayerbotAIConfig.dispelAuraDuration && aura->GetAuraDuration() && aura->GetAuraDuration() < (int32)sPlayerbotAIConfig.dispelAuraDuration)

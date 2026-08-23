@@ -154,6 +154,24 @@ bool CastSpellAction::isUseful()
     if (!spellTarget->IsInWorld() || spellTarget->GetMapId() != bot->GetMapId())
         return false;
 
+    if (range == ATTACK_DISTANCE)
+    {
+        std::set<Aura*> checkedAuras;
+        Unit::AuraList const& damageShields = spellTarget->GetAurasByType(SPELL_AURA_DAMAGE_SHIELD);
+        for (Unit::AuraList::const_iterator i = damageShields.begin(); i != damageShields.end(); ++i)
+        {
+            Aura* aura = *i;
+            if (!aura || !checkedAuras.insert(aura).second)
+                continue;
+
+            if (aura->GetModifier()->m_amount >= bot->GetMaxHealth() * 0.10f)
+            {
+                bot->AttackStop();
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
