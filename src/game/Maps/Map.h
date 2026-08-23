@@ -38,6 +38,7 @@
 #include "SQLStorages.h"
 #include "ScriptCommands.h"
 #include "CreatureLinkingMgr.h"
+#include "CreatureGroups.h"
 
 #include <bitset>
 #include <list>
@@ -53,11 +54,11 @@ class Creature;
 class Unit;
 class WorldPacket;
 class InstanceData;
-class CreatureGroup;
 class MapPersistentState;
 class WorldPersistentState;
 class DungeonPersistentState;
 class BattleGroundPersistentState;
+class ServerPacket;
 class ChatHandler;
 class BattleGround;
 class WeatherSystem;
@@ -177,7 +178,6 @@ struct AreaLocale
 
 #define MIN_UNLOAD_DELAY      1                             // immediate unload
 
-typedef std::map<uint32, CreatureGroup*> CreatureGroupHolderType;
 using MapMutexType = std::mutex; // can be replaced with a null mutex
 
 // Instance IDs reserved for internal use (instanced continent parts, ...)
@@ -191,7 +191,7 @@ enum TeleportLocation
 
 typedef bool(Map::*ScriptCommandFunction) (ScriptInfo const& script, WorldObject* source, WorldObject* target);
 
-// Additional target part of a ScriptedEvent. 
+// Additional target part of a ScriptedEvent.
 struct ScriptedEventTarget
 {
     ScriptedEventTarget(ObjectGuid object, uint32 failureCondition, uint32 failureScript, uint32 successCondition, uint32 successScript) :
@@ -217,7 +217,7 @@ struct ScriptedEvent
 {
     ScriptedEvent(uint32 eventId, ObjectGuid source, ObjectGuid target, Map& map, time_t expireTime, uint32 failureCondition, uint32 failureScript, uint32 successCondition, uint32 successScript) :
         m_Source(source), m_Target(target), m_Map(map), m_uiEventId(eventId), m_tExpireTime(expireTime), m_bEnded(false), m_uiFailureCondition(failureCondition), m_uiFailureScript(failureScript), m_uiSuccessCondition(successCondition), m_uiSuccessScript(successScript) {}
-    
+
     ObjectGuid m_Source;
     ObjectGuid m_Target;
     Map& m_Map;
@@ -450,6 +450,7 @@ class Map : public GridRefManager<NGridType>
         bool ActiveObjectsNearGrid(uint32 x,uint32 y) const;
 
         // Send a Packet to all players in the map
+        void SendToPlayers(std::unique_ptr<ServerPacket const> packet, Team team = TEAM_NONE) const;
         void SendToPlayers(WorldPacket const* data, Team team = TEAM_NONE) const;
         void SendDefenseMessage(int32 textId, uint32 zoneId) const;
         void SendMonsterTextToMap(int32 textId, Language language, ChatMsg chatMsg, uint32 creatureId, WorldObject const* pSource = nullptr, Unit const* pTarget = nullptr);
@@ -457,7 +458,7 @@ class Map : public GridRefManager<NGridType>
         // Send a Packet to all players in a zone
         bool SendToPlayersInZone(WorldPacket const* data, uint32 zoneId) const; // return false if no player found
         void PlayDirectSoundToMap(uint32 soundId, uint32 zoneId = 0) const;
-        
+
         typedef MapRefManager PlayerList;
         PlayerList const& GetPlayers() const { return m_mapRefManager; }
 
@@ -552,14 +553,14 @@ class Map : public GridRefManager<NGridType>
         InstanceData* GetInstanceData() { return m_data; }
         InstanceData const* GetInstanceData() const { return m_data; }
         uint32 GetScriptId() const { return m_scriptId; }
-        
+
         // GameObjectCollision
         float GetHeight(float x, float y, float z, bool vmap = true, float maxSearchDist = DEFAULT_HEIGHT_SEARCH) const;
         bool isInLineOfSight(float x1, float y1, float z1, float x2, float y2, float z2, bool checkDynLos = true, bool ignoreM2Model = true) const;
         // First collision with object
         bool GetLosHitPosition(float srcX, float srcY, float srcZ, float& destX, float& destY, float& destZ, float modifyDist) const;
         // Use navemesh to walk
-        bool GetWalkHitPosition(GenericTransport* t, float srcX, float srcY, float srcZ, float& destX, float& destY, float& destZ, 
+        bool GetWalkHitPosition(GenericTransport* t, float srcX, float srcY, float srcZ, float& destX, float& destY, float& destZ,
             uint32 moveAllowedFlags = 0xF /*NAV_GROUND | NAV_WATER | NAV_MAGMA | NAV_SLIME*/, float zSearchDist = 20.0f, bool locatedOnSteepSlope = true) const;
         bool GetWalkRandomPosition(GenericTransport* t, float &x, float &y, float &z, float maxRadius, uint32 moveAllowedFlags = 0xF) const;
         bool GetSwimRandomPosition(float& x, float& y, float& z, float radius, GridMapLiquidData& liquid_status, bool randomRange = true) const;
@@ -596,6 +597,7 @@ class Map : public GridRefManager<NGridType>
 
         // Get Holder for Creature Linking
         CreatureLinkingHolder* GetCreatureLinkingHolder() { return &m_creatureLinkingHolder; }
+        CreatureGroupsManager* GetCreatureGroupsManager() { return &m_creatureGroupManager; }
 
         // Teleport all players in that map to choosed location
         void TeleportAllPlayersTo(TeleportLocation loc);
@@ -756,6 +758,7 @@ class Map : public GridRefManager<NGridType>
 
         // Holder for information about linked mobs
         CreatureLinkingHolder m_creatureLinkingHolder;
+        CreatureGroupsManager m_creatureGroupManager;
 
         // WeatherSystem
         WeatherSystem* m_weatherSystem;
@@ -863,6 +866,7 @@ class Map : public GridRefManager<NGridType>
         bool ScriptCommand_StartScriptOnGroup(ScriptInfo const& script, WorldObject* source, WorldObject* target);
         bool ScriptCommand_LoadCreatureSpawn(ScriptInfo const& script, WorldObject* source, WorldObject* target);
         bool ScriptCommand_StartScriptOnZone(ScriptInfo const& script, WorldObject* source, WorldObject* target);
+        bool ScriptCommand_FollowEscort(ScriptInfo const& script, WorldObject* source, WorldObject* target);
 
         // Add any new script command functions to the array.
         ScriptCommandFunction const m_ScriptCommands[SCRIPT_COMMAND_MAX] =
@@ -960,10 +964,10 @@ class Map : public GridRefManager<NGridType>
             &Map::ScriptCommand_StartScriptOnGroup,     // 90
             &Map::ScriptCommand_LoadCreatureSpawn,      // 91
             &Map::ScriptCommand_StartScriptOnZone,      // 92
+            &Map::ScriptCommand_FollowEscort,           // 93
         };
 
     public:
-        CreatureGroupHolderType CreatureGroupHolder;
         uint32 GetLastPlayerLeftTime() const { return m_lastPlayerLeftTime; }
 };
 

@@ -19,6 +19,7 @@
 #define _CRT_SECURE_NO_DEPRECATE
 
 #include <stdio.h>
+#include <cstring>
 #include <deque>
 #include <set>
 #include <cstdlib>
@@ -83,6 +84,8 @@ enum Extract
 
 // Select data for extract
 int   CONF_extract = EXTRACT_MAP | EXTRACT_DBC | EXTRACT_CAMERA;
+// Skip all interactive prompts (for scripted runs)
+bool  CONF_silent = false;
 // This option allow limit minimum height to some value (Allow save some memory)
 // see contrib/mmap/src/TerrainBuilder.h, INVALID_MAP_LIQ_HEIGHT
 bool  CONF_allow_height_limit = true;
@@ -135,6 +138,8 @@ void Usage(char* prg)
         "-o set output path\n"\
         "-e extract only MAP(1)/DBC(2)/Camera(4) - standard: all(7)\n"\
         "-f height stored as int (less map size but lost some accuracy) 1 by default\n"\
+        "-h allow to limit minimum height (less map size) 1 by default\n"\
+        "--silent skip all interactive prompts (for scripted runs)\n"\
         "Example: %s -f 0 -i \"c:\\games\\game\"", prg, prg);
     exit(1);
 }
@@ -148,6 +153,12 @@ void HandleArgs(int argc, char* arg[])
         // e - extract only MAP(1)/DBC(2) - standard both(3)
         // f - use float to int conversion
         // h - limit minimum height
+        if (strcmp(arg[c], "--silent") == 0)
+        {
+            CONF_silent = true;
+            continue;
+        }
+
         if (arg[c][0] != '-')
             Usage(arg[0]);
 
@@ -155,19 +166,25 @@ void HandleArgs(int argc, char* arg[])
         {
             case 'i':
                 if (c + 1 < argc)                           // all ok
-                    strcpy(input_path, arg[(c++) + 1]);
+                    snprintf(input_path, sizeof(input_path), "%s", arg[(c++) + 1]);
                 else
                     Usage(arg[0]);
                 break;
             case 'o':
                 if (c + 1 < argc)                           // all ok
-                    strcpy(output_path, arg[(c++) + 1]);
+                    snprintf(output_path, sizeof(output_path), "%s", arg[(c++) + 1]);
                 else
                     Usage(arg[0]);
                 break;
             case 'f':
                 if (c + 1 < argc)                           // all ok
                     CONF_allow_float_to_int = atoi(arg[(c++) + 1]) != 0;
+                else
+                    Usage(arg[0]);
+                break;
+            case 'h':
+                if (c + 1 < argc)                           // all ok
+                    CONF_allow_height_limit = atoi(arg[(c++) + 1]) != 0;
                 else
                     Usage(arg[0]);
                 break;
@@ -201,7 +218,7 @@ uint32 ReadMapDBC()
     for (uint32 x = 0; x < map_count; ++x)
     {
         map_ids[x].id = dbc.getRecord(x).getUInt(0);
-        strcpy(map_ids[x].name, dbc.getRecord(x).getString(1));
+        snprintf(map_ids[x].name, sizeof(map_ids[x].name), "%s", dbc.getRecord(x).getString(1));
     }
     printf("Done! (%u maps loaded)\n", uint32(map_count));
     return map_count;
@@ -473,7 +490,7 @@ bool ConvertADT(char* filename, char* filename2, int cell_y, int cell_x)
     // Try store as packed in uint16 or uint8 values
     if (!(heightHeader.flags & MAP_HEIGHT_NO_HEIGHT))
     {
-        float step;
+        float step = 0.0f;
         // Try Store as uint values
         if (CONF_allow_float_to_int)
         {
@@ -767,7 +784,7 @@ void ExtractMapsFromMpq()
     {
         printf("Extract %s (%d/%d)                  \n", map_ids[z].name, z + 1, map_count);
         // Loadup map grid data
-        sprintf(mpq_map_name, "World\\Maps\\%s\\%s.wdt", map_ids[z].name, map_ids[z].name);
+        snprintf(mpq_map_name, sizeof(mpq_map_name), "World\\Maps\\%s\\%s.wdt", map_ids[z].name, map_ids[z].name);
         WDT_file wdt;
         if (!wdt.loadFile(mpq_map_name, false))
         {
@@ -781,8 +798,8 @@ void ExtractMapsFromMpq()
             {
                 if (!wdt.main->adt_list[y][x].exist)
                     continue;
-                sprintf(mpq_filename, "World\\Maps\\%s\\%s_%u_%u.adt", map_ids[z].name, map_ids[z].name, x, y);
-                sprintf(output_filename, "%s/maps/%03u%02u%02u.map", output_path, map_ids[z].id, y, x);
+                snprintf(mpq_filename, sizeof(mpq_filename), "World\\Maps\\%s\\%s_%u_%u.adt", map_ids[z].name, map_ids[z].name, x, y);
+                snprintf(output_filename, sizeof(output_filename), "%s/maps/%03u%02u%02u.map", output_path, map_ids[z].id, y, x);
                 ConvertADT(mpq_filename, output_filename, y, x);
             }
             // draw progress bar
@@ -892,7 +909,7 @@ void LoadCommonMPQFiles()
     int count = sizeof(CONF_mpq_list) / sizeof(char*);
     for (int i = 0; i < count; ++i)
     {
-        sprintf(filename, "%s/Data/%s", input_path, CONF_mpq_list[i]);
+        snprintf(filename, sizeof(filename), "%s/Data/%s", input_path, CONF_mpq_list[i]);
         if (FileExists(filename))
             new MPQArchive(filename);
     }
@@ -911,6 +928,39 @@ int main(int argc, char* arg[])
 
     HandleArgs(argc, arg);
 
+    // Prompt user for map resolution (skipped with --silent, keeping the command line settings)
+    bool highRes = !CONF_allow_float_to_int;
+    bool fullHeight = !CONF_allow_height_limit;
+
+    if (!CONF_silent)
+    {
+        std::string userInput;
+        std::cout << "Extract maps with high resolution (default = " << (highRes ? "y" : "n") << ")? [y/n]" << std::endl;
+        std::getline(std::cin, userInput);
+        if (!userInput.empty())
+            highRes = userInput.compare("y") == 0;
+
+        userInput.clear();
+        std::cout << "Extract maps with full height (default = " << (fullHeight ? "y" : "n") << ")? [y/n]" << std::endl;
+        std::getline(std::cin, userInput);
+        if (!userInput.empty())
+            fullHeight = userInput.compare("y") == 0;
+    }
+
+    std::cout << "High resolution = " << highRes << std::endl;
+    std::cout << "Full height     = " << fullHeight << std::endl;
+
+    if (!CONF_silent)
+    {
+        std::cout << "Press enter to start extracting maps." << std::endl;
+        std::cout << "=====================================" << std::endl;
+        std::cin.get();
+    }
+
+    // Overwrite due to user input or explicit setting
+    CONF_allow_float_to_int = highRes ? false : true;
+    CONF_allow_height_limit = fullHeight ? false : true;
+
     // Open MPQs
     LoadCommonMPQFiles();
 
@@ -927,6 +977,12 @@ int main(int argc, char* arg[])
 
     // Close MPQs
     CloseMPQFiles();
+
+    if (!CONF_silent)
+    {
+        std::cout << "Extraction complete. Press enter to close..." << std::endl;
+        std::cin.get();
+    }
 
     return 0;
 }

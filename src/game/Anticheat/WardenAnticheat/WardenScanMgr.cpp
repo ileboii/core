@@ -49,7 +49,7 @@ bool BuildRawData(std::string const& hexData, std::vector<uint8>& out)
 
     out.resize(hexData.length() / 2);
 
-    for (auto i = 0; i < out.size(); ++i)
+    for (size_t i = 0; i < out.size(); ++i)
     {
         auto const byte = curr.substr(0, 2);
         curr = curr.substr(2);
@@ -204,6 +204,8 @@ void WardenScanMgr::LoadFromDB()
                 auto const variable = fields[2].GetCppString();
                 auto const expected = fields[3].GetCppString();
 
+                // `data` holds the value a clean client must report for this variable.  leave it
+                // empty to only check whether the variable exists, using `result` as the wanted flag
                 if (expected.empty())
                     scan = new WindowsLuaScan(variable, fields[6].GetBool(), comment, flags, buildMin, buildMax);
                 else
@@ -348,7 +350,7 @@ std::vector<std::shared_ptr<Scan const>> WardenScanMgr::GetRandomScans(ScanFlags
         reply += scan->replySize;
     }
 
-    return std::move(matches);
+    return matches;
 }
 
 #endif

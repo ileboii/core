@@ -1,5 +1,7 @@
 #include "Misc.h"
 
+#include "SpellEntry.h"
+
 void WorldPackets::Misc::WorldTeleport::ReadFromWorldPacket(WorldPacket& recv_data)
 {
     recv_data >> timeMs;
@@ -241,13 +243,7 @@ void WorldPackets::Misc::Bug::ReadFromWorldPacket(WorldPacket& recv_data)
 }
 
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
-void WorldPackets::Misc::WardenData::ReadFromWorldPacket(WorldPacket& recv_data)
-{
-    uint32 const remaining = recv_data.size() - recv_data.rpos();
-    data.resize(remaining);
-    if (!data.empty())
-        recv_data.read(data.data(), data.size());
-}
+// NOTE: WardenData (CMSG) / WardenDataServer (SMSG) serialization lives in `Packets/Warden.cpp`.
 #endif
 
 // --- Server Packets ---
@@ -355,8 +351,344 @@ void WorldPackets::Misc::MeetingstoneJoinFailed::AppendBodyTo(ByteBuffer& buffer
 
 void WorldPackets::Misc::MeetingstoneSetQueue::AppendBodyTo(ByteBuffer& buffer) const
 {
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_4_2
     buffer << areaId;
     buffer << status;
+#else
+    buffer << idempotencyToken;
+    buffer << areaId;
+#endif
 }
 
+void WorldPackets::Misc::MeetingstoneMemberAdded::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << playerGuid;
+}
 
+void WorldPackets::Misc::MeetingstoneInProgress::AppendBodyTo(ByteBuffer& /*buffer*/) const
+{
+}
+
+void WorldPackets::Misc::MeetingstoneComplete::AppendBodyTo(ByteBuffer& /*buffer*/) const
+{
+}
+
+void WorldPackets::Misc::PvpCredit::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << honor;
+    buffer << victimGuid;
+    buffer << victimRank;
+}
+
+void WorldPackets::Misc::SetForcedReactions::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << static_cast<uint32>(forcedReactions.size());
+    for (const auto& reaction : forcedReactions)
+    {
+        buffer << reaction.factionId;       // faction_id (Faction.dbc)
+        buffer << reaction.reputationRank;  // reputation rank
+    }
+}
+
+void WorldPackets::Misc::SetFactionStanding::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << static_cast<uint32>(factionStandings.size());
+    for (const auto& entry : factionStandings)
+    {
+        buffer << entry.reputationListId;
+        buffer << entry.standing;
+    }
+}
+
+void WorldPackets::Misc::InitializeFactions::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << static_cast<uint32>(factions.size());
+    for (const auto& faction : factions)
+    {
+        buffer << faction.flags;
+        buffer << faction.standing;
+    }
+}
+
+void WorldPackets::Misc::SetFactionVisible::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << reputationListId;
+}
+
+void WorldPackets::Misc::PlayMusic::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << musicId;
+}
+
+void WorldPackets::Misc::PlaySound::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << soundId;
+}
+
+void WorldPackets::Misc::Notification::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << message;
+}
+
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_9_4
+void WorldPackets::Misc::InvalidatePlayer::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << playerGuid;
+}
+#endif
+
+void WorldPackets::Misc::DestroyObject::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << objectGuid;
+}
+
+void WorldPackets::Misc::AiReaction::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << unitGuid;
+    buffer << reaction;
+}
+
+void WorldPackets::Misc::ZoneUnderAttack::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << areaId;
+}
+
+void WorldPackets::Misc::PlayObjectSound::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << soundId;
+    buffer << sourceGuid;
+}
+
+void WorldPackets::Misc::GameObjectSpawnAnim::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << gameObjectGuid;
+}
+
+void WorldPackets::Misc::GameObjectDespawnAnim::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << gameObjectGuid;
+}
+
+void WorldPackets::Misc::StartMirrorTimer::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << timerType;
+    buffer << remaining;
+    buffer << duration;
+    buffer << scale;
+    buffer << paused;
+    buffer << spellId;
+}
+
+void WorldPackets::Misc::StopMirrorTimer::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << timerType;
+}
+
+void WorldPackets::Misc::PauseMirrorTimer::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << timerType;
+    buffer << paused;
+}
+
+void WorldPackets::Misc::TransferPending::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << mapId;
+    if (transportInfo)
+    {
+        buffer << transportInfo->transportEntry;
+        buffer << transportInfo->oldMapId;
+    }
+}
+
+void WorldPackets::Misc::NewWorld::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << location.mapId;
+    buffer << location.x;
+    buffer << location.y;
+    buffer << location.z;
+    buffer << location.o;
+}
+
+void WorldPackets::Misc::LogXpGain::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << victimGuid;
+    buffer << totalXp;
+    buffer << xpType;
+    if (xpType == 0) // kill xp
+    {
+        buffer << baseXp;
+        buffer << groupBonus;
+    }
+}
+
+void WorldPackets::Misc::LevelUpInfo::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << level;
+    buffer << healthGain;
+    for (uint32 i = 0; i < 5; ++i)
+        buffer << powerGains[i];
+    for (uint32 i = 0; i < 5; ++i)
+        buffer << statGains[i];
+}
+
+void WorldPackets::Misc::TriggerCinematic::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << cinematicSequenceId;
+}
+
+void WorldPackets::Misc::PlayerSkinned::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << freeRepop;
+}
+
+void WorldPackets::Misc::DurabilityDamageDeath::AppendBodyTo(ByteBuffer& /*buffer*/) const
+{
+}
+
+void WorldPackets::Misc::CancelAutoRepeat::AppendBodyTo(ByteBuffer& /*buffer*/) const
+{
+}
+
+void WorldPackets::Misc::ExplorationExperience::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << areaId;
+    buffer << experience;
+}
+
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_9_4
+void WorldPackets::Misc::FactionAtWarChange::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << reputationId;
+    buffer << flags;
+}
+#endif
+
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_10_2
+void WorldPackets::Misc::InstanceReset::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << mapId;
+}
+
+void WorldPackets::Misc::InstanceResetFailed::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << reason;
+    buffer << mapId;
+}
+#endif
+
+void WorldPackets::Misc::MountResult::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << result;
+}
+
+void WorldPackets::Misc::DismountResult::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << result;
+}
+
+void WorldPackets::Misc::RaidGroupOnly::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << timer;
+    buffer << errorCode;
+}
+
+void WorldPackets::Misc::SetRestStart::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << restStateTime;
+}
+
+void WorldPackets::Misc::BindpointUpdate::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << location.x;
+    buffer << location.y;
+    buffer << location.z;
+    buffer << location.mapId;
+    buffer << areaId;
+}
+
+void WorldPackets::Misc::PlayerBound::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << binderGuid;
+    buffer << areaId;
+}
+
+static uint32 secsToTimeBitFields(time_t secs)
+{
+    tm localTime;
+#if PLATFORM == PLATFORM_WINDOWS
+    localtime_s(&localTime, &secs);
+#else
+    localtime_r(&secs, &localTime);
+#endif
+    return (localTime.tm_year - 100) << 24 | localTime.tm_mon  << 20 | (localTime.tm_mday - 1) << 14 | localTime.tm_wday << 11 | localTime.tm_hour << 6 | localTime.tm_min;
+}
+
+void WorldPackets::Misc::LoginSetTimeSpeed::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << secsToTimeBitFields(gameTime);
+    buffer << gameSpeedMinutesPerSecond;
+}
+
+void WorldPackets::Misc::TransferAborted::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << reason;
+}
+
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_7_1
+void WorldPackets::Misc::RaidInstanceMessage::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << messageType;
+    buffer << mapId;
+    buffer << resetTime;
+}
+#endif
+
+void WorldPackets::Misc::SummonRequest::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << summonerGuid;
+    buffer << zoneId;
+    buffer << autoDeclineDelay;
+}
+
+void WorldPackets::Misc::CorpseReclaimDelay::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << delayMs;
+}
+
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_10_2
+void WorldPackets::Misc::UpdateInstanceOwnership::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << hasBeenSaved;
+}
+
+void WorldPackets::Misc::UpdateLastInstance::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << mapId;
+}
+#endif
+
+void WorldPackets::Misc::EmoteNotify::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << emoteId;
+    buffer << unitGuid;
+}
+
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_9_4
+void WorldPackets::Misc::ClientControlUpdate::AppendBodyTo(ByteBuffer& buffer) const
+{
+    // This packet uses the packed guid format; the old sender serialized target->GetPackGUID() directly.
+    buffer << moverGuid.WriteAsPacked();
+    buffer << allowMove;
+}
+#endif
+
+void WorldPackets::Misc::UpdateWorldState::AppendBodyTo(ByteBuffer& buffer) const
+{
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_8_4
+    buffer << field;
+    buffer << value;
+#else
+    buffer << static_cast<uint16>(field);
+    buffer << static_cast<uint16>(value);
+#endif
+}

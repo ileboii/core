@@ -27,14 +27,6 @@
 #include <Windows.h>
 #include <winsvc.h>
 
-#if !defined(WINADVAPI)
-#if !defined(_ADVAPI32_)
-#define WINADVAPI DECLSPEC_IMPORT
-#else
-#define WINADVAPI
-#endif
-#endif
-
 extern int main(int argc, char** argv);
 extern char serviceLongName[];
 extern char serviceName[];
@@ -46,7 +38,7 @@ SERVICE_STATUS serviceStatus;
 
 SERVICE_STATUS_HANDLE serviceStatusHandle = 0;
 
-typedef WINADVAPI BOOL (WINAPI *CSD_T)(SC_HANDLE, DWORD, LPCVOID);
+typedef BOOL (WINAPI *CSD_T)(SC_HANDLE, DWORD, LPCVOID);
 
 bool WinServiceInstall()
 {
@@ -68,7 +60,8 @@ bool WinServiceInstall()
         return false;
     }
 
-    std::strcat(path, " -s run");
+    size_t pathLen = strlen(path);
+    snprintf(path + pathLen, sizeof(path) - pathLen, " -s run");
 
     SC_HANDLE service = CreateService(serviceControlManager,
         serviceName,                                // name of service

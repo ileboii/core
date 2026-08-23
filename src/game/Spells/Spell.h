@@ -267,7 +267,7 @@ class Spell
         bool CanAutoCast(Unit* target);
         PetTameFailureReason CheckTamingSpell(Player* caster, bool gm);
 
-        static void SendCastResult(Player* caster, SpellEntry const* spellInfo, SpellCastResult result);
+        static void SendCastResult(Player const* caster, SpellEntry const* spellInfo, SpellCastResult result);
         void SendCastResult(SpellCastResult result);
         void SendSpellStart();
         void SendSpellGo();
@@ -278,7 +278,6 @@ class Spell
         void SendChannelUpdate(uint32 time, bool interrupted = false);
         void SendChannelStart(uint32 duration);
         void SendResurrectRequest(Player* target, bool sickness);
-
         void HandleEffects(Unit* pUnitTarget,Item *pItemTarget,GameObject* pGOTarget,SpellEffectIndex i, float DamageMultiplier = 1.0);
         void HandleThreatSpells();
         //void HandleAddAura(Unit* Target);
@@ -519,8 +518,10 @@ class Spell
         void DoAllEffectOnTarget(GOTargetInfo *target);
         void DoAllEffectOnTarget(ItemTargetInfo *target);
         bool HasValidUnitPresentInTargetList();
+        void SendMeleeAttackingStateUpdate(TargetInfo const* target, SpellNonMeleeDamage const* damageInfo);
         SpellCastResult CanOpenLock(SpellEffectIndex effIndex, uint32 lockid, SkillType& skillid, int32& reqSkillValue, int32& skillValue);
         uint32 GetSpellBatchingEffectDelay(SpellCaster const* pTarget, SpellEffectIndex effIndex) const;
+        bool CanDelaySpellDueToBatching() const;
         // -------------------------------------------
 
         // Scripting System

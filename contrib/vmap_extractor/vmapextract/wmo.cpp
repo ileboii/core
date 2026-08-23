@@ -29,6 +29,11 @@
 #undef max
 #include "libmpq/mpq_libmpq.h"
 
+template<typename T>
+static void IgnoreResult(T const&)
+{
+}
+
 using namespace std;
 
 WMORoot::WMORoot(std::string& filename)
@@ -148,7 +153,7 @@ bool WMORoot::ConvertToVMAPRootWmo(FILE* pOutfile)
 {
     //printf("Convert RootWmo...\n");
 
-    fwrite(szRawVMAPMagic, 1, 8, pOutfile);
+    fwrite(RAW_VMAP_MAGIC, 1, 8, pOutfile);
     unsigned int nVectors = 0;
     fwrite(&nVectors, sizeof(nVectors), 1, pOutfile); // will be filled later
     fwrite(&nGroups, 4, 1, pOutfile);
@@ -560,7 +565,7 @@ WMOInstance::WMOInstance(MPQFile& f, const char* WmoInstName, uint32 mapID, uint
     //-----------add_in _dir_file----------------
 
     char tempname[512];
-    sprintf(tempname, "%s/%s", szWorkDirWmo, WmoInstName);
+    snprintf(tempname, sizeof(tempname), "%s/%s", szWorkDirWmo, WmoInstName);
     FILE* input;
     input = fopen(tempname, "r+b");
 
@@ -572,7 +577,7 @@ WMOInstance::WMOInstance(MPQFile& f, const char* WmoInstName, uint32 mapID, uint
 
     fseek(input, 8, SEEK_SET); // get the correct no of vertices
     int nVertices;
-    fread(&nVertices, sizeof(int), 1, input);
+    IgnoreResult(fread(&nVertices, sizeof(int), 1, input));
     fclose(input);
 
     if (nVertices == 0)

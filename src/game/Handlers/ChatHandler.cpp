@@ -118,8 +118,6 @@ bool WorldSession::IsLanguageAllowedForChatType(uint32 lang, uint32 msgType)
         default:
             return true;
     }
-
-    return true;
 }
 
 uint32 WorldSession::ChatCooldown()
@@ -534,7 +532,7 @@ void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const
         {
             if (GetMasterPlayer()->GetGuildId())
                 if (Guild* guild = sGuildMgr.GetGuildById(GetMasterPlayer()->GetGuildId()))
-                    guild->BroadcastToOfficers(this, packet.message.c_str(), packet.lang == LANG_ADDON ? LANG_ADDON : LANG_UNIVERSAL);
+                    guild->BroadcastChatMsgToOfficers(this, packet.message.c_str(), packet.lang == LANG_ADDON ? LANG_ADDON : LANG_UNIVERSAL);
 
             if (packet.lang != LANG_ADDON)
                 sWorld.LogChat(this, "Officer", packet.message.c_str(), nullptr, GetMasterPlayer()->GetGuildId());

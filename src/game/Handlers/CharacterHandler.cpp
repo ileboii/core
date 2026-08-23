@@ -506,10 +506,10 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder *holder)
     {
         m_masterPlayer = new MasterPlayer(this);
         m_masterPlayer->LoadPlayer(GetPlayer());
-        m_masterPlayer->LoadActions(std::move(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADACTIONS)));
-        m_masterPlayer->LoadSocial(std::move(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADSOCIALLIST)));
-        m_masterPlayer->LoadMails(std::move(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADMAILS)));
-        m_masterPlayer->LoadMailedItems(std::move(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADMAILEDITEMS)));
+        m_masterPlayer->LoadActions(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADACTIONS));
+        m_masterPlayer->LoadSocial(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADSOCIALLIST));
+        m_masterPlayer->LoadMails(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADMAILS));
+        m_masterPlayer->LoadMailedItems(holder->TakeResult(PLAYER_LOGIN_QUERY_LOADMAILEDITEMS));
     }
     m_masterPlayer->UpdateNextMailTimeAndUnreads();
 
@@ -557,11 +557,10 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder *holder)
 
     if (Guild* guild = sGuildMgr.GetGuildById(pCurrChar->GetGuildId()))
     {
-        WorldPacket data(SMSG_GUILD_EVENT, (2 + guild->GetMOTD().size() + 1));
-        data << uint8(GE_MOTD);
-        data << uint8(1);
-        data << guild->GetMOTD();
-        SendPacket(&data);
+        auto guildEvent = std::make_unique<WorldPackets::Guild::GuildEvent>();
+        guildEvent->event = GE_MOTD;
+        guildEvent->params.push_back(guild->GetMOTD());
+        SendPacket(std::move(guildEvent));
 
         guild->BroadcastEvent(GE_SIGNED_ON, pCurrChar->GetObjectGuid(), pCurrChar->GetName());
     }
@@ -787,27 +786,27 @@ void WorldSession::HandleCharRenameOpcode(WorldPackets::Character::CharRename co
     // prevent character rename to invalid name
     if (!normalizePlayerName(const_cast<std::string&>(packet.newname)))
     {
-        WorldPacket data(SMSG_CHAR_RENAME, 1);
-        data << uint8(CHAR_NAME_NO_NAME);
-        SendPacket(&data);
+        auto response = std::make_unique<WorldPackets::Character::CharRenameResponse>();
+        response->result = CHAR_NAME_NO_NAME;
+        SendPacket(std::move(response));
         return;
     }
 
     uint8 res = ObjectMgr::CheckPlayerName(packet.newname, true);
     if (res != CHAR_NAME_SUCCESS)
     {
-        WorldPacket data(SMSG_CHAR_RENAME, 1);
-        data << uint8(res);
-        SendPacket(&data);
+        auto response = std::make_unique<WorldPackets::Character::CharRenameResponse>();
+        response->result = res;
+        SendPacket(std::move(response));
         return;
     }
 
     // check name limitations
     if (GetSecurity() == SEC_PLAYER && sObjectMgr.IsReservedName(packet.newname))
     {
-        WorldPacket data(SMSG_CHAR_RENAME, 1);
-        data << uint8(CHAR_NAME_RESERVED);
-        SendPacket(&data);
+        auto response = std::make_unique<WorldPackets::Character::CharRenameResponse>();
+        response->result = CHAR_NAME_RESERVED;
+        SendPacket(std::move(response));
         return;
     }
 
@@ -833,9 +832,9 @@ void WorldSession::HandleChangePlayerNameOpcodeCallBack(std::unique_ptr<QueryRes
 
     if (!result)
     {
-        WorldPacket data(SMSG_CHAR_RENAME, 1);
-        data << uint8(CHAR_CREATE_ERROR);
-        session->SendPacket(&data);
+        auto response = std::make_unique<WorldPackets::Character::CharRenameResponse>();
+        response->result = CHAR_CREATE_ERROR;
+        session->SendPacket(std::move(response));
         return;
     }
 
@@ -851,11 +850,11 @@ void WorldSession::HandleChangePlayerNameOpcodeCallBack(std::unique_ptr<QueryRes
         "Account: %d (IP: %s) Character:[%s] (guid:%u) Changed name to: %s",
         session->GetAccountId(), session->GetRemoteAddress().c_str(), oldname.c_str(), guidLow, newname.c_str());
 
-    WorldPacket data(SMSG_CHAR_RENAME, 1 + 8 + (newname.size() + 1));
-    data << uint8(RESPONSE_SUCCESS);
-    data << guid;
-    data << newname;
-    session->SendPacket(&data);
+    auto response = std::make_unique<WorldPackets::Character::CharRenameResponse>();
+    response->result = RESPONSE_SUCCESS;
+    response->renamedCharacterGuid = guid;
+    response->newName = newname;
+    session->SendPacket(std::move(response));
 
     sObjectMgr.ChangePlayerNameInCache(guidLow, oldname, newname);
     sWorld.InvalidatePlayerDataToAllClient(guid);

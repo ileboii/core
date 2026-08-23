@@ -29,6 +29,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "Group.h"
+#include "Utilities/Random.h"
 #include "SocialMgr.h"
 #include "Util.h"
 
@@ -345,11 +346,20 @@ void WorldSession::HandleLootMethodOpcode(WorldPackets::Group::LootMethod const&
     if (!group)
         return;
 
-    /** error handling **/
     if (!group->IsLeader(GetPlayer()->GetObjectGuid()))
         return;
-    /********************/
 
+    if (packet.lootMethod == MASTER_LOOT)
+    {
+        if (!group->IsMember(packet.lootMaster))
+            return;
+    }
+    else
+    {
+        // cannot have loot master in other loot methods
+        const_cast<ObjectGuid&>(packet.lootMaster).Clear();
+    }
+    
     // everything is fine, do it
     group->SetLootMethod((LootMethod)packet.lootMethod);
     group->SetLooterGuid(packet.lootMaster);
@@ -393,7 +403,7 @@ void WorldSession::HandleMinimapPingOpcode(WorldPackets::Group::MinimapPing cons
 void WorldSession::HandleRandomRollOpcode(WorldPackets::Group::RandomRoll const& packet)
 {
     /** error handling **/
-    if (packet.minimum > packet.maximum || packet.maximum > 10000) // < 32768 for urand call
+    if (packet.minimum > packet.maximum || packet.maximum > 1000000)
         return;
     /********************/
 
@@ -549,7 +559,7 @@ void WorldSession::HandleGroupAssistantLeaderOpcode(WorldPackets::Group::GroupAs
 }
 
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_10_2
-void WorldSession::HandleRaidReadyCheckOpcode(WorldPackets::Group::RaidReadyCheck const& packet)
+void WorldSession::HandleRaidReadyCheckOpcode(WorldPackets::Group::RaidReadyCheckFromClient const& packet)
 {
     if (!packet.state.has_value()) // request
     {
@@ -564,8 +574,7 @@ void WorldSession::HandleRaidReadyCheckOpcode(WorldPackets::Group::RaidReadyChec
         /********************/
 
         // everything is fine, do it
-        WorldPacket data(MSG_RAID_READY_CHECK, 0);
-        group->BroadcastPacket(&data, false, -1);
+        group->BroadcastPacket(std::make_unique<WorldPackets::Group::RaidReadyCheckFromServer_Request>(), false, -1);
 
         group->OfflineReadyCheck();
     }
@@ -578,7 +587,7 @@ void WorldSession::HandleRaidReadyCheckOpcode(WorldPackets::Group::RaidReadyChec
         // Forward to the raid leader
         if (Player* gleader = sObjectMgr.GetPlayer(group->GetLeaderGuid()))
         {
-            auto response = std::make_unique<WorldPackets::Group::RaidReadyCheckResponse>();
+            auto response = std::make_unique<WorldPackets::Group::RaidReadyCheckFromServer_Response>();
             response->senderGuid = GetPlayer()->GetObjectGuid();
             response->state = packet.state.value();
             gleader->GetSession()->SendPacket(std::move(response));

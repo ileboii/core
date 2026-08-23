@@ -42,6 +42,7 @@
 #include "WardenWin.hpp"
 #include "WardenMac.hpp"
 #include "WardenScanMgr.hpp"
+#include "Utilities/Random.h"
 
 #include <zlib.h>
 #include <algorithm>
@@ -90,12 +91,19 @@ void Log::OutWarden(Warden const* warden, LogLevel logLevel, char const* format,
     }
 }
 
+bool Warden::m_scriptedScansLoaded = false;
+
 void Warden::LoadScriptedScans()
 {
+    // Prevent duplicating the scripted scans on reload.
+    if (m_scriptedScansLoaded)
+        return;
+
     auto const start = sWardenScanMgr.Count();
 
     WardenWin::LoadScriptedScans();
     WardenMac::LoadScriptedScans();
+    m_scriptedScansLoaded = true;
 
     sLog.Out(LOG_ANTICHEAT, LOG_LVL_MINIMAL, ">> %u scripted Warden scans loaded from anticheat module", sWardenScanMgr.Count() - start);
 }
@@ -230,7 +238,7 @@ void Warden::SendModuleToClient()
 
 std::vector<std::shared_ptr<Scan const>> Warden::SelectScans(ScanFlags flags) const
 {
-    return std::move(sWardenScanMgr.GetRandomScans(static_cast<ScanFlags>(flags | GetScanFlags()), m_clientBuild));
+    return sWardenScanMgr.GetRandomScans(static_cast<ScanFlags>(flags | GetScanFlags()), m_clientBuild);
 }
 
 void Warden::EnqueueScans(std::vector<std::shared_ptr<Scan const>>&& scans)
@@ -267,7 +275,7 @@ void Warden::RequestScans(std::vector<std::shared_ptr<Scan const>>&& scans)
         if (request + (*i)->requestSize > MaxRequest || reply + (*i)->replySize > MaxReply ||
             m_pendingScans.size() >= sWorld.getConfig(CONFIG_UINT32_AC_WARDEN_NUM_SCANS))
         {
-            m_enqueuedScans = std::move(std::vector<std::shared_ptr<Scan const>>(i, m_enqueuedScans.end()));
+            m_enqueuedScans = std::vector<std::shared_ptr<Scan const>>(i, m_enqueuedScans.end());
             queueUpdated = true;
             break;
         }
@@ -283,7 +291,11 @@ void Warden::RequestScans(std::vector<std::shared_ptr<Scan const>>&& scans)
         // if the scan did not change the buffer size or the string size, consider
         // it a NOP and don't bother marking it as pending
         if (scan.wpos() != startSize || strings.size() != startStringSize)
+        {
             m_pendingScans.push_back(*i);
+            request += (*i)->requestSize;
+            reply += (*i)->replySize;
+        }
     }
 
     // if there are still no pending scans, it means that there is a single scan which is too big.
@@ -359,33 +371,33 @@ void Warden::ReadScanResults(ByteBuffer& buff)
 
 void Warden::SendPacket(ByteBuffer const& buff)
 {
-    WorldPacket pkt(SMSG_WARDEN_DATA, buff.wpos());
-    pkt.append(buff);
+    auto packet = std::make_unique<WorldPackets::Warden::WardenDataServer>();
+    packet->encryptedData.append(buff);
 
-    // we specifically append the packet copy, rather than the input copy, to avoid
+    // we specifically encrypt the packet copy, rather than the input copy, to avoid
     // creating side-effects for this function
-    EncryptData(const_cast<uint8*>(pkt.contents()), pkt.wpos());
+    EncryptData(const_cast<uint8*>(packet->encryptedData.contents()), packet->encryptedData.wpos());
 
-    sWorld.GetMessager().AddMessage([packet = std::move(pkt), accountId = m_accountId, sessionGuid = m_sessionGuid](World* world)
+    sWorld.GetMessager().AddMessage([packet = std::move(packet), accountId = m_accountId, sessionGuid = m_sessionGuid](World* world) mutable
     {
         if (WorldSession* session = world->FindSession(accountId))
         {
             if (session->GetGUID() == sessionGuid)
-                session->SendPacket(&packet);
+                session->SendPacket(std::move(packet));
         }
     });
 }
 
 void Warden::SendPacketDirect(ByteBuffer const& buff, WorldSession* session)
 {
-    WorldPacket pkt(SMSG_WARDEN_DATA, buff.wpos());
-    pkt.append(buff);
+    auto packet = std::make_unique<WorldPackets::Warden::WardenDataServer>();
+    packet->encryptedData.append(buff);
 
-    // we specifically append the packet copy, rather than the input copy, to avoid
+    // we specifically encrypt the packet copy, rather than the input copy, to avoid
     // creating side-effects for this function
-    EncryptData(const_cast<uint8*>(pkt.contents()), pkt.wpos());
+    EncryptData(const_cast<uint8*>(packet->encryptedData.contents()), packet->encryptedData.wpos());
 
-    session->SendPacket(&pkt);
+    session->SendPacket(std::move(packet));
 }
 
 void Warden::KickSession() const

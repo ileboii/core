@@ -699,7 +699,9 @@ bool ChatHandler::HandleInstanceListBindsCommand(char* /*args*/)
     {
         DungeonPersistentState* state = bind.second.state;
         std::string timeleft;
-        if (!bind.second.perm)
+        // permanent binds are raids, which reset globally per map since 1.9,
+        // before that each raid instance has its own reset time
+        if (!bind.second.perm || !DungeonResetScheduler::IsRaidResetSchedulingGlobal())
             timeleft = secsToTimeString(state->GetResetTime() - time(nullptr), true);
         else
             timeleft = secsToTimeString(sMapPersistentStateMgr.GetScheduler().GetResetTimeFor(bind.first) - time(nullptr));
@@ -725,7 +727,7 @@ bool ChatHandler::HandleInstanceListBindsCommand(char* /*args*/)
         {
             DungeonPersistentState* state = bind.second.state;
             std::string timeleft;
-            if (!bind.second.perm)
+            if (!bind.second.perm || !DungeonResetScheduler::IsRaidResetSchedulingGlobal())
                 timeleft = secsToTimeString(state->GetResetTime() - time(nullptr), true);
             else
                 timeleft = secsToTimeString(sMapPersistentStateMgr.GetScheduler().GetResetTimeFor(bind.first) - time(nullptr));
@@ -790,7 +792,7 @@ bool ChatHandler::HandleInstanceUnbindCommand(char* args)
     Player* player = GetSelectedPlayer();
     if (!player || GetAccessLevel() < SEC_BASIC_ADMIN)
         player = m_session->GetPlayer();
-   
+
     uint32 mapid = 0;
     bool got_map = false;
 
@@ -813,7 +815,7 @@ bool ChatHandler::HandleInstanceGroupUnbindCommand(char* args)
     if (!*args)
         return false;
 
-    Player* player = player = GetSelectedPlayer();
+    Player* player = GetSelectedPlayer();
     if (!player || player->InBattleGround())
         return false;
 
@@ -1779,7 +1781,7 @@ bool ChatHandler::HandleBGStatusCommand(char *args)
         uiHordeCount    = 0;
 
         BattleGroundQueueTypeId bgQueueTypeId = BattleGroundMgr::BgQueueTypeId(BattleGroundTypeId(bgTypeId));
-        // Doit etre une référence (&), sinon crash par la suite ...
+        // Must be a reference (&), otherwise crash later on ...
         BattleGroundQueue& queue = sBattleGroundMgr.m_battleGroundQueues[bgQueueTypeId];
         for (const auto& itr : queue.m_queuedPlayers)
         {

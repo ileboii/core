@@ -3084,6 +3084,10 @@ struct AV_npc_troops_chief_EventAI : public npc_escortAI
             troopsType = AV_NPC_FROSTWOLF_REAVER;
             warcryBC = SAY_WARCRY_HORDE;
         }
+        else
+        {
+            return;
+        }
 
         if (m_eventTimer <= uiDiff)
         {

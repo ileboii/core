@@ -8,6 +8,7 @@
 #include "AuctionHouseBot/AuctionHouseBot.h"
 #include "Config/Config.h"
 #include "Chat.h"
+#include "Utilities/Random.h"
 
 #include <sstream>
 

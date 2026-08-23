@@ -37,6 +37,7 @@
 #include "LFGQueue.h"
 #include "LockedQueue.h"
 
+#include <atomic>
 #include <map>
 #include <set>
 #include <list>
@@ -45,6 +46,7 @@
 #include <unordered_map>
 #include <thread>
 
+class ServerPacket;
 class Object;
 class WorldSession;
 class Player;
@@ -257,6 +259,7 @@ enum eConfigUInt32Values
     CONFIG_UINT32_ENVIRONMENTAL_DAMAGE_MAX,
     CONFIG_UINT32_MIN_LEVEL_STAT_SAVE,
     CONFIG_UINT32_MAINTENANCE_DAY,
+    CONFIG_UINT32_CHARDB_CLEANUP_FLAGS,
     CONFIG_UINT32_CHARDELETE_KEEP_DAYS,
     CONFIG_UINT32_CHARDELETE_METHOD,
     CONFIG_UINT32_CHARDELETE_MIN_LEVEL,
@@ -412,7 +415,6 @@ enum eConfigFloatValues
     CONFIG_FLOAT_RATE_XP_EXPLORE,
     CONFIG_FLOAT_RATE_REPUTATION_GAIN,
     CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_KILL,
-    CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_QUEST,
     CONFIG_FLOAT_RATE_CREATURE_NORMAL_HP,
     CONFIG_FLOAT_RATE_CREATURE_ELITE_ELITE_HP,
     CONFIG_FLOAT_RATE_CREATURE_ELITE_RAREELITE_HP,
@@ -669,7 +671,7 @@ class ThreadPool;
 class World
 {
     public:
-        static volatile uint32 m_worldLoopCounter;
+        static std::atomic<uint32> m_worldLoopCounter;
 
         World();
         ~World();
@@ -741,7 +743,7 @@ class World
         // Get the maximum skill level a player can reach
         uint16 GetConfigMaxSkillValue() const
         {
-            uint32 lvl = getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
+            uint32 lvl = std::max(60u, getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL));
             return lvl > 60 ? 300 + ((lvl - 60) * 75) / 10 : lvl*5;
         }
 
@@ -757,9 +759,10 @@ class World
         void SendGMTicketText(char const* text);
         void SendGMText(int32 string_id, ...);
         void SendGlobalText(char const* text, WorldSession* self);
-        void SendGlobalMessage(WorldPacket* packet, WorldSession* self = 0, uint32 team = 0);
-        void SendZoneMessage(uint32 zone, WorldPacket* packet, WorldSession* self = 0, uint32 team = 0);
-        void SendZoneText(uint32 zone, char const* text, WorldSession* self = 0, uint32 team = 0);
+        void SendGlobalMessage(WorldPacket const* binaryPacket, WorldSession const* self = nullptr, uint32 team = 0);
+        void SendGlobalMessage(std::unique_ptr<ServerPacket const> packet, WorldSession const* self = nullptr, uint32 team = 0);
+        void SendZoneMessage(uint32 zone, WorldPacket const* binaryPacket, WorldSession const* self = nullptr, uint32 team = 0);
+        void SendZoneText(uint32 zone, char const* text, WorldSession const* self = nullptr, uint32 team = 0);
         void SendServerMessage(ServerMessageType type, char const* text = "", Player* player = nullptr);
 
         // Are we in the middle of a shutdown?

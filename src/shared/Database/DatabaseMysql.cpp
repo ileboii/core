@@ -19,8 +19,6 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef DO_POSTGRESQL
-
 #include <errmsg.h>
 #include <mysqld_error.h>
 #include "Log.h"
@@ -198,10 +196,7 @@ bool MySQLConnection::HandleMySQLError(uint32 errNo)
 bool MySQLConnection::_Query(std::string const& sql, MYSQL_RES** pResult, MYSQL_FIELD** pFields, uint64* pRowCount, uint32* pFieldCount)
 {
     if (!mMysql && !Reconnect())
-    {
         return false;
-    }
-        
 
     uint32 _s = WorldTimer::getMSTime();
 
@@ -387,7 +382,7 @@ bool MySqlPreparedStatement::prepare()
     /* Fetch result set meta information */
     m_pResultMetadata = mysql_stmt_result_metadata(m_stmt);
     //if we do not have result metadata
-    if (!m_pResultMetadata && strnicmp(m_szFmt.c_str(), "select", 6) == 0)
+    if (!m_pResultMetadata && StringStartsWithCaseInsensitive(m_szFmt, "select"))
     {
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "SQL: no meta information for '%s'", m_szFmt.c_str());
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "SQL ERROR: %s", mysql_stmt_error(m_stmt));
@@ -529,4 +524,3 @@ enum_field_types MySqlPreparedStatement::ToMySQLType(SqlStmtFieldData const& dat
 
     return dataType;
 }
-#endif

@@ -95,7 +95,9 @@ struct SpellThreatEntry
 {
     uint16 threat;
     float multiplier;
-    float ap_bonus;
+    uint8 inverseEffectMask;
+
+    bool CanCauseThreatOnMask(uint8 mask) const { return ((~inverseEffectMask) & mask) != 0; }
 };
 
 typedef std::map<uint32, uint8> SpellElixirMap;
@@ -605,6 +607,7 @@ class SpellMgr
 
         static bool IsProfessionOrRidingSpell(uint32 spellId);
         static bool IsProfessionSpell(uint32 spellId);
+        static bool IsTradeskillSpell(uint32 spellId);
         static bool IsPrimaryProfessionSpell(uint32 spellId);
         bool IsPrimaryProfessionFirstRankSpell(uint32 spellId) const;
 

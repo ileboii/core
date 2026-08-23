@@ -1227,6 +1227,16 @@ void ScriptMgr::LoadScripts(ScriptMapMap& scripts, char const* tablename)
                 }
                 break;
             }
+            case SCRIPT_COMMAND_FOLLOW_ESCORT:
+            {
+                if (tmp.followEscort.doFollow > 1)
+                {
+                    sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `%s` using non-boolean value in datalong (%u) in SCRIPT_COMMAND_FOLLOW_ESCORT for script id %u",
+                        tablename, tmp.followEscort.doFollow, tmp.id);
+                    continue;
+                }
+                break;
+            }
         }
 
         if (scripts.find(tmp.id) == scripts.end())
@@ -2343,11 +2353,11 @@ void ScriptMgr::LoadEscortData()
             if (!pCInfo->script_id)
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "DB table script_escort_data has data for creature entry %u, but creature does not have script_name defined and then useless.", pTemp.uiCreatureEntry);
 
-            // Calcul de uiLastWaypointEntry, et mise en "cache"
+            // Calculate uiLastWaypointEntry, and store in cache
             std::vector<ScriptPointMove> const points = GetPointMoveList(pTemp.uiCreatureEntry);
             if (points.empty())
             {
-                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Le PNJ %u de script_escort_data n'a pas de donnees de Waypoints !", pTemp.uiCreatureEntry);
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "NPC %u from script_escort_data has no Waypoint data!", pTemp.uiCreatureEntry);
                 continue;
             }
             pTemp.uiLastWaypointEntry = 0;

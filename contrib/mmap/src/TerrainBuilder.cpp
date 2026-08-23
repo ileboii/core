@@ -24,9 +24,14 @@
 #include "ModelInstance.h"
 #include "Maps/GridMapDefines.h"
 
+template<typename T>
+static void IgnoreResult(T const&)
+{
+}
+
 namespace MMAP
 {
-    TerrainBuilder::TerrainBuilder(bool skipLiquid, bool quick) : m_skipLiquid(skipLiquid), m_V9(nullptr), m_V8(nullptr), m_quick(quick), m_mapId(0) { }
+    TerrainBuilder::TerrainBuilder(bool skipLiquid, bool quick) : m_skipLiquid(skipLiquid), m_V9(nullptr), m_V8(nullptr), m_heightDataValid(false), m_heightDataTileX(0), m_heightDataTileY(0), m_quick(quick), m_mapId(0) { }
     TerrainBuilder::~TerrainBuilder()
     {
         if (m_V8)
@@ -77,6 +82,9 @@ namespace MMAP
     /**************************************************************************/
     void TerrainBuilder::loadMap(uint32 mapID, uint32 tileX, uint32 tileY, MeshData& meshData)
     {
+        // invalidate before loading: if this tile has no terrain (or no .map file at
+        // all), getHeight() must not answer with the previous tile's heights
+        m_heightDataValid = false;
         if (loadMap(mapID, tileX, tileY, meshData, ENTIRE))
         {
             loadMap(mapID, tileX + 1, tileY, meshData, LEFT);
@@ -90,14 +98,14 @@ namespace MMAP
     bool TerrainBuilder::loadMap(uint32 mapID, uint32 tileX, uint32 tileY, MeshData& meshData, Spot portion)
     {
         char mapFileName[255];
-        sprintf(mapFileName, "maps/%03u%02u%02u.map", mapID, tileY, tileX);
+        snprintf(mapFileName, sizeof(mapFileName), "maps/%03u%02u%02u.map", mapID, tileY, tileX);
 
         FILE* mapFile = fopen(mapFileName, "rb");
         if (!mapFile)
             return false;
 
         GridMapFileHeader fheader;
-        fread(&fheader, sizeof(GridMapFileHeader), 1, mapFile);
+        IgnoreResult(fread(&fheader, sizeof(GridMapFileHeader), 1, mapFile));
 
         if (fheader.versionMagic != *((uint32 const*)(MAP_VERSION_MAGIC)))
         {
@@ -109,7 +117,7 @@ namespace MMAP
 
         GridMapHeightHeader hheader;
         fseek(mapFile, fheader.heightMapOffset, SEEK_SET);
-        fread(&hheader, sizeof(GridMapHeightHeader), 1, mapFile);
+        IgnoreResult(fread(&hheader, sizeof(GridMapHeightHeader), 1, mapFile));
 
         bool haveTerrain = !(hheader.flags & MAP_HEIGHT_NO_HEIGHT);
         bool haveLiquid = fheader.liquidMapOffset && !m_skipLiquid;
@@ -143,8 +151,8 @@ namespace MMAP
             {
                 uint8 v9[V9_SIZE_SQ];
                 uint8 v8[V8_SIZE_SQ];
-                fread(v9, sizeof(uint8), V9_SIZE_SQ, mapFile);
-                fread(v8, sizeof(uint8), V8_SIZE_SQ, mapFile);
+                IgnoreResult(fread(v9, sizeof(uint8), V9_SIZE_SQ, mapFile));
+                IgnoreResult(fread(v8, sizeof(uint8), V8_SIZE_SQ, mapFile));
                 heightMultiplier = (hheader.gridMaxHeight - hheader.gridHeight) / 255;
 
                 for (i = 0; i < V9_SIZE_SQ; ++i)
@@ -157,8 +165,8 @@ namespace MMAP
             {
                 uint16 v9[V9_SIZE_SQ];
                 uint16 v8[V8_SIZE_SQ];
-                fread(v9, sizeof(uint16), V9_SIZE_SQ, mapFile);
-                fread(v8, sizeof(uint16), V8_SIZE_SQ, mapFile);
+                IgnoreResult(fread(v9, sizeof(uint16), V9_SIZE_SQ, mapFile));
+                IgnoreResult(fread(v8, sizeof(uint16), V8_SIZE_SQ, mapFile));
                 heightMultiplier = (hheader.gridMaxHeight - hheader.gridHeight) / 65535;
 
                 for (i = 0; i < V9_SIZE_SQ; ++i)
@@ -169,14 +177,14 @@ namespace MMAP
             }
             else
             {
-                fread(V9, sizeof(float), V9_SIZE_SQ, mapFile);
-                fread(V8, sizeof(float), V8_SIZE_SQ, mapFile);
+                IgnoreResult(fread(V9, sizeof(float), V9_SIZE_SQ, mapFile));
+                IgnoreResult(fread(V8, sizeof(float), V8_SIZE_SQ, mapFile));
             }
 
             // hole data
             memset(holes, 0, fheader.holesSize);
             fseek(mapFile, fheader.holesOffset, SEEK_SET);
-            fread(holes, fheader.holesSize, 1, mapFile);
+            IgnoreResult(fread(holes, fheader.holesSize, 1, mapFile));
 
             if (portion == ENTIRE)
             {
@@ -186,6 +194,9 @@ namespace MMAP
                     m_V9 = new float[V9_SIZE_SQ];
                 memcpy(m_V8, V8, V8_SIZE_SQ * sizeof(float));
                 memcpy(m_V9, V9, V9_SIZE_SQ * sizeof(float));
+                m_heightDataValid = true;
+                m_heightDataTileX = tileX;
+                m_heightDataTileY = tileY;
             }
 
             int count = meshData.solidVerts.size() / 3;
@@ -210,7 +221,11 @@ namespace MMAP
                 meshData.solidVerts.append(coord[1]);
             }
 
-            int j, indices[3], loopStart, loopEnd, loopInc;
+            int j;
+            int indices[3];
+            int loopStart = 0;
+            int loopEnd = 0;
+            int loopInc = 1;
             getLoopVars(portion, loopStart, loopEnd, loopInc);
             for (i = loopStart; i < loopEnd; i += loopInc)
                 for (j = TOP; j <= BOTTOM; j += 1)
@@ -242,8 +257,11 @@ namespace MMAP
                 }
                 else
                 {
+                    // uniform liquid over the whole tile - the type is taken from the
+                    // header, so it counts as loaded (otherwise useLiquid is never set)
                     std::fill_n(&liquid_entry[0][0], 16 * 16, lheader.liquidType);
                     std::fill_n(&liquid_flags[0][0], 16 * 16, lheader.liquidFlags);
+                    liquid_type_loaded = true;
                 }
 
                 if (!(lheader.flags & MAP_LIQUID_NO_HEIGHT))
@@ -302,9 +320,12 @@ namespace MMAP
                 }
             }
 
-            int indices[3], loopStart, loopEnd, loopInc, triInc;
+            int indices[3];
+            int loopStart = 0;
+            int loopEnd = 0;
+            int loopInc = 1;
+            int triInc = BOTTOM - TOP;
             getLoopVars(portion, loopStart, loopEnd, loopInc);
-            triInc = BOTTOM - TOP;
 
             // generate triangles
             for (int i = loopStart; i < loopEnd; i += loopInc)
@@ -322,8 +343,12 @@ namespace MMAP
 
         // now that we have gathered the data, we can figure out which parts to keep:
         // liquid above ground, ground above liquid
-        int loopStart, loopEnd, loopInc, tTriCount = 4;
-        bool useTerrain, useLiquid;
+        int loopStart = 0;
+        int loopEnd = 0;
+        int loopInc = 1;
+        int tTriCount = 4;
+        bool useTerrain = false;
+        bool useLiquid = false;
 
         float* lverts = meshData.liquidVerts.getCArray();
         int* ltris = ltriangles.getCArray();
@@ -735,12 +760,20 @@ namespace MMAP
         meshData.vmapLastTriangle = meshData.solidTris.size() / 3;
         if (m_quick)
             return true;
-        float* terrainInsideModelsVerts = new float[meshData.solidVerts.size()];
-        for (int i = 0; i < meshData.solidVerts.size(); ++i)
+        // only terrain vertices (the first mapVertsCount / 3 entries of solidVerts) are
+        // ever marked; model vertices and the vertices appended by the clipping pass
+        // below are never "inside a model" - insideDist() answers -1 for them
+        int const terrainVertsCount = mapVertsCount / 3;
+        float* terrainInsideModelsVerts = new float[terrainVertsCount];
+        for (int i = 0; i < terrainVertsCount; ++i)
             terrainInsideModelsVerts[i] = -1.0f;
+        auto insideDist = [&](int vertIdx) -> float
+        {
+            return vertIdx < terrainVertsCount ? terrainInsideModelsVerts[vertIdx] : -1.0f;
+        };
         for (uint32 i = 0; i < count; ++i)
         {
-            ModelInstance instance = models[i];
+            ModelInstance& instance = models[i];
 
             // model instances exist in tree even though there are instances of that model in this tile
             std::shared_ptr<WorldModel> worldModel = instance.getWorldModel();
@@ -756,32 +789,40 @@ namespace MMAP
             // transform data
             float scale = instance.iScale;
             G3D::Matrix3 rotation = G3D::Matrix3::fromEulerAnglesXYZ(G3D::pi() * instance.iRot.z / -180.f, G3D::pi() * instance.iRot.x / -180.f, G3D::pi() * instance.iRot.y / -180.f);
+            G3D::Matrix3 rotationInv = rotation.inverse();
+            // world up transformed into model space, scaled so intersection distances
+            // come back in world units - same convention as ModelInstance::isUnderModel,
+            // otherwise the thresholds below are wrong for tilted or scaled instances
+            Vector3 up = Vector3::unitZ() * rotationInv / scale;
             Vector3 position = instance.iPos;
             position.x -= 32 * GRID_SIZE;
             position.y -= 32 * GRID_SIZE;
 
             /// Check every map vertice
             // x, y * -1
-            
-            for (vector<GroupModel>::iterator it = groupModels.begin(); it != groupModels.end(); ++it)
-                for (int t = 0; t < mapVertsCount / 3; ++t)
-                {
-                    // y, z, x
-                    Vector3 v(meshData.solidVerts[3*t+2], meshData.solidVerts[3*t], meshData.solidVerts[3*t+1] + 0.2f);
-                    v.x *= -1.f;
-                    v.y *= -1.f;
-                    v -= position;
-                    v = v * rotation.inverse() / scale;
 
+            for (int t = 0; t < terrainVertsCount; ++t)
+            {
+                // y, z, x
+                Vector3 v(meshData.solidVerts[3*t+2], meshData.solidVerts[3*t], meshData.solidVerts[3*t+1] + 0.2f);
+                v.x *= -1.f;
+                v.y *= -1.f;
+                v -= position;
+                v = v * rotationInv / scale;
+
+                for (vector<GroupModel>::iterator it = groupModels.begin(); it != groupModels.end(); ++it)
+                {
                     float outDist = -1.0f;
                     float inDist  = -1.0f;
-                    if (it->IsUnderObject(v, Vector3::up(), isM2, &outDist, &inDist)) // inDist < outDist
+                    if (it->IsUnderObject(v, up, isM2, &outDist, &inDist)) // up // inDist < outDist
                     {
                         //if there are less than 5.0y between terrain and model then mark the terrain as unwalkable
-                        if (inDist < 5.0f)
+                        // several models/groups may cover this vertex - keep the closest one
+                        if (inDist < 5.0f && (terrainInsideModelsVerts[t] < 0.0f || inDist < terrainInsideModelsVerts[t]))
                             terrainInsideModelsVerts[t] = inDist;
                     }
                 }
+            }
         }
         /// Correct triangles partially under models
         for (int i = 0; i < mapTrisCount / 3; ++i)
@@ -792,14 +833,17 @@ namespace MMAP
             for (int j = 0; j < 3; ++j)
             {
                 vertIdx[j]     = meshData.solidTris[i*3+j];
-                if (vertIdx[j] < mapVertsCount)
-                    insideModel[j] = (terrainInsideModelsVerts[vertIdx[j]] >= 0.1f);
+                insideModel[j] = (insideDist(int(vertIdx[j])) >= 0.1f);
                 tri[j]         = Vector3(meshData.solidVerts[3*vertIdx[j]+2], meshData.solidVerts[3*vertIdx[j]], meshData.solidVerts[3*vertIdx[j]+1]);
             }
 
             // First case: nothing to do =)
-            if (terrainInsideModelsVerts[vertIdx[0]] < 1.0f && terrainInsideModelsVerts[vertIdx[1]] < 1.0f && terrainInsideModelsVerts[vertIdx[2]] < 1.0f)
+            if (insideDist(int(vertIdx[0])) < 1.0f && insideDist(int(vertIdx[1])) < 1.0f && insideDist(int(vertIdx[2])) < 1.0f)
                 continue;
+            // Known gap: one vertex >= 1.0 with the others in [0.1, 1.0) passes the gate
+            // above but all corners count as "inside" here, so the triangle is neither
+            // clipped nor removed by the pass below (which requires >= 1.0 on all three).
+            // Low-clearance leftovers are culled later by rcFilterWalkableLowHeightSpans.
             if (insideModel[0] == insideModel[1] && insideModel[1] == insideModel[2])
                 continue;
 
@@ -888,9 +932,8 @@ namespace MMAP
             bool    allInBorder = true;
             for (int j = 0; j < 3; ++j)
             {
-                if (meshData.solidTris[i*3+j] < mapVertsCount)
-                    insideModel[j] = (terrainInsideModelsVerts[meshData.solidTris[i*3+j]] >= 1.0f);
-                if (terrainInsideModelsVerts[meshData.solidTris[i*3+j]] >= 1.5f)
+                insideModel[j] = (insideDist(meshData.solidTris[i*3+j]) >= 1.0f);
+                if (insideDist(meshData.solidTris[i*3+j]) >= 1.5f)
                     allInBorder = false;
             }
 
@@ -1062,18 +1105,23 @@ namespace MMAP
 
     float TerrainBuilder::getHeight(float x, float y) const
     {
-        if (!m_V8 || !m_V9)
+        if (!m_heightDataValid || !m_V8 || !m_V9)
             return -50000;
 
-        x = MAP_RESOLUTION * (32 - x / GRID_SIZE);
-        y = MAP_RESOLUTION * (32 - y / GRID_SIZE);
+        // make the position local to the loaded tile (first param runs along the
+        // m_heightDataTileY axis, second along m_heightDataTileX - see getHeightCoord).
+        // Positions outside the tile (border skirt, models leaning over the tile edge)
+        // have no height data here - they must not wrap around to the opposite border.
+        x = MAP_RESOLUTION * (32 - x / GRID_SIZE) - float(m_heightDataTileY) * MAP_RESOLUTION;
+        y = MAP_RESOLUTION * (32 - y / GRID_SIZE) - float(m_heightDataTileX) * MAP_RESOLUTION;
+
+        if (x < 0.0f || y < 0.0f || x >= float(MAP_RESOLUTION) || y >= float(MAP_RESOLUTION))
+            return -50000;
 
         int x_int = (int)x;
         int y_int = (int)y;
         x -= x_int;
         y -= y_int;
-        x_int &= (MAP_RESOLUTION - 1);
-        y_int &= (MAP_RESOLUTION - 1);
 
         // Height stored as: h5 - its v8 grid, h1-h4 - its v9 grid
         // +--------------> X

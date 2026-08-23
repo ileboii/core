@@ -75,25 +75,26 @@ namespace IO
         }
 
         // Constructor from buffer, std::move, we take ownership
-        ReadableBuffer(ByteBuffer&& source) : ReadableBuffer(std::move(std::make_shared<ByteBuffer>(std::move(source))))
+        ReadableBuffer(ByteBuffer&& source) : ReadableBuffer(std::make_shared<ByteBuffer>(std::move(source)))
         {
         }
 
-        ReadableBuffer(std::vector<uint8>&& source) : ReadableBuffer(std::move(std::make_shared<std::vector<uint8>>(std::move(source))))
+        ReadableBuffer(std::vector<uint8>&& source) : ReadableBuffer(std::make_shared<std::vector<uint8>>(std::move(source)))
         {
         }
 
-        ReadableBuffer(std::vector<int8>&& source) : ReadableBuffer(std::move(std::make_shared<std::vector<int8>>(std::move(source))))
+        ReadableBuffer(std::vector<int8>&& source) : ReadableBuffer(std::make_shared<std::vector<int8>>(std::move(source)))
         {
         }
 
-        ReadableBuffer(std::vector<char>&& source) : ReadableBuffer(std::move(std::make_shared<std::vector<char>>(std::move(source))))
+        ReadableBuffer(std::vector<char>&& source) : ReadableBuffer(std::make_shared<std::vector<char>>(std::move(source)))
         {
         }
 
         // nullptr stuff
         ReadableBuffer(std::nullptr_t) : m_ptr(nullptr), m_size(0), m_type(BufferType::Unset) {}
         ReadableBuffer& operator=(std::nullptr_t) {
+            Destruct();
             m_ptr = nullptr;
             m_size = 0;
             m_type = BufferType::Unset;
@@ -164,6 +165,7 @@ namespace IO
             if (this == &other)
                 return *this; // Self-assignment check
 
+            Destruct();
             m_ptr = other.m_ptr;
             m_size = other.m_size;
             m_type = other.m_type;
@@ -220,6 +222,10 @@ namespace IO
 
         ReadableBuffer& operator=(ReadableBuffer&& other) noexcept
         {
+            if (this == &other)
+                return *this; // Self-assignment check
+
+            Destruct();
             m_ptr = other.m_ptr;
             m_size = other.m_size;
             m_type = other.m_type;

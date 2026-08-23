@@ -561,7 +561,7 @@ void SpellMgr::LoadSpellGroups()
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Spell %u listed in `spell_group` does not exist", itr->second);
                 mSpellGroupSpell.erase(itr++);
             }
-            // Necessaire pour le fix "Un sort plus puissant est deja actif".
+            // Needed for the fix "A more powerful spell is already active".
             /*else if (GetSpellRank(itr->second) > 1)
             {
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Spell %u listed in `spell_group` is not first rank of spell", itr->second);
@@ -647,9 +647,9 @@ bool SpellMgr::ListMorePowerfulSpells(uint32 spellId, std::vector<uint32>& list)
     {
         if (itr.second == spellId)
         {
-            // Un sort peut etre dans plusieurs groupes. On s'interesse au groupe 'SPELL_GROUP_STACK_RULE_POWERFULL_CHAIN'
+            // A spell can be in multiple groups. We care about the 'SPELL_GROUP_STACK_RULE_POWERFULL_CHAIN' group
             SpellGroupStackMap::const_iterator found = mSpellGroupStack.find(itr.first);
-            // Ce groupe n'a pas de regle ... Pas d'entree dans 'spell_group_stack_rule' ?
+            // This group has no rule... No entry in 'spell_group_stack_rule'?
             if (found == mSpellGroupStack.end())
                 continue;
             SpellGroupStackRule stackRule = found->second;
@@ -690,9 +690,9 @@ bool SpellMgr::ListLessPowerfulSpells(uint32 spellId, std::vector<uint32>& list)
     {
         if (itr.second == spellId)
         {
-            // Un sort peut etre dans plusieurs groupes. On s'interesse au groupe 'SPELL_GROUP_STACK_RULE_POWERFULL_CHAIN'
+            // A spell can be in multiple groups. We care about the 'SPELL_GROUP_STACK_RULE_POWERFULL_CHAIN' group
             SpellGroupStackMap::const_iterator found = mSpellGroupStack.find(itr.first);
-            // Ce groupe n'a pas de regle ... Pas d'entree dans 'spell_group_stack_rule' ?
+            // This group has no rule... No entry in 'spell_group_stack_rule'?
             if (found == mSpellGroupStack.end())
                 continue;
             SpellGroupStackRule stackRule = found->second;
@@ -782,7 +782,7 @@ struct DoSpellThreat
         else
         {
             SpellThreatEntry const& r_ste = spellItr->second;
-            if (ste.threat == r_ste.threat && ste.multiplier == r_ste.multiplier && ste.ap_bonus == r_ste.ap_bonus)
+            if (ste.threat == r_ste.threat && ste.multiplier == r_ste.multiplier && ste.inverseEffectMask == r_ste.inverseEffectMask)
                 sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Spell %u listed in `spell_threat` as custom rank has same data as Rank 1, so redundant", spell_id);
         }
     }
@@ -806,12 +806,14 @@ struct DoSpellThreat
 
         // flat threat bonus and attack power bonus currently only work properly when all
         // effects have same targets, otherwise, we'd need to seperate it by effect index
-        if (ste.threat || ste.ap_bonus != 0.f)
+        if (ste.inverseEffectMask == 0 && ste.threat != 0)
         {
+            uint32 const* effect = spell->Effect;
             uint32 const* targetA = spell->EffectImplicitTargetA;
-            if ((targetA[EFFECT_INDEX_1] && targetA[EFFECT_INDEX_1] != targetA[EFFECT_INDEX_0]) ||
-                    (targetA[EFFECT_INDEX_2] && targetA[EFFECT_INDEX_2] != targetA[EFFECT_INDEX_0]))
-                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Spell %u listed in `spell_threat` has effects with different targets, threat may be assigned incorrectly", spell->Id);
+            if ((effect[EFFECT_INDEX_0] && effect[EFFECT_INDEX_1] && targetA[EFFECT_INDEX_0] != targetA[EFFECT_INDEX_1]) ||
+                (effect[EFFECT_INDEX_0] && effect[EFFECT_INDEX_2] && targetA[EFFECT_INDEX_0] != targetA[EFFECT_INDEX_2]) ||
+                (effect[EFFECT_INDEX_1] && effect[EFFECT_INDEX_2] && targetA[EFFECT_INDEX_1] != targetA[EFFECT_INDEX_2]))
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Spell %u listed in `spell_threat` has effects with different targets, threat may be assigned incorrectly. Consider using inverse effect mask.", spell->Id);
         }
         ++count;
     }
@@ -834,7 +836,7 @@ void SpellMgr::LoadSpellThreats()
     mSpellThreatMap.clear();                                // need for reload case
 
     //                                                                0        1         2             3
-    std::unique_ptr<QueryResult> result(WorldDatabase.PQuery("SELECT `entry`, `Threat`, `multiplier`, `ap_bonus` FROM `spell_threat` WHERE %u BETWEEN `build_min` AND `build_max`", SUPPORTED_CLIENT_BUILD));
+    std::unique_ptr<QueryResult> result(WorldDatabase.PQuery("SELECT `entry`, `threat`, `multiplier`, `inverse_effect_mask` FROM `spell_threat` WHERE %u BETWEEN `build_min` AND `build_max`", SUPPORTED_CLIENT_BUILD));
     if (!result)
     {
         BarGoLink bar(1);
@@ -859,7 +861,7 @@ void SpellMgr::LoadSpellThreats()
         SpellThreatEntry ste;
         ste.threat = fields[1].GetUInt16();
         ste.multiplier = fields[2].GetFloat();
-        ste.ap_bonus = fields[3].GetFloat();
+        ste.inverseEffectMask = fields[3].GetUInt8();
 
         rankHelper.RecordRank(ste, entry);
 
@@ -1340,6 +1342,15 @@ bool SpellMgr::IsProfessionSpell(uint32 spellId)
     uint32 skill = spellInfo->EffectMiscValue[EFFECT_INDEX_1];
 
     return IsProfessionSkill(skill);
+}
+
+bool SpellMgr::IsTradeskillSpell(uint32 spellId)
+{
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
+    if (!spellInfo)
+        return false;
+
+    return spellInfo->Attributes & SPELL_ATTR_IS_TRADESKILL;
 }
 
 bool SpellMgr::IsPrimaryProfessionSpell(uint32 spellId)
@@ -3319,6 +3330,15 @@ namespace SpellInternal
         return true;
     }
 
+    // These spells should be delayed even if delay is turned off to function properly.
+    bool MustDelayEffects(SpellEntry const* spellInfo)
+    {
+        if (spellInfo->HasEffect(SPELL_EFFECT_SPIRIT_HEAL))
+            return true;
+
+        return false;
+    }
+
     bool IsBinary(SpellEntry const* spellInfo)
     {
         bool isBinary = false;
@@ -3498,7 +3518,7 @@ void SpellMgr::AssignInternalSpellFlags()
             if (SpellInternal::IsReflectableSpell(pSpellEntry.get()))
                 pSpellEntry->Internal |= SPELL_INTERNAL_REFLECTABLE;
 
-            if (sWorld.getConfig(CONFIG_UINT32_SPELL_EFFECT_DELAY) && SpellInternal::IsSpellWithDelayableEffects(pSpellEntry.get()))
+            if (SpellInternal::IsSpellWithDelayableEffects(pSpellEntry.get()))
                 pSpellEntry->Internal |= SPELL_INTERNAL_DELAYABLE_EFFECTS;
 
             if (SpellInternal::IsBinary(pSpellEntry.get()))
@@ -3512,6 +3532,9 @@ void SpellMgr::AssignInternalSpellFlags()
 
             if (SpellInternal::IsCCSpell(pSpellEntry.get()))
                 pSpellEntry->Internal |= SPELL_INTERNAL_CROWD_CONTROL;
+
+            if (SpellInternal::MustDelayEffects(pSpellEntry.get()))
+                pSpellEntry->Internal |= SPELL_INTERNAL_MUST_DELAY_EFFECTS;
 
             pSpellEntry->AllowedTargetMask = SpellInternal::GetAllowedTargetMask(pSpellEntry.get());
         }
@@ -3962,20 +3985,21 @@ void SpellMgr::LoadSpell(Field* fields)
     if (spell->HasAttribute(SPELL_ATTR_EX2_ENABLE_AFTER_PARRY))
         spell->CasterAuraState = spell->SpellFamilyName == SPELLFAMILY_HUNTER ? AURA_STATE_HUNTER_PARRY : AURA_STATE_DEFENSE;
 
-#if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_10_2
+#if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_11_2
     for (int i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; ++i)
     {
         if (IsEffectAppliesAura(spell->Effect[i]))
         {
             switch (spell->EffectApplyAuraName[i])
             {
-                // Before 1.11, the spell data specifies TO what percent the speed is reduced, not BY what percent.
+#if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_10_2
+            // Before 1.11, the spell data specifies TO what percent the speed is reduced, not BY what percent.
             case SPELL_AURA_MOD_DECREASE_SPEED:
             {
                 spell->EffectBasePoints[i] = -(100 - spell->EffectBasePoints[i]);
                 break;
             }
-
+#endif
 #if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_8_4
             // Before 1.9, the creature family is not a mask.
             case SPELL_AURA_MOD_DAMAGE_DONE_CREATURE:
@@ -4014,6 +4038,10 @@ void SpellMgr::LoadSpell(Field* fields)
             case SPELL_AURA_MOD_BASE_RESISTANCE_PCT:
             case SPELL_AURA_MOD_RESISTANCE_EXCLUSIVE:
             case SPELL_AURA_SPLIT_DAMAGE_FLAT:
+#endif
+#if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_11_2
+            // School in this effect updated way later for some reason.
+            case SPELL_AURA_MANA_SHIELD:
             {
                 if (spell->EffectMiscValue[i] == -2)
                     spell->EffectMiscValue[i] = 127; // all schools

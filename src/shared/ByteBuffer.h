@@ -143,7 +143,7 @@ class ByteBuffer
             return *this;
         }
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) && !defined(__MINGW64__)
         ByteBuffer& operator<<(time_t value)
         {
             append<time_t>(value);
@@ -239,7 +239,7 @@ class ByteBuffer
             return *this;
         }
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) && !defined(__MINGW64__)
         ByteBuffer& operator >> (time_t& value)
         {
             value = read<time_t>();
@@ -507,7 +507,7 @@ class ByteBuffer
             memcpy(&_storage[pos], src, cnt);
         }
 
-        void hexlike() const;
+        void PrintAsHex() const;
 
     private:
         // limited for internal use because can "append" any unexpected type (like pointer and etc) with hard detection problem

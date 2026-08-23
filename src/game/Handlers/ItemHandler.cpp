@@ -175,21 +175,22 @@ void WorldSession::HandleAutoEquipItemOpcode(WorldPackets::Item::AutoEquipItem c
         // check dest->src move possibility
         ItemPosCountVec sSrc;
         uint16 eSrc = 0;
+        uint8 bagSlot = 0;
         if (_player->IsInventoryPos(src))
         {
-            msg = _player->CanStoreItem(packet.srcbag, packet.srcslot, sSrc, pDstItem, true);
+            msg = _player->CanStoreItem(packet.srcbag, packet.srcslot, sSrc, pDstItem, bagSlot, true);
             if (msg != EQUIP_ERR_OK)
-                msg = _player->CanStoreItem(packet.srcbag, NULL_SLOT, sSrc, pDstItem, true);
+                msg = _player->CanStoreItem(packet.srcbag, NULL_SLOT, sSrc, pDstItem, bagSlot, true);
             if (msg != EQUIP_ERR_OK)
-                msg = _player->CanStoreItem(NULL_BAG, NULL_SLOT, sSrc, pDstItem, true);
+                msg = _player->CanStoreItem(NULL_BAG, NULL_SLOT, sSrc, pDstItem, bagSlot, true);
         }
         else if (_player->IsBankPos(src))
         {
-            msg = _player->CanBankItem(packet.srcbag, packet.srcslot, sSrc, pDstItem, true);
+            msg = _player->CanBankItem(packet.srcbag, packet.srcslot, sSrc, pDstItem, true, bagSlot);
             if (msg != EQUIP_ERR_OK)
-                msg = _player->CanBankItem(packet.srcbag, NULL_SLOT, sSrc, pDstItem, true);
+                msg = _player->CanBankItem(packet.srcbag, NULL_SLOT, sSrc, pDstItem, true, bagSlot);
             if (msg != EQUIP_ERR_OK)
-                msg = _player->CanBankItem(NULL_BAG, NULL_SLOT, sSrc, pDstItem, true);
+                msg = _player->CanBankItem(NULL_BAG, NULL_SLOT, sSrc, pDstItem, true, bagSlot);
         }
         else if (_player->IsEquipmentPos(src))
         {
@@ -200,7 +201,7 @@ void WorldSession::HandleAutoEquipItemOpcode(WorldPackets::Item::AutoEquipItem c
 
         if (msg != EQUIP_ERR_OK)
         {
-            _player->SendEquipError(msg, pDstItem, pSrcItem);
+            _player->SendEquipError(msg, pDstItem, pSrcItem, bagSlot);
             return;
         }
 
@@ -641,10 +642,11 @@ void WorldSession::HandleBuybackItem(WorldPackets::Item::BuybackItem const& pack
     }
 
     ItemPosCountVec dest;
-    InventoryResult msg = _player->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, false);
+    uint8 bagSlot = 0;
+    InventoryResult msg = _player->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, bagSlot, false);
     if (msg != EQUIP_ERR_OK)
     {
-        _player->SendEquipError(msg, pItem, nullptr);
+        _player->SendEquipError(msg, pItem, nullptr, bagSlot);
         return;
     }
 
@@ -752,35 +754,8 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid, uint8 menu_type)
         {
             if (ItemPrototype const* pProto = sObjectMgr.GetItemPrototype(crItem->item))
             {
-                if (!_player->IsGameMaster())
-                {
-                    // class wrong item skip only for bindable case
-                    if ((pProto->AllowableClass & _player->GetClassMask()) == 0 && pProto->Bonding == BIND_WHEN_PICKED_UP)
-                        continue;
-
-                    // race wrong item skip always
-                    if ((pProto->AllowableRace & _player->GetRaceMask()) == 0)
-                        continue;
-
-                    // when no faction required but rank > 0 will be used faction id from the vendor faction template to compare the rank
-                    if (!pProto->RequiredReputationFaction && pProto->RequiredReputationRank > 0 &&
-                        ReputationRank(pProto->RequiredReputationRank) > _player->GetReputationRank(pCreature->GetFactionId()))
-                        continue;
-
-                    // World of Warcraft Client Patch 1.7.0 (2005-09-13)
-                    // - Argent Dawn, Timbermaw, Zandalar and Arathi Basin vendors now show
-                    //   you their entire inventory regardless of current reputation, allowing
-                    //   players to peruse their full range of wares.The items in question
-                    //   now require the appropriate reputation level to make use of them.
-#if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_6_1
-                    if (pProto->RequiredReputationFaction && pProto->RequiredReputationRank > 0 &&
-                        ReputationRank(pProto->RequiredReputationRank) > _player->GetReputationRank(pProto->RequiredReputationFaction))
-                        continue;
-#endif
-
-                    if (crItem->conditionId && !IsConditionSatisfied(crItem->conditionId, _player, pCreature->GetMap(), pCreature, CONDITION_FROM_VENDOR))
-                        continue;
-                }
+                if (!_player->IsVendorItemVisible(pCreature, crItem, pProto))
+                    continue;
 
                 ++count;
 
@@ -848,10 +823,11 @@ void WorldSession::HandleAutoStoreBagItemOpcode(WorldPackets::Item::AutoStoreBag
     }
 
     ItemPosCountVec dest;
-    InventoryResult msg = _player->CanStoreItem(packet.dstbag, NULL_SLOT, dest, pItem, false);
+    uint8 bagSlot = 0;
+    InventoryResult msg = _player->CanStoreItem(packet.dstbag, NULL_SLOT, dest, pItem, bagSlot, false);
     if (msg != EQUIP_ERR_OK)
     {
-        _player->SendEquipError(msg, pItem, nullptr);
+        _player->SendEquipError(msg, pItem, nullptr, bagSlot);
         return;
     }
 
@@ -945,10 +921,11 @@ void WorldSession::HandleAutoBankItemOpcode(WorldPackets::Item::AutoBankItem con
     }
 
     ItemPosCountVec dest;
-    InventoryResult msg = _player->CanBankItem(NULL_BAG, NULL_SLOT, dest, pItem, false);
+    uint8 bagSlot = 0;
+    InventoryResult msg = _player->CanBankItem(NULL_BAG, NULL_SLOT, dest, pItem, false, bagSlot);
     if (msg != EQUIP_ERR_OK)
     {
-        _player->SendEquipError(msg, pItem, nullptr);
+        _player->SendEquipError(msg, pItem, nullptr, bagSlot);
         return;
     }
 
@@ -979,10 +956,11 @@ void WorldSession::HandleAutoStoreBankItemOpcode(WorldPackets::Item::AutoStoreBa
     if (_player->IsBankPos(packet.srcbag, packet.srcslot))  // moving from bank to inventory
     {
         ItemPosCountVec dest;
-        InventoryResult msg = _player->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, false);
+        uint8 bagSlot = 0;
+        InventoryResult msg = _player->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, bagSlot, false);
         if (msg != EQUIP_ERR_OK)
         {
-            _player->SendEquipError(msg, pItem, nullptr);
+            _player->SendEquipError(msg, pItem, nullptr, bagSlot);
             return;
         }
 
@@ -994,10 +972,11 @@ void WorldSession::HandleAutoStoreBankItemOpcode(WorldPackets::Item::AutoStoreBa
     else                                                    // moving from inventory to bank
     {
         ItemPosCountVec dest;
-        InventoryResult msg = _player->CanBankItem(NULL_BAG, NULL_SLOT, dest, pItem, false);
+        uint8 bagSlot = 0;
+        InventoryResult msg = _player->CanBankItem(NULL_BAG, NULL_SLOT, dest, pItem, false, bagSlot);
         if (msg != EQUIP_ERR_OK)
         {
-            _player->SendEquipError(msg, pItem, nullptr);
+            _player->SendEquipError(msg, pItem, nullptr, bagSlot);
             return;
         }
 

@@ -55,6 +55,11 @@
 
 //-----------------------------------------------------------------------------
 
+template<typename T>
+static void IgnoreResult(T const&)
+{
+}
+
 extern ArchiveSet gOpenArchives;
 
 typedef struct
@@ -69,13 +74,15 @@ char output_path[128] = ".";
 char input_path[1024] = ".";
 bool hasInputPathParam = false;
 bool preciseVectorData = true;
+// Skip all interactive prompts (for scripted runs)
+bool CONF_silent = false;
 std::unordered_map<std::string, WMODoodadData> WmoDoodads;
 
 // Constants
 
 //static const char * szWorkDirMaps = ".\\Maps";
 const char* szWorkDirWmo = "./Buildings";
-const char* szRawVMAPMagic = "VMAPs05";
+const char* RAW_VMAP_MAGIC = "VMAPs05";
 
 std::map<std::pair<uint32, uint16>, uint32> uniqueObjectIds;
 
@@ -138,7 +145,7 @@ bool ExtractSingleWmo(std::string& fname)
     char* plain_name = GetPlainName(&fname[0]);
     FixNameCase(plain_name, strlen(plain_name));
     FixNameSpaces(plain_name, strlen(plain_name));
-    sprintf(szLocalFile, "%s/%s", szWorkDirWmo, plain_name);
+    snprintf(szLocalFile, sizeof(szLocalFile), "%s/%s", szWorkDirWmo, plain_name);
 
     if (FileExists(szLocalFile))
         return true;
@@ -148,8 +155,8 @@ bool ExtractSingleWmo(std::string& fname)
     const char* rchr = strrchr(plain_name, '_');
     if (rchr != NULL)
     {
-        char cpy[4];
-        strncpy((char*)cpy, rchr, 4);
+        char cpy[5] {};
+        strncpy(cpy, rchr, sizeof(cpy) - 1);
         for (int i = 0; i < 4; ++i)
         {
             int m = cpy[i];
@@ -186,10 +193,10 @@ bool ExtractSingleWmo(std::string& fname)
         for (uint32 i = 0; i < froot.nGroups; ++i)
         {
             char temp[1024];
-            strcpy(temp, fname.c_str());
+            snprintf(temp, sizeof(temp), "%s", fname.c_str());
             temp[fname.length() - 4] = 0;
             char groupFileName[1024];
-            sprintf(groupFileName, "%s_%03d.wmo", temp, i);
+            snprintf(groupFileName, sizeof(groupFileName), "%s_%03d.wmo", temp, i);
             //printf("Trying to open groupfile %s\n",groupFileName);
 
             string s = groupFileName;
@@ -242,8 +249,8 @@ bool ParsMapFiles()
     StringSet failedPaths;
     for (unsigned int i = 0; i < map_count; ++i)
     {
-        sprintf(id, "%03u", map_ids[i].id);
-        sprintf(fn, "World\\Maps\\%s\\%s.wdt", map_ids[i].name, map_ids[i].name);
+        snprintf(id, sizeof(id), "%03u", map_ids[i].id);
+        snprintf(fn, sizeof(fn), "World\\Maps\\%s\\%s.wdt", map_ids[i].name, map_ids[i].name);
         WDTFile WDT(fn, map_ids[i].name);
         if (WDT.init(id, map_ids[i].id))
         {
@@ -278,9 +285,9 @@ bool ParsMapFiles()
 void getGamePath()
 {
 #ifdef _WIN32
-    strcpy(input_path, "Data\\");
+    snprintf(input_path, sizeof(input_path), "Data\\");
 #else
-    strcpy(input_path, "Data/");
+    snprintf(input_path, sizeof(input_path), "Data/");
 #endif
 }
 
@@ -293,11 +300,11 @@ bool scan_patches(char* scanmatch, std::vector<std::string>& pArchiveNames)
     {
         if (i != 1)
         {
-            sprintf(path, "%s-%d.MPQ", scanmatch, i);
+            snprintf(path, sizeof(path), "%s-%d.MPQ", scanmatch, i);
         }
         else
         {
-            sprintf(path, "%s.MPQ", scanmatch);
+            snprintf(path, sizeof(path), "%s.MPQ", scanmatch);
         }
         if (FILE* h = fopen(path, "rb"))
         {
@@ -321,21 +328,22 @@ bool fillArchiveNameVector(std::vector<std::string>& pArchiveNames)
 
     // open expansion and common files
     printf("Opening data files from data directory.\n");
-    sprintf(path, "%sterrain.MPQ", input_path);
+    snprintf(path, sizeof(path), "%sterrain.MPQ", input_path);
     pArchiveNames.push_back(path);
-    sprintf(path, "%smodel.MPQ", input_path);
+    snprintf(path, sizeof(path), "%smodel.MPQ", input_path);
     pArchiveNames.push_back(path);
-    sprintf(path, "%stexture.MPQ", input_path);
+    snprintf(path, sizeof(path), "%stexture.MPQ", input_path);
     pArchiveNames.push_back(path);
-    sprintf(path, "%swmo.MPQ", input_path);
+    snprintf(path, sizeof(path), "%swmo.MPQ", input_path);
     pArchiveNames.push_back(path);
-    sprintf(path, "%sbase.MPQ", input_path);
+    snprintf(path, sizeof(path), "%sbase.MPQ", input_path);
     pArchiveNames.push_back(path);
-    sprintf(path, "%smisc.MPQ", input_path);
+    snprintf(path, sizeof(path), "%smisc.MPQ", input_path);
+    pArchiveNames.push_back(path);
 
     // now, scan for the patch levels in the core dir
     printf("Scanning patch levels from data directory.\n");
-    sprintf(path, "%spatch", input_path);
+    snprintf(path, sizeof(path), "%spatch", input_path);
     if (!scan_patches(path, pArchiveNames))
         return (false);
 
@@ -361,9 +369,12 @@ bool processArgv(int argc, char** argv)
             if ((i + 1) < argc)
             {
                 hasInputPathParam = true;
-                strcpy(input_path, argv[i + 1]);
+                snprintf(input_path, sizeof(input_path), "%s", argv[i + 1]);
                 if (input_path[strlen(input_path) - 1] != '\\' && input_path[strlen(input_path) - 1] != '/')
-                    strcat(input_path, "/");
+                {
+                    size_t inputPathLen = strlen(input_path);
+                    snprintf(input_path + inputPathLen, sizeof(input_path) - inputPathLen, "/");
+                }
                 ++i;
             }
             else
@@ -371,13 +382,17 @@ bool processArgv(int argc, char** argv)
                 result = false;
             }
         }
-        else if (strcmp("-?", argv[1]) == 0)
+        else if (strcmp("-?", argv[i]) == 0)
         {
             result = false;
         }
         else if (strcmp("-l", argv[i]) == 0)
         {
             preciseVectorData = true;
+        }
+        else if (strcmp("--silent", argv[i]) == 0)
+        {
+            CONF_silent = true;
         }
         else
         {
@@ -387,11 +402,12 @@ bool processArgv(int argc, char** argv)
     }
     if (!result)
     {
-        printf("Extract for %s.\n", szRawVMAPMagic);
-        printf("%s [-?][-s][-l][-d <path>]\n", argv[0]);
+        printf("Extract for %s.\n", RAW_VMAP_MAGIC);
+        printf("%s [-?][-s][-l][-d <path>][--silent]\n", argv[0]);
         printf("   -s : small size (data size optimization), ~500MB less vmap data.\n");
         printf("   -l : (default) large size, ~500MB more vmap data. (might contain more details)\n");
         printf("   -d <path>: Path to the vector data source folder.\n");
+        printf("   --silent : skip all interactive prompts (for scripted runs).\n");
         printf("   -? : This message.\n");
     }
     return result;
@@ -424,14 +440,41 @@ int main(int argc, char** argv)
         if (!stat(sdir.c_str(), &status) || !stat(sdir_bin.c_str(), &status))
         {
             printf("Your output directory seems to be polluted, please use an empty directory!\n");
-            printf("<press return to exit>");
-            char garbage[2];
-            scanf("%c", garbage);
+            if (!CONF_silent)
+            {
+                printf("<press return to exit>");
+                char garbage[2];
+                IgnoreResult(scanf("%c", garbage));
+            }
             return 1;
         }
     }
 
-    printf("Extract for %s. Beginning work ....\n", szRawVMAPMagic);
+    // Prompt user for vmap resolution (empty input or --silent keeps the -s/-l command line setting)
+    bool highRes = preciseVectorData;
+
+    if (!CONF_silent)
+    {
+        std::string userInput;
+        std::cout << "Extract vmaps with high resolution (default = " << (highRes ? "y" : "n") << ")? [y/n]" << std::endl;
+        std::getline(std::cin, userInput);
+        if (!userInput.empty())
+            highRes = userInput.compare("y") == 0;
+    }
+
+    std::cout << "High resolution = " << highRes << std::endl;
+
+    if (!CONF_silent)
+    {
+        std::cout << "Press enter to start extracting vmaps." << std::endl;
+        std::cout << "=====================================" << std::endl;
+        std::cin.get();
+    }
+
+    // Overwrite due to user input
+    preciseVectorData = highRes;
+
+    printf("Extract for %s. Beginning work ....\n", RAW_VMAP_MAGIC);
     //xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     // Create the working directory
     if (mkdir(szWorkDirWmo
@@ -477,7 +520,7 @@ int main(int argc, char** argv)
         for (unsigned int x = 0; x < map_count; ++x)
         {
             map_ids[x].id = dbc->getRecord(x).getUInt(0);
-            strcpy(map_ids[x].name, dbc->getRecord(x).getString(1));
+            snprintf(map_ids[x].name, sizeof(map_ids[x].name), "%s", dbc->getRecord(x).getString(1));
             printf("Map - %s\n", map_ids[x].name);
         }
 
@@ -492,14 +535,20 @@ int main(int argc, char** argv)
 
         printf("\n");
         if (hasWarnings)
-            printf("Extract for %s. Work complete with warnings.\n", szRawVMAPMagic);
+            printf("Extract for %s. Work complete with warnings.\n", RAW_VMAP_MAGIC);
         else
-            printf("Extract for %s. Work complete. No errors.\n", szRawVMAPMagic);
+            printf("Extract for %s. Work complete. No errors.\n", RAW_VMAP_MAGIC);
     }
     else
     {
         printf("\n");
-        printf("ERROR: Extract for %s. Work NOT complete.\n", szRawVMAPMagic);
+        printf("ERROR: Extract for %s. Work NOT complete.\n", RAW_VMAP_MAGIC);
+    }
+
+    if (!CONF_silent)
+    {
+        std::cout << "Press enter to close." << std::endl;
+        std::cin.get();
     }
 
     return success ? 0 : 1;

@@ -53,6 +53,61 @@
 #include "CreatureLinkingMgr.h"
 #include "TemporarySummon.h"
 #include "GuardMgr.h"
+#include "Utilities/Random.h"
+
+uint32 CreatureData::GetRandomRespawnTime() const
+{
+    return urand(spawntimesecsmin, spawntimesecsmax);
+}
+
+uint32 CreatureData::ChooseCreatureId() const
+{
+    uint32 creatureId = 0;
+    uint32 creatureIdCount = 0;
+    for (; creatureIdCount < MAX_CREATURE_IDS_PER_SPAWN && creature_id[creatureIdCount]; ++creatureIdCount);
+
+    if (creatureIdCount)
+        creatureId = creature_id[urand(0, creatureIdCount - 1)];
+
+    if (!creatureId)
+        creatureId = 1;
+
+    return creatureId;
+}
+
+bool CreatureData::HasCreatureId(uint32 id) const
+{
+    return std::find(creature_id.begin(), creature_id.end(), id) != creature_id.end();
+}
+
+uint32 CreatureData::GetCreatureIdCount() const
+{
+    uint32 creatureIdCount = 0;
+    while (creatureIdCount < MAX_CREATURE_IDS_PER_SPAWN && creature_id[creatureIdCount])
+        ++creatureIdCount;
+    return creatureIdCount;
+}
+
+EquipmentEntry const* EquipmentTemplate::ChooseEquipmentEntry() const
+{
+    if (!totalProbability)
+        return nullptr;
+
+    uint32 const roll = urand(0, totalProbability - 1);
+    uint32 sum = 0;
+
+    for (auto const& itr : equipment)
+    {
+        if (!itr.probability)
+            continue;
+
+        sum += itr.probability;
+        if (roll < sum)
+            return &itr;
+    }
+
+    return nullptr;
+}
 
 TrainerSpell const* TrainerSpellData::Find(uint32 spell_id) const
 {
@@ -208,9 +263,6 @@ Creature::Creature(CreatureSubtype subtype) :
 {
     m_regenTimer = 200;
     m_valuesCount = UNIT_END;
-
-    for (uint32 & spell : m_spells)
-        spell = 0;
 }
 
 Creature::~Creature()
@@ -232,7 +284,7 @@ void Creature::AddToWorld()
         GetMap()->InsertObject<Creature>(GetObjectGuid(), this);
 
     if (!m_creatureGroup && HasStaticDBSpawnData())
-        sCreatureGroupsManager->LoadCreatureGroup(GetObjectGuid(), m_creatureGroup);
+        GetMap()->GetCreatureGroupsManager()->LoadCreatureGroup(GetObjectGuid(), m_creatureGroup);
 
     if (m_creatureGroup)
     {
@@ -241,7 +293,7 @@ void Creature::AddToWorld()
         if (GetDeathState() == ALIVE || GetDeathState() == JUST_ALIVED)
             m_creatureGroup->OnRespawn(this);
     }
-        
+
     Unit::AddToWorld();
 
     if (!m_AI)
@@ -600,7 +652,29 @@ bool Creature::UpdateEntry(uint32 entry, GameEventCreatureData const* eventData 
     InitializeReactState();
 
     for (int i = 0; i < CREATURE_MAX_SPELLS; ++i)
-        m_spells[i] = GetCreatureInfo()->spells[i];
+        m_spells[i].reset();
+
+    if (CreatureCharmSpellSlotsArray const* pSpellSlots = sObjectMgr.GetCreatureCharmSpellSlotsArray(entry))
+    {
+        for (int i = 0; i < CREATURE_MAX_SPELLS; ++i)
+        {
+            float roll = frand(0, 100);
+            float sum = 0.0f;
+
+            for (auto const& itr : (*pSpellSlots)[i])
+            {
+                float const currentChance = itr.availability;
+
+                if ((roll > sum) && (roll <= (sum + currentChance)))
+                {
+                    m_spells[i] = itr;
+                    break;
+                }
+
+                sum += currentChance;
+            }
+        }
+    }
 
     SetCallForHelpDist(GetCreatureInfo()->call_for_help_range);
     SetLeashDistance(GetCreatureInfo()->leash_range);
@@ -617,7 +691,7 @@ bool Creature::UpdateEntry(uint32 entry, GameEventCreatureData const* eventData 
         SetVisibilityModifier(VISIBILITY_DISTANCE_GIGANTIC);
         if (sWorld.getConfig(CONFIG_BOOL_VISIBILITY_FORCE_ACTIVE_OBJECTS))
             SetActiveObjectState(true);
-    } 
+    }
     else if (HasExtraFlag(CREATURE_FLAG_EXTRA_INFINITE_AOI))
     {
         SetVisibilityModifier(MAX_VISIBILITY_DISTANCE);
@@ -821,9 +895,9 @@ void Creature::Update(uint32 update_diff, uint32 diff)
                 break;
 
             // Youfie - <Nostalrius>
-            // Cf. fix de Daemon [c1491] & mon autre bricolage de celui-ci [c1527)
-            // Les mobs 11357, 8901, 14826 etc. : ont des minuscules temps de repop. Sans rajouter cette condition, tous les
-            // mobs spawn via un event/script despawn (loots avec) au bout de genre 25s, sans qu'on puisse le changer dans la DB car pas de GUID fixe.
+            // Cf. Daemon's fix [c1491] & my other patch on top of it [c1527)
+            // Mobs 11357, 8901, 14826 etc. have very short respawn times. Without this condition, all
+            // mobs spawned via event/script despawn (loot included) after about 25s, with no way to change it in the DB since there is no fixed GUID.
             if (m_corpseDecayTimer <= update_diff || (m_respawnTime <= time(nullptr) && GetDBTableGUIDLow() && !IsPet()))
             {
                 if (IsInWorld())                            // can be despawned by update pool
@@ -1082,9 +1156,6 @@ void Creature::RegenerateHealth()
     {
         addvalue = maxValue / 3;
     }
-
-    if (addvalue < 0)
-        addvalue = 0;
 
     ModifyHealth(addvalue);
 }
@@ -1716,7 +1787,7 @@ void Creature::SelectLevel(float percentHealth, float percentMana)
     uint32 const level = minLevel == maxLevel ? minLevel : urand(minLevel, maxLevel);
 
     SetLevel(level);
-    InitStatsForLevel();
+    InitStatsForLevel(percentHealth, percentMana);
 }
 
 void Creature::InitStatsForLevel(float percentHealth, float percentMana)
@@ -1865,7 +1936,7 @@ bool Creature::LoadFromDB(uint32 guidlow, Map* map, bool force)
     ObjectGuid fullGuid = ObjectGuid(HIGHGUID_UNIT, data->creature_id[0], guidlow);
     m_creatureData = data;
     m_creatureDataAddon = sObjectMgr.GetCreatureAddon(guidlow);
-    sCreatureGroupsManager->LoadCreatureGroup(fullGuid, m_creatureGroup);
+    map->GetCreatureGroupsManager()->LoadCreatureGroup(fullGuid, m_creatureGroup);
 
     uint32 const creatureId = m_creatureGroup ? m_creatureGroup->ChooseCreatureId(fullGuid, data, map) : data->ChooseCreatureId();
     CreatureInfo const* cinfo = sObjectMgr.GetCreatureTemplate(creatureId);
@@ -1894,7 +1965,7 @@ bool Creature::LoadFromDB(uint32 guidlow, Map* map, bool force)
 
     if (data->spawn_flags & SPAWN_FLAG_ACTIVE)
         m_isActiveObject = true;
-    
+
     if (data->visibility_mod)
         m_visibilityModifier = data->visibility_mod;
 
@@ -2010,7 +2081,7 @@ void Creature::LoadDefaultEquipment(GameEventCreatureData const* eventData)
         if (HasStaticFlag(CREATURE_STATIC_FLAG_CAN_WIELD_LOOT))
         {
             GenerateLootForBody(nullptr, nullptr);
-            
+
             bool hasMainHand = false;
             bool hasOffHand = false;
             bool hasRanged = false;
@@ -2197,6 +2268,7 @@ void Creature::SetDeathState(DeathState s)
     if (s == JUST_DIED)
     {
         SetTargetGuid(ObjectGuid());                        // remove target selection in any cases (can be set at aura remove in Unit::SetDeathState)
+        SetFollowTargetGuid(ObjectGuid());
         SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_NONE);
 
         if (!IsPet() && GetCreatureInfo()->skinning_loot_id)
@@ -2345,7 +2417,7 @@ void Creature::ForcedDespawn(uint32 msTimeToDespawn /*= 0*/, uint32 secsTimeToRe
         return;
     }
 
-    uint32 oldRespawnDelay;
+    uint32 oldRespawnDelay = 0;
     if (secsTimeToRespawn)
     {
         oldRespawnDelay = m_respawnDelay;
@@ -2437,12 +2509,10 @@ bool Creature::IsVisibleInGridForPlayer(Player const* pl) const
 
 void Creature::SendAIReaction(AiReaction reactionType)
 {
-    WorldPacket data(SMSG_AI_REACTION, 12);
-
-    data << GetObjectGuid();
-    data << uint32(reactionType);
-
-    ((WorldObject*)this)->SendObjectMessageToSet(&data, true);
+    auto packet = std::make_unique<WorldPackets::Misc::AiReaction>();
+    packet->unitGuid = GetObjectGuid();
+    packet->reaction = static_cast<uint32>(reactionType);
+    SendObjectMessageToSet(std::move(packet), true);
 
     DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "WORLD: Sent SMSG_AI_REACTION, type %u.", reactionType);
 }
@@ -2478,7 +2548,7 @@ void Creature::CallForHelp(float radius)
 {
     if (radius <= 0.0f || !GetVictim() || IsPet() || IsCharmed())
         return;
-    
+
     MaNGOS::CallOfHelpCreatureInRangeDo u_do(this, GetVictim(), radius);
     MaNGOS::CreatureWorker<MaNGOS::CallOfHelpCreatureInRangeDo> worker(this, u_do);
     Cell::VisitGridObjects(this, worker, radius);
@@ -2846,9 +2916,9 @@ void Creature::SendZoneUnderAttackMessage(Player const* attacker)
         areaAttackedCooldowns[areaId] = now;
         Team enemyTeam = attacker->GetTeam();
 
-        WorldPacket data(SMSG_ZONE_UNDER_ATTACK, 4);
-        data << uint32(areaId);
-        GetMap()->SendToPlayers(&data, (enemyTeam == ALLIANCE ? HORDE : ALLIANCE));
+        auto packet = std::make_unique<WorldPackets::Misc::ZoneUnderAttack>();
+        packet->areaId = areaId;
+        GetMap()->SendToPlayers(std::move(packet), (enemyTeam == ALLIANCE ? HORDE : ALLIANCE));
     }
 }
 
@@ -3194,7 +3264,7 @@ bool Creature::IsInEvadeMode() const
 bool Creature::HasSpell(uint32 spellId) const
 {
     for (uint8 i = 0; i < CREATURE_MAX_SPELLS; ++i)
-        if (spellId == m_spells[i])
+        if (m_spells[i].has_value() && spellId == m_spells[i]->spellId)
             return true;
     return false;
 }
@@ -3207,29 +3277,28 @@ void Creature::LockOutSpells(SpellSchoolMask schoolMask, uint32 duration)
     SpellCaster::LockOutSpells(schoolMask, duration);
 }
 
-void Creature::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* /*itemProto*/, bool /*permanent*/, uint32 forcedDuration)
+void Creature::AddCooldown(SpellEntry const* spellEntry, ItemPrototype const* /*itemProto*/, bool /*permanent*/, uint32 forcedDuration)
 {
-    uint32 recTime = forcedDuration ? forcedDuration : spellEntry.RecoveryTime;
-    if (recTime || spellEntry.CategoryRecoveryTime)
+    uint32 recTime;
+    if (forcedDuration)
+        recTime = forcedDuration;
+    else if (!GetCharmSpellCooldown(spellEntry->Id, recTime))
+        recTime = spellEntry->RecoveryTime;
+
+    if (recTime || spellEntry->CategoryRecoveryTime)
     {
-        uint32 categoryRecTime = spellEntry.CategoryRecoveryTime;
+        uint32 categoryRecTime = spellEntry->CategoryRecoveryTime;
         if (Player* modOwner = GetSpellModOwner())
         {
             if (recTime)
-                modOwner->ApplySpellMod(spellEntry.Id, SPELLMOD_COOLDOWN, recTime);
-            else if (spellEntry.Category && categoryRecTime)
-                modOwner->ApplySpellMod(spellEntry.Id, SPELLMOD_COOLDOWN, categoryRecTime);
+                modOwner->ApplySpellMod(spellEntry->Id, SPELLMOD_COOLDOWN, recTime);
+            else if (spellEntry->Category && categoryRecTime)
+                modOwner->ApplySpellMod(spellEntry->Id, SPELLMOD_COOLDOWN, categoryRecTime);
         }
 
-        m_cooldownMap.AddCooldown(sWorld.GetCurrentClockTime(), spellEntry.Id, recTime, spellEntry.Category, categoryRecTime);
-    }
-    else if (GetCharmerGuid().IsPlayer() && !IsPet() && !spellEntry.GetCastTime(this))
-    {
-        // Forced cooldown on using instant spells during mind control to prevent abuse.
-        recTime = 10 * IN_MILLISECONDS;
-        m_cooldownMap.AddCooldown(sWorld.GetCurrentClockTime(), spellEntry.Id, recTime, 0, 0);
+        m_cooldownMap.AddCooldown(sWorld.GetCurrentClockTime(), spellEntry, recTime, spellEntry->Category, categoryRecTime);
         if (Player const* player = ::ToPlayer(GetCharmer()))
-            player->SendSpellCooldown(spellEntry.Id, recTime, GetObjectGuid());
+            player->SendSpellCooldown(spellEntry->Id, Milliseconds(recTime ? recTime : categoryRecTime), GetObjectGuid());
     }
 }
 
@@ -3246,7 +3315,7 @@ time_t Creature::GetRespawnTimeEx() const
 
 void Creature::GetRespawnCoord(float &x, float &y, float &z, float* ori, float* dist) const
 {
-    // Nostalrius : pouvoir changer point de spawn d'un mob -> Creature::SetHomePosition
+    // Nostalrius : allow changing a mob's spawn point -> Creature::SetHomePosition
     if (m_homePosition.x > 0.1f || m_homePosition.x < -0.1f)
     {
         x = m_homePosition.x;
@@ -3487,10 +3556,10 @@ void Creature::SendAreaSpiritHealerQueryOpcode(Player* pl)
     uint32 next_resurrect = 0;
     if (Spell* pcurSpell = GetCurrentSpell(CURRENT_CHANNELED_SPELL))
         next_resurrect = pcurSpell->GetCastedTime();
-    WorldPacket data(SMSG_AREA_SPIRIT_HEALER_TIME, 8 + 4);
-    data << ObjectGuid(GetObjectGuid());
-    data << uint32(next_resurrect);
-    pl->SendDirectMessage(&data);
+    auto packet = std::make_unique<WorldPackets::Npc::AreaSpiritHealerTime>();
+    packet->spiritHealerGuid = GetObjectGuid();
+    packet->nextResurrectTime = next_resurrect;
+    pl->GetSession()->SendPacket(std::move(packet));
 #endif
 }
 
@@ -3591,6 +3660,7 @@ void Creature::OnEnterCombat(Unit* pWho, bool notInCombat)
         ResetCombatTime();
         UpdateCombatState(true);
 
+        HandleEmoteState(0);
         SetStandState(UNIT_STAND_STATE_STAND);
         m_pacifiedTimer = 0;
 
@@ -4164,6 +4234,7 @@ void Creature::JoinCreatureGroup(Creature* leader, float dist, float angle, uint
     {
         group = new CreatureGroup(leader->GetObjectGuid());
         leader->SetCreatureGroup(group);
+        GetMap()->GetCreatureGroupsManager()->RegisterNewGroup(group);
     }
     group->AddMember(GetObjectGuid(), dist, angle, options);
     SetCreatureGroup(group);
@@ -4177,6 +4248,7 @@ void Creature::LeaveCreatureGroup()
     {
         if (pGroup->GetOriginalLeaderGuid() == GetObjectGuid())
         {
+            GetMap()->GetCreatureGroupsManager()->EraseCreatureGroup(pGroup->GetOriginalLeaderGuid());
             pGroup->DisbandGroup(this);
             delete pGroup;
         }
@@ -4213,7 +4285,7 @@ void Creature::StartCooldownForSummoner()
                 if (Unit* pOwner = GetOwner())
                 {
                     AddCreatureState(CSTATE_IMPOSED_COOLDOWN);
-                    pOwner->AddCooldown(*pSpellInfo); // Remove infinity cooldown
+                    pOwner->AddCooldown(pSpellInfo); // Remove infinity cooldown
                 }
             }
         }
@@ -4235,4 +4307,27 @@ void Creature::CancelSummonPossessedCharm()
             }
         }
     }
+}
+
+bool Creature::GetCharmSpellCooldown(uint32 spellId, uint32& cooldown)
+{
+    for (auto const& itr : m_spells)
+    {
+        if (!itr.has_value())
+            continue;
+
+        if (spellId == itr->spellId)
+        {
+            cooldown = urand(itr->cooldownMin * IN_MILLISECONDS, itr->cooldownMax * IN_MILLISECONDS);
+            return true;
+        }
+    }
+    return false;
+}
+
+Unit* Creature::GetFollowTarget() const
+{
+    if (!m_followTarget.IsEmpty())
+        return GetMap()->GetUnit(m_followTarget);
+    return GetCharmerOrOwner();
 }

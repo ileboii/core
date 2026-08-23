@@ -43,4 +43,16 @@ void WorldPackets::Taxi::NewTaxiPath::AppendBodyTo(ByteBuffer& /*buffer*/) const
 {
 }
 
+void WorldPackets::Taxi::ActivateTaxiReply::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << replyCode;
+}
 
+void WorldPackets::Taxi::ShowTaxiNodes::AppendBodyTo(ByteBuffer& buffer) const
+{
+    buffer << static_cast<uint32>(1); // 1 = show ui. 0 = some internal debug stuff
+    buffer << flightmasterGuid;
+    buffer << currentNode;
+    for (uint32 mask : knownNodesMask)
+        buffer << mask;
+}

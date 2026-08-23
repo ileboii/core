@@ -578,15 +578,21 @@ struct go_pedestal_of_immol_tharAI: public GameObjectAI
             {
                 case 0:
                     //pop horse
-                    if (crea = me->SummonCreature(NPC_XOROTHIAN_DREADSTEED, x, y, z, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0))
+                    if (crea = me->SummonCreature(NPC_XOROTHIAN_DREADSTEED, -39.0447f, 812.591f, -29.4525f, 1.39626f, TEMPSUMMON_DEAD_DESPAWN, 0))
                     {
                     }
                     waveTimer = 10000;
                     waveStep++;
                     break;
                 case 1:
-                    if (crea = me->SummonCreature(NPC_LORD_HEL_NURATH, x, y, z, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0))
+                    if (crea = me->SummonCreature(NPC_LORD_HEL_NURATH, -39.5763f, 812.786f, -29.4525f, 2.26893f, TEMPSUMMON_DEAD_DESPAWN, 0))
+                    {
                         DoScriptText(SAY_HEL_NURATH, crea);
+                        crea->m_Events.AddLambdaEventAtOffset([crea]()
+                        {
+                            crea->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+                        }, 5000);
+                    }
                     waveTimer = 210000;
                     waveStep++;
                     break;
@@ -808,7 +814,7 @@ enum
     //spells are absolutely certain.
     SPELL_BERSERKER_CHARGE          = 16636, //OK
     SPELL_FLAME_BUFFET              = 22713, //OK
-    SPELL_SUMMON_DREADSTEED_SPIRIT  = 23159, //marche en étant mort?
+    SPELL_SUMMON_DREADSTEED_SPIRIT  = 23159, //works while dead?
     SPELL_SHADOW_WORD               = 17146, //OK
     SPELL_VEIL_OF_SHADOW            = 23224, //OK
     SPELL_SLEEP                     = 20989, //OK
@@ -840,7 +846,7 @@ struct boss_lordHelNurathAI : public ScriptedAI
             return;
         if (m_uiShadowWord_Timer < uiDiff)
         {
-            //penser à vérifier qu'il change de target si la cible est sleep
+            // remember to check that it changes target if the target is asleep
             if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_SHADOW_WORD) == CAST_OK)
                 m_uiShadowWord_Timer = urand(10000, 30000);
         }
@@ -898,7 +904,7 @@ struct boss_xorothianDreadsteedAI : public ScriptedAI
             return;
         if (m_uiCharge_Timer < uiDiff)
         {
-            //penser à vérifier qu'il change de target si la cible est sleep
+            // remember to check that it changes target if the target is asleep
             if (DoCastSpellIfCan(m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0), SPELL_BERSERKER_CHARGE) == CAST_OK)
                 m_uiCharge_Timer = urand(10000, 18000);
         }

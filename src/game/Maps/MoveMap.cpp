@@ -22,6 +22,7 @@
 #include "MoveMap.h"
 #include "MoveMapSharedDefines.h"
 #include "Errors.h"
+#include "Util.h"
 
 namespace MMAP
 {
@@ -83,7 +84,7 @@ bool MMapManager::loadMapData(uint32 mapId)
     }
 
     dtNavMeshParams params;
-    fread(&params, sizeof(dtNavMeshParams), 1, file);
+    IgnoreResult(fread(&params, sizeof(dtNavMeshParams), 1, file));
     fclose(file);
 
     dtNavMesh* mesh = dtAllocNavMesh();
@@ -137,7 +138,7 @@ bool MMapManager::loadMap(uint32 mapId, int32 x, int32 y)
     if (mmap->mmapLoadedTiles.find(packedGridPos) != mmap->mmapLoadedTiles.end())
         return false;
 
-    // load this tile :: mmaps/MMMXXYY.mmtile
+    // load this tile :: mmaps/MMMYYXX.mmtile
     uint32 pathLen = sWorld.GetDataPath().length() + strlen("mmaps/%03i%02i%02i.mmtile") + 1;
     char *fileName = new char[pathLen];
     snprintf(fileName, pathLen, (sWorld.GetDataPath() + "mmaps/%03i%02i%02i.mmtile").c_str(), mapId, y, x);
@@ -157,11 +158,11 @@ bool MMapManager::loadMap(uint32 mapId, int32 x, int32 y)
 
     // read header
     MmapTileHeader fileHeader;
-    fread(&fileHeader, sizeof(MmapTileHeader), 1, file);
+    IgnoreResult(fread(&fileHeader, sizeof(MmapTileHeader), 1, file));
 
     if (fileHeader.mmapMagic != MMAP_MAGIC)
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Bad header in mmap %03u%02i%02i.mmtile", mapId, x, y);
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Bad header in mmap %03u%02i%02i.mmtile", mapId, y, x);
         fclose(file);
         return false;
     }
@@ -169,7 +170,7 @@ bool MMapManager::loadMap(uint32 mapId, int32 x, int32 y)
     if (fileHeader.mmapVersion != MMAP_VERSION)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: %03u%02i%02i.mmtile was built with generator v%i, expected v%i",
-                      mapId, x, y, fileHeader.mmapVersion, MMAP_VERSION);
+                      mapId, y, x, fileHeader.mmapVersion, MMAP_VERSION);
         fclose(file);
         return false;
     }
@@ -177,7 +178,7 @@ bool MMapManager::loadMap(uint32 mapId, int32 x, int32 y)
     unsigned char* data = (unsigned char*)dtAlloc(fileHeader.size, DT_ALLOC_PERM);
     if (!data)
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Failed to load mmap %03u%02i%02i.mmtile", mapId, x, y);
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Failed to load mmap %03u%02i%02i.mmtile", mapId, y, x);
         fclose(file);
         return false;
     }
@@ -185,7 +186,7 @@ bool MMapManager::loadMap(uint32 mapId, int32 x, int32 y)
     size_t result = fread(data, fileHeader.size, 1, file);
     if (!result)
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Bad header or data in mmap %03u%02i%02i.mmtile", mapId, x, y);
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Bad header or data in mmap %03u%02i%02i.mmtile", mapId, y, x);
         fclose(file);
         return false;
     }
@@ -205,7 +206,7 @@ bool MMapManager::loadMap(uint32 mapId, int32 x, int32 y)
     }
     else
     {
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Could not load %03u%02i%02i.mmtile into navmesh [result 0x%x]", mapId, x, y, dResult);
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:loadMap: Could not load %03u%02i%02i.mmtile into navmesh [result 0x%x]", mapId, y, x, dResult);
         dtFree(data);
         return false;
     }
@@ -219,7 +220,7 @@ bool MMapManager::unloadMap(uint32 mapId, int32 x, int32 y)
     if (loadedMMaps.find(mapId) == loadedMMaps.end())
     {
         // file may not exist, therefore not loaded
-        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "MMAP:unloadMap: Asked to unload not loaded navmesh map. %03u%02i%02i.mmtile", mapId, x, y);
+        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "MMAP:unloadMap: Asked to unload not loaded navmesh map. %03u%02i%02i.mmtile", mapId, y, x);
         return false;
     }
 
@@ -230,7 +231,7 @@ bool MMapManager::unloadMap(uint32 mapId, int32 x, int32 y)
     if (mmap->mmapLoadedTiles.find(packedGridPos) == mmap->mmapLoadedTiles.end())
     {
         // file may not exist, therefore not loaded
-        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "MMAP:unloadMap: Asked to unload not loaded navmesh tile. %03u%02i%02i.mmtile", mapId, x, y);
+        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "MMAP:unloadMap: Asked to unload not loaded navmesh tile. %03u%02i%02i.mmtile", mapId, y, x);
         return false;
     }
 
@@ -243,7 +244,7 @@ bool MMapManager::unloadMap(uint32 mapId, int32 x, int32 y)
         // this is technically a memory leak
         // if the grid is later reloaded, dtNavMesh::addTile will return error but no extra memory is used
         // we cannot recover from this error - assert out
-        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:unloadMap: Could not unload %03u%02i%02i.mmtile from navmesh", mapId, x, y);
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:unloadMap: Could not unload %03u%02i%02i.mmtile from navmesh", mapId, y, x);
         MANGOS_ASSERT(false);
     }
     else
@@ -273,7 +274,7 @@ bool MMapManager::unloadMap(uint32 mapId)
         uint32 y = (i->first & 0x0000FFFF);
         dtStatus dtResult = mmap->navMesh->removeTile(i->second, nullptr, nullptr);
         if (dtStatusFailed(dtResult))
-            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:unloadMap: Could not unload %03u%02i%02i.mmtile from navmesh", mapId, x, y);
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "MMAP:unloadMap: Could not unload %03u%02i%02i.mmtile from navmesh", mapId, y, x);
         else
             --loadedTiles;
     }
@@ -390,7 +391,7 @@ bool MMapManager::loadGameObject(uint32 displayId)
     }
 
     MmapTileHeader fileHeader;
-    fread(&fileHeader, sizeof(MmapTileHeader), 1, file);
+    IgnoreResult(fread(&fileHeader, sizeof(MmapTileHeader), 1, file));
 
     if (fileHeader.mmapMagic != MMAP_MAGIC)
     {

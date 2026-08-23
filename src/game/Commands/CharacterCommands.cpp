@@ -50,7 +50,8 @@ bool ChatHandler::HandleCharacterAIInfoCommand(char* /*args*/)
     }
 
     PSendSysMessage("AI info for %s", pTarget->GetObjectGuid().GetString().c_str());
-    char const* cstrAIClass = pTarget->AI() ? typeid(*pTarget->AI()).name() : " - ";
+    auto* pAI = pTarget->AI();
+    char const* cstrAIClass = pAI ? typeid(*pAI).name() : " - ";
     PSendSysMessage("Current AI: %s", cstrAIClass);
     MovementGeneratorType moveType = pTarget->GetMotionMaster()->GetCurrentMovementGeneratorType();
     PSendSysMessage(LANG_NPC_MOTION_TYPE, MotionMaster::GetMovementGeneratorTypeName(moveType), moveType);
@@ -1374,7 +1375,7 @@ bool ChatHandler::GetDeletedCharacterInfoList(DeletedInfoList& foundList, bool u
 
                 CharacterDatabase.escape_string(searchString);
 
-                resultChar = CharacterDatabase.PQuery("SELECT `guid`, `deleted_name`, `deleted_account`, `deleted_time` FROM `characters` WHERE `deleted_time` IS NOT NULL AND `deleted_name` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'") " LIMIT 0,50", searchString.c_str());
+                resultChar = CharacterDatabase.PQuery("SELECT `guid`, `deleted_name`, `deleted_account`, `deleted_time` FROM `characters` WHERE `deleted_time` IS NOT NULL AND `deleted_name` LIKE CONCAT('%s','%%')" " LIMIT 0,50", searchString.c_str());
             }
         }
         else
@@ -1389,7 +1390,7 @@ bool ChatHandler::GetDeletedCharacterInfoList(DeletedInfoList& foundList, bool u
                     return false;
 
                 LoginDatabase.escape_string(searchString);
-                std::unique_ptr<QueryResult> result = LoginDatabase.PQuery("SELECT `id` FROM `account` WHERE `username` " _LIKE_ " " _CONCAT2_("'%s'", "'%%'"), searchString.c_str());
+                std::unique_ptr<QueryResult> result = LoginDatabase.PQuery("SELECT `id` FROM `account` WHERE `username` LIKE CONCAT('%s','%%')", searchString.c_str());
                 std::vector<uint32> list;
                 if (result)
                 {
@@ -3548,7 +3549,7 @@ bool ChatHandler::HandleAddItemSetCommand(char* args)
             }
             else
             {
-                pl->SendEquipError(msg, nullptr, nullptr, itr.second.ItemId);
+                pl->SendEquipError(msg, nullptr, nullptr, 0, itr.second.ItemId);
                 PSendSysMessage(LANG_ITEM_CANNOT_CREATE, itr.second.ItemId, 1);
             }
         }
@@ -4747,7 +4748,7 @@ bool ChatHandler::HandleModifyEnergyCommand(char* args)
     if (!ExtractUInt32(&args, energyMax))
         energyMax = std::max(chr->GetMaxPower(POWER_ENERGY), energyMin);
 
-    if (energyMin < 0 || energyMax < 0 || energyMax < energyMin)
+    if (energyMax < energyMin)
     {
         SendSysMessage(LANG_BAD_VALUE);
         SetSentErrorMessage(true);
@@ -4786,7 +4787,7 @@ bool ChatHandler::HandleModifyRageCommand(char* args)
     if (!ExtractUInt32(&args, rageMax))
         rageMax = std::max(chr->GetMaxPower(POWER_RAGE) / 10, rageMin);
 
-    if (rageMin < 0 || rageMax < 0 || rageMax < rageMin)
+    if (rageMax < rageMin)
     {
         SendSysMessage(LANG_BAD_VALUE);
         SetSentErrorMessage(true);

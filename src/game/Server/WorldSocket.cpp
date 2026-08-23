@@ -37,6 +37,7 @@
 #include "Config/Config.h"
 #include "Util.h"
 #include "Errors.h"
+#include "Utilities/Random.h"
 
 #include "IO/Networking/DNS.h"
 #include "IO/Timer/AsyncSystemTimer.h"
@@ -74,7 +75,7 @@ WorldSocket::WorldSocket(IO::Networking::AsyncSocket socket)
       m_lastPingTime(std::chrono::system_clock::time_point::min()),
       m_overSpeedPings(0),
       m_Session(nullptr),
-      m_authSeed(static_cast<uint32>(rand32())),
+      m_authSeed(randu32()),
       m_remoteIpAddressStringAfterProxy(m_socket.GetRemoteIpString())
 {
     m_sendQueueIsRunning.clear(); // there is no atomic_flag::constructor on windows to initialize it with false by default (and if left out, linux is uninitialized and will fail randomly)
@@ -190,7 +191,7 @@ WorldSocket::HandlerResult WorldSocket::_HandleCompleteReceivedPacket(std::uniqu
         if (sLog.HasLogLevelOrHigher(LOG_LVL_DEBUG))
         {
             sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Dumping error-causing packet:");
-            packet->hexlike();
+            packet->PrintAsHex();
         }
 
         if (sWorld.getConfig(CONFIG_BOOL_KICK_PLAYER_ON_BAD_PACKET))
@@ -203,11 +204,9 @@ WorldSocket::HandlerResult WorldSocket::_HandleCompleteReceivedPacket(std::uniqu
 
         return HandlerResult::Okay;
     }
-
-    MANGOS_ASSERT(false); // This should never be reached
 }
 
-/// This function will resolve the ip-addresse of the current host
+/// This function will resolve the ip-address of the current host
 /// For example if you hostname is called "world.mycoolserver.com" and it points to 123.45.66.7 it will be added to the server list
 /// Also 127.0.0.1 will be added as a fallback
 /// This list is later used to determine if clients try to connect to this server without registering at realmd first
@@ -540,10 +539,15 @@ void WorldSocket::SendPacket(WorldPacket packet)
         return;
     }
     m_sendQueue.push(std::move(packet));
+    // The flag must be set under the same lock that guards the queue: HandleResultOfAsyncWrite
+    // only clears it while holding the lock with an empty queue, so our push is either seen by
+    // the running loop or we observe the cleared flag and start a new one. Otherwise a packet
+    // pushed between its empty-check and clear would strand in the queue until the next send.
+    bool const alreadyRunning = m_sendQueueIsRunning.test_and_set();
     m_sendQueueLock.unlock();
 
     // Start AsyncProcessingSendQueue which take things from the queue
-    if (m_sendQueueIsRunning.test_and_set())
+    if (alreadyRunning)
         return; // already running
 
     m_socket.EnterIoContext([self = shared_from_this()](IO::NetworkError error)
@@ -566,11 +570,15 @@ void WorldSocket::HandleResultOfAsyncWrite(IO::NetworkError const& error, std::s
         return;
     }
 
+    m_sendQueueLock.lock();
     if (m_sendQueue.empty())
     {
+        // Must be cleared while holding the queue lock, see comment in SendPacket().
         m_sendQueueIsRunning.clear();
+        m_sendQueueLock.unlock();
         return;
     }
+    m_sendQueueLock.unlock();
 
     // Combine all packets into `alreadyAllocatedBuffer`
     alreadyAllocatedBuffer->clear();

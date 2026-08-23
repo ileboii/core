@@ -121,37 +121,6 @@ struct WeaponDamageInfo
     SpellSchools school;
 };
 
-struct SubDamageInfo
-{
-    SpellSchoolMask damageSchoolMask = SPELL_SCHOOL_MASK_NORMAL;
-    uint32 damage = 0;
-    uint32 absorb = 0;
-    int32 resist = 0;
-};
-
-// Struct for use in Unit::CalculateMeleeDamage
-// Need create structure like in SMSG_ATTACKERSTATEUPDATE opcode
-struct CalcDamageInfo
-{
-    Unit* attacker = nullptr;             // Attacker
-    Unit* target = nullptr;               // Target for damage
-    uint32 totalDamage = 0;
-    uint32 totalAbsorb = 0;
-    int32 totalResist = 0;
-    SubDamageInfo subDamage[MAX_ITEM_PROTO_DAMAGES] = {};
-    uint32 blocked_amount = 0;
-    uint32 HitInfo = HITINFO_NORMALSWING;
-    uint32 TargetState = VICTIMSTATE_UNAFFECTED;
-
-    // Helper
-    WeaponAttackType attackType = BASE_ATTACK;
-    uint32 procAttacker = 0;
-    uint32 procVictim = 0;
-    uint32 procEx = 0;
-    uint32 cleanDamage = 0;                        // Used only for rage calculation
-    MeleeHitOutcome hitOutCome = MELEE_HIT_EVADE;  // TODO: remove this field (need use TargetState)
-};
-
 struct SpellPeriodicAuraLogInfo
 {
     SpellPeriodicAuraLogInfo(Aura* _aura, uint32 _damage, uint32 _absorb, int32 _resist, float _multiplier)
@@ -187,9 +156,6 @@ enum AttackPowerModIndex
 };
 
 uint32 CreateProcExtendMask(SpellNonMeleeDamage* damageInfo, SpellMissInfo missCondition);
-
-typedef SpellAuraProcResult(Unit::*pAuraProcHandler)(Unit* pVictim, uint32 amount, uint32 originalAmount, Aura* triggeredByAura, SpellEntry const* procSpell, uint32 procFlag, uint32 procEx, uint32 cooldown);
-extern pAuraProcHandler AuraProcHandler[TOTAL_AURAS];
 
 #define UNIT_SPELL_UPDATE_TIME_BUFFER 60
 
@@ -858,7 +824,7 @@ class Unit : public SpellCaster
         bool RollSpellBlockChanceOutcome(SpellCaster const* pCaster, WeaponAttackType attackType) const;
         bool IsSpellCrit(Unit const* pVictim, SpellEntry const* spellProto, SpellSchoolMask schoolMask, WeaponAttackType attackType = BASE_ATTACK, Spell* spell = nullptr) const final;
         bool IsEffectResist(SpellEntry const* spell, int eff) const; // SPELL_AURA_MOD_MECHANIC_RESISTANCE
-        
+
         void ProcDamageAndSpellFor(bool isVictim, Unit* pTarget, ProcSystemArguments const& data, ProcTriggeredList& triggeredList, ProcessProcsAuraType processAurasType);
         void ProcSkillsAndReactives(bool isVictim, Unit* pTarget, uint32 procFlag, uint32 procExtra, WeaponAttackType attType, SpellEntry const* procSpell);
         void HandleTriggers(Unit* pVictim, uint32 procExtra, uint32 amount, uint32 originalAmount, SpellEntry const* procSpell, ProcTriggeredList const& procTriggered);
@@ -1010,7 +976,7 @@ class Unit : public SpellCaster
 
         void AttackerStateUpdate(Unit* pVictim, WeaponAttackType attType = BASE_ATTACK, bool extra = false);
         void SendAttackStateUpdate(CalcDamageInfo const* damageInfo) const;
-        void SendAttackStateUpdate(uint32 HitInfo, Unit const* target, SpellSchoolMask damageSchoolMask, uint32 Damage, uint32 AbsorbDamage, int32 Resist, VictimState TargetState, uint32 BlockedAmount) const;
+        void SendAttackStateUpdate(uint32 hitInfo, Unit const* target, SpellSchoolMask damageSchoolMask, uint32 damage, uint32 absorbDamage, int32 resist, VictimState targetState, uint32 blockedAmount) const;
         void SendMeleeAttackStop(Unit const* victim) const;
         void SendMeleeAttackStart(Unit const* pVictim) const;
 
@@ -1114,7 +1080,7 @@ class Unit : public SpellCaster
         void TauntFadeOut(Unit* taunter);
         void AddTauntCaster(ObjectGuid guid) { m_tauntGuids.push_back(guid); }
         void RemoveTauntCaster(ObjectGuid guid);
-        
+
         // Threat related methods
         bool CanHaveThreatList() const;
         bool IsSecondaryThreatTarget() const;
@@ -1149,7 +1115,7 @@ class Unit : public SpellCaster
         // Called after this unit kills someone.
         void Kill(Unit* pVictim, SpellEntry const* spellProto, bool durabilityLoss = true);
         void PetOwnerKilledUnit(Unit* pVictim);
-        
+
         bool IsInCombat() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IN_COMBAT); }
         void SetInCombatState(uint32 combatTimer = 0, Unit* pEnemy = nullptr);
         void SetInCombatWith(Unit* pEnemy);
@@ -1173,7 +1139,7 @@ class Unit : public SpellCaster
         virtual void OnLeaveCombat() {}
         void InterruptSpellsCastedOnMe(bool killDelayed = false, bool interruptPositiveSpells = false, bool onlyIfNotStalked = false);
         void InterruptAttacksOnMe(float dist = 0.0f, bool guard_check = false); // Interrupt auto-attacks
-        
+
         /*********************************************************/
         /***                 RELATIONS SYSTEM                  ***/
         /*********************************************************/
@@ -1225,7 +1191,7 @@ class Unit : public SpellCaster
         void SetOwnerGuid(ObjectGuid owner) { SetGuidValue(UNIT_FIELD_SUMMONEDBY, owner); ForceValuesUpdateAtIndex(UNIT_FIELD_HEALTH); ForceValuesUpdateAtIndex(UNIT_FIELD_MAXHEALTH); }
         ObjectGuid const& GetCreatorGuid() const { return GetGuidValue(UNIT_FIELD_CREATEDBY); }
         void SetCreatorGuid(ObjectGuid creator) { SetGuidValue(UNIT_FIELD_CREATEDBY, creator); }
-        
+
         ObjectGuid const& GetPetGuid() const { return GetGuidValue(UNIT_FIELD_SUMMON); }
         void SetPetGuid(ObjectGuid pet) { SetGuidValue(UNIT_FIELD_SUMMON, pet); }
         Pet* GetPet() const;
@@ -1234,7 +1200,7 @@ class Unit : public SpellCaster
         bool UnsummonOldPetBeforeNewSummon(uint32 newPetEntry, bool canUnsummon);
 
         // Pet responses methods
-        void SendPetCastFail(uint32 spellid, SpellCastResult msg);
+        void SendPetCastFail(uint32 spellId, SpellCastResult msg);
         void SendPetActionFeedback(uint8 msg);
         void SendPetTalk(uint32 pettalk);
         void SendPetAIReaction();
@@ -1297,7 +1263,7 @@ class Unit : public SpellCaster
         Player* GetPossessor() const;
         ObjectGuid const& GetPossessorGuid() const { return m_possessorGuid; }
         void SetPossessorGuid(ObjectGuid possession) { m_possessorGuid = possession; }
-        
+
         template<typename Func>
         void CallForAllControlledUnits(Func const& func, uint32 controlledMask);
         template<typename Func>
@@ -1326,7 +1292,7 @@ class Unit : public SpellCaster
         void SendHeartBeat(bool includingSelf = true);
         void SendMovementPacket(uint16 opcode, bool includingSelf = true);
         virtual void SetFly(bool enable);
-        
+
         void SetRooted(bool apply);
         void SetRootedReal(bool apply);
         bool IsRooted() const { return m_movementInfo.HasMovementFlag(MOVEFLAG_ROOT); }
@@ -1394,8 +1360,6 @@ class Unit : public SpellCaster
         float GetJumpInitialSpeed() const { return m_jumpInitialSpeed; }
 
         // Terrain checks
-        virtual bool IsInWater() const;
-        virtual bool IsUnderwater() const;
         template<class T>
         bool CanSwimAtPosition(T const& pos) const
         {
@@ -1408,7 +1372,7 @@ class Unit : public SpellCaster
         virtual bool CanWalk() const = 0;
         virtual bool CanFly() const = 0;
         virtual bool CanSwim() const = 0;
-        
+
         void SetInFront(Unit const* pTarget);
         void SetFacingTo(float ori);
         void SetFacingToObject(WorldObject const* pObject);
@@ -1434,9 +1398,9 @@ class Unit : public SpellCaster
         void DisableSpline();
 
         // Caster movement
-        float GetMinChaseDistance(Unit const* target) const;
+        float GetMinChaseDistance() const { return m_casterChaseDistance; }
         float GetMaxChaseDistance(Unit const* target) const;
-        bool HasDistanceCasterMovement() const { return (m_casterChaseDistance >= 1.0f); }
+        bool HasDistanceCasterMovement() const { return (m_casterChaseDistance > 0.0f); }
         void SetCasterChaseDistance(float dist) { m_casterChaseDistance = dist; }
 
         Movement::MoveSpline* movespline;
@@ -1451,8 +1415,12 @@ class Unit : public SpellCaster
         bool m_needUpdateVisibility;
 
     protected:
-        explicit Unit ();     
+        explicit Unit ();
 };
+
+typedef SpellAuraProcResult(Unit::*pAuraProcHandler)(Unit* pVictim, uint32 amount, uint32 originalAmount, Aura* triggeredByAura, SpellEntry const* procSpell, uint32 procFlag, uint32 procEx, uint32 cooldown);
+extern pAuraProcHandler AuraProcHandler[TOTAL_AURAS];
+
 
 inline Unit* Object::ToUnit()
 {

@@ -30,6 +30,8 @@
 #include "Crypto/Hash/SHA1.h"
 #include "World.h"
 #include "Errors.h"
+#include "Platform/CompilerDefs.h"
+#include "Utilities/Random.h"
 
 #include <string>
 #include <algorithm>
@@ -78,7 +80,7 @@ Scan::BuildT StringHashScan::GetBuilder()
         std::string& string = warden->m_hashString;
 
         string.clear();
-        uint8 size = urand(1, 255);
+        uint8 size = urand(1, StringHashScan::MaxRequestSize - sizeof(uint8) /*null terminator*/ - sizeof(uint8) /*count*/);
         string.reserve(size);
         for (uint8 i = 0; i < size; i++)
             string += (char)urand('a', 'z');
@@ -122,13 +124,18 @@ Scan::CheckT StringHashScan::GetChecker()
     };
 }
 
+#if COMPILER == COMPILER_GNU
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#endif
+
 WindowsStringHashScan::WindowsStringHashScan()
     : StringHashScan(), WindowsScan(
     // builder
     GetBuilder(),
     // checker
     GetChecker(),
-    128, sizeof(uint8) + Crypto::Hash::SHA1::Digest::size() + Crypto::Hash::MD5::Digest::size(), "Maiev string hash",
+    StringHashScan::MaxRequestSize, StringHashScan::MaxReplySize, "Maiev string hash",
     ScanFlags::Maiev, 0, UINT16_MAX)
 {
 
@@ -140,11 +147,15 @@ MacStringHashScan::MacStringHashScan(bool moduleLoaded)
         GetBuilder(),
         // checker
         GetChecker(),
-        128, sizeof(uint8) + Crypto::Hash::SHA1::Digest::size() + Crypto::Hash::MD5::Digest::size(), moduleLoaded ? "Mac string hash" : "Maiev string hash",
+        StringHashScan::MaxRequestSize, StringHashScan::MaxReplySize, moduleLoaded ? "Mac string hash" : "Maiev string hash",
         (moduleLoaded ? ScanFlags::None : ScanFlags::Maiev), 0, UINT16_MAX)
 {
 
 }
+
+#if COMPILER == COMPILER_GNU
+#pragma GCC diagnostic pop
+#endif
 
 WindowsModuleScan::WindowsModuleScan(std::string const& module, bool wanted, std::string const& comment, ScanFlags flags, uint32 minBuild, uint32 maxBuild)
     : m_module(module), m_wanted(wanted),
@@ -153,7 +164,7 @@ WindowsModuleScan::WindowsModuleScan(std::string const& module, bool wanted, std
     [this](Warden const* warden, std::vector<std::string>&, ByteBuffer& scan)
     {
         auto const winWarden = reinterpret_cast<WardenWin const*>(warden);
-        auto const seed = static_cast<uint32>(rand32());
+        uint32 const seed = randu32();
 
         scan << static_cast<uint8>(winWarden->GetModule()->opcodes[FIND_MODULE_BY_NAME] ^ winWarden->GetXor()) << seed;
 
@@ -181,7 +192,7 @@ WindowsModuleScan::WindowsModuleScan(std::string const& module, CheckT checker, 
     [this](Warden const* warden, std::vector<std::string>&, ByteBuffer& scan)
     {
         auto const winWarden = reinterpret_cast<WardenWin const*>(warden);
-        auto const seed = static_cast<uint32>(rand32());
+        uint32 const seed = randu32();
 
         scan << static_cast<uint8>(winWarden->GetModule()->opcodes[FIND_MODULE_BY_NAME] ^ winWarden->GetXor()) << seed;
 
@@ -217,9 +228,12 @@ WindowsMemoryScan::WindowsMemoryScan(uint32 offset, void const* expected, size_t
         if (!!buff.read<uint8>())
             return true;
 
-        auto const result = !!memcmp(buff.contents() + buff.rpos(), &this->m_expected[0], this->m_expected.size());
-        buff.rpos(buff.rpos() + this->m_expected.size());
-        return result;
+        // the client may reply with fewer bytes than we asked for.  read_skip() bounds checks
+        // and throws, which the caller turns into a kick, rather than reading past the packet
+        auto const pos = buff.rpos();
+        buff.read_skip(this->m_expected.size());
+
+        return !!memcmp(buff.contents() + pos, this->m_expected.data(), this->m_expected.size());
     }, sizeof(uint8) + sizeof(uint8) + sizeof(uint32) + sizeof(uint8), sizeof(uint8) + length, comment, flags, minBuild, maxBuild)
 {
     // must fit within uint8
@@ -252,9 +266,12 @@ WindowsMemoryScan::WindowsMemoryScan(std::string const& module, uint32 offset, v
         if (!!buff.read<uint8>())
             return true;
 
-        auto const result = !!memcmp(buff.contents() + buff.rpos(), &this->m_expected[0], this->m_expected.size());
-        buff.rpos(buff.rpos() + this->m_expected.size());
-        return result;
+        // the client may reply with fewer bytes than we asked for.  read_skip() bounds checks
+        // and throws, which the caller turns into a kick, rather than reading past the packet
+        auto const pos = buff.rpos();
+        buff.read_skip(this->m_expected.size());
+
+        return !!memcmp(buff.contents() + pos, this->m_expected.data(), this->m_expected.size());
     }, module.length() + sizeof(uint8) + sizeof(uint8) + sizeof(uint32) + sizeof(uint8), sizeof(uint8) + length, comment, flags, minBuild, maxBuild)
 {
     // must fit within uint8
@@ -309,7 +326,7 @@ WindowsCodeScan::WindowsCodeScan(uint32 offset, std::vector<uint8> const& patter
     [this](Warden const* warden, std::vector<std::string>&, ByteBuffer& scan)
     {
         auto const winWarden = reinterpret_cast<WardenWin const*>(warden);
-        auto const seed = static_cast<uint32>(rand32());
+        uint32 const seed = randu32();
 
         scan << static_cast<uint8>(winWarden->GetModule()->opcodes[this->m_memImageOnly ? FIND_MEM_IMAGE_CODE_BY_HASH : FIND_CODE_BY_HASH] ^ winWarden->GetXor())
              << seed;
@@ -392,7 +409,7 @@ WindowsLuaScan::WindowsLuaScan(std::string const& lua, bool wanted, std::string 
         if (found)
         {
             auto const length = buff.read<uint8>();
-            buff.rpos(buff.rpos() + length);
+            buff.read_skip(length);
         }
 
         return found != this->m_wanted;
@@ -423,11 +440,15 @@ WindowsLuaScan::WindowsLuaScan(std::string const& lua, std::string const& expect
 
         const size_t len = buff.read<uint8>();
 
-        const std::string str(reinterpret_cast<char const*>(buff.contents() + buff.rpos()), len);
+        // bounds checked, so a truncated reply throws instead of reading past the packet
+        auto const pos = buff.rpos();
+        buff.read_skip(len);
 
-        buff.rpos(buff.rpos() + len);
+        const std::string str(reinterpret_cast<char const*>(buff.contents() + pos), len);
 
-        return str == this->m_expectedValue;
+        // like every other check, we report a hack when the client deviates from what a clean
+        // client must report.  the expected value is the good one, not the cheat's value.
+        return str != this->m_expectedValue;
     }, sizeof(uint8) + sizeof(uint8) + lua.length(), sizeof(uint8) + 0xFF, comment, flags | ScanFlags::OffsetsInitialized, minBuild, maxBuild)
 {
     MANGOS_ASSERT(expectedValue.length() <= 0xFF);
@@ -464,7 +485,7 @@ WindowsHookScan::WindowsHookScan(std::string const& module, std::string const& p
         strings.emplace_back(this->m_proc);
 
         auto const winWarden = reinterpret_cast<WardenWin const*>(warden);
-        auto const seed = static_cast<uint32>(rand32());
+        uint32 const seed = randu32();
 
         scan << static_cast<uint8>(winWarden->GetModule()->opcodes[API_CHECK] ^ winWarden->GetXor()) << seed;
 
@@ -496,7 +517,7 @@ WindowsDriverScan::WindowsDriverScan(std::string const& name, std::string const&
         strings.emplace_back(this->m_name);
 
         auto const winWarden = reinterpret_cast<WardenWin const*>(warden);
-        auto const seed = static_cast<uint32>(rand32());
+        uint32 const seed = randu32();
 
         scan << static_cast<uint8>(winWarden->GetModule()->opcodes[FIND_DRIVER_BY_NAME] ^ winWarden->GetXor()) << seed;
 

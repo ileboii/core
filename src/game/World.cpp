@@ -96,7 +96,7 @@ INSTANTIATE_SINGLETON_1(World);
 
 volatile bool World::m_stopEvent = false;
 uint8 World::m_ExitCode = SHUTDOWN_EXIT_CODE;
-volatile uint32 World::m_worldLoopCounter = 0;
+std::atomic<uint32> World::m_worldLoopCounter{0};
 
 float World::m_MaxVisibleDistanceOnContinents = DEFAULT_VISIBILITY_DISTANCE;
 float World::m_MaxVisibleDistanceInInstances  = DEFAULT_VISIBILITY_INSTANCE;
@@ -126,13 +126,14 @@ World::World():
     m_allowMovement(true),
     m_gameTime(time(nullptr)),
     m_timeZoneOffset(0),
-    m_gameDay((m_gameTime + m_timeZoneOffset) / DAY),
-    m_startTime(m_gameTime),
     m_wowPatch(WOW_PATCH_102),
     m_defaultDbcLocale(LOCALE_enUS),
     m_timeRate(1.0f),
     m_canProcessAsyncPackets(false)
 {
+    m_gameDay = (m_gameTime + m_timeZoneOffset) / DAY;
+    m_startTime = m_gameTime,
+
     m_ShutdownMask = 0;
     m_ShutdownTimer = 0;
     m_maxActiveSessionCount = 0;
@@ -513,8 +514,7 @@ void World::LoadConfigSettings(bool reload)
     setConfigMin(CONFIG_FLOAT_RATE_XP_PERSONAL_MIN,      "Rate.XP.Personal.Min", 1.0f, 0.0f);
     setConfigMin(CONFIG_FLOAT_RATE_XP_PERSONAL_MAX,      "Rate.XP.Personal.Max", 1.0f, 0.0f);
     setConfig(CONFIG_FLOAT_RATE_REPUTATION_GAIN,           "Rate.Reputation.Gain", 1.0f);
-    setConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_KILL,  "Rate.Reputation.LowLevel.Kill", 1.0f);
-    setConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_QUEST, "Rate.Reputation.LowLevel.Quest", 1.0f);
+    setConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_KILL,  "Rate.Reputation.LowLevel.Kill", 0.2f);
     setConfigPos(CONFIG_FLOAT_RATE_CREATURE_NORMAL_DAMAGE,               "Rate.Creature.Normal.Damage", 1.0f);
     setConfigPos(CONFIG_FLOAT_RATE_CREATURE_ELITE_ELITE_DAMAGE,          "Rate.Creature.Elite.Elite.Damage", 1.0f);
     setConfigPos(CONFIG_FLOAT_RATE_CREATURE_ELITE_RAREELITE_DAMAGE,      "Rate.Creature.Elite.RAREELITE.Damage", 1.0f);
@@ -580,7 +580,8 @@ void World::LoadConfigSettings(bool reload)
     setConfig(CONFIG_UINT32_COMPRESSION_UPDATE_SIZE, "Compression.Update.Size", 128);
     setConfig(CONFIG_UINT32_COMPRESSION_MOVEMENT_COUNT, "Compression.Movement.Count", 300);
     setConfig(CONFIG_BOOL_ADDON_CHANNEL, "AddonChannel", true);
-    setConfig(CONFIG_BOOL_CLEAN_CHARACTER_DB, "CleanCharacterDB", true);
+    setConfig(CONFIG_BOOL_CLEAN_CHARACTER_DB, "CharacterDatabaseCleanup.Enable", true);
+    setConfig(CONFIG_UINT32_CHARDB_CLEANUP_FLAGS, "CharacterDatabaseCleanup.Flags", CharacterDatabaseCleaner::CLEANING_FLAG_CHARACTERS | CharacterDatabaseCleaner::CLEANING_FLAG_PETS | CharacterDatabaseCleaner::CLEANING_FLAG_ITEMS);
     setConfig(CONFIG_UINT32_REUSABLE_GUID_POOL_SIZE, "ReusableGuidPoolSize", 100000);
     setConfig(CONFIG_BOOL_GRID_UNLOAD, "GridUnload", true);
     setConfig(CONFIG_BOOL_CLEANUP_TERRAIN, "CleanupTerrain", true);
@@ -1022,7 +1023,7 @@ void World::LoadConfigSettings(bool reload)
     setConfig(CONFIG_UINT32_PERFLOG_SLOW_MAP_PACKETS, "PerformanceLog.SlowMapPackets", 60);
     setConfig(CONFIG_UINT32_PERFLOG_SLOW_SESSIONS_UPDATE, "PerformanceLog.SlowSessionsUpdate", 0);
     setConfig(CONFIG_UINT32_PERFLOG_SLOW_PACKET_BCAST, "PerformanceLog.SlowPacketBroadcast", 0);
-    setConfig(CONFIG_UINT32_LOG_MONEY_TRADES_TRESHOLD, "LogMoneyTreshold", 10000);
+    setConfig(CONFIG_UINT32_LOG_MONEY_TRADES_TRESHOLD, "LogMoneyThreshold", 10000);
 
     setConfig(CONFIG_FLOAT_DYN_RESPAWN_CHECK_RANGE, "DynamicRespawn.Range", -1.0f);
     setConfig(CONFIG_FLOAT_DYN_RESPAWN_MAX_REDUCTION_RATE, "DynamicRespawn.MaxReductionRate", 0.0f);
@@ -1522,6 +1523,9 @@ void World::SetInitialWorldSettings()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Points Of Interest Data...");
     sObjectMgr.LoadPointsOfInterest();
 
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Creature Charm Spells...");
+    sObjectMgr.LoadCreatureCharmSpells();
+
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Pet Create Spells...");
     sObjectMgr.LoadPetCreateSpells();
 
@@ -1535,7 +1539,7 @@ void World::SetInitialWorldSettings()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Creature Groups ...");
-    sCreatureGroupsManager->Load();
+    sCreatureGroupsManager->LoadFromDB();
 
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Gameobject Data...");
     sObjectMgr.LoadGameobjects();
@@ -1779,7 +1783,7 @@ void World::SetInitialWorldSettings()
     time(&curr);
     local = *(localtime(&curr));                            // dereference and assign
     char isoDate[128];
-    sprintf(isoDate, "%04d-%02d-%02d %02d:%02d:%02d",
+    snprintf(isoDate, sizeof(isoDate), "%04d-%02d-%02d %02d:%02d:%02d",
             local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
 
     LoginDatabase.PExecute("INSERT INTO `uptime` (`realmid`, `starttime`, `startstring`, `revision`) VALUES('%u', " UI64FMTD ", '%s', '%s')",
@@ -2159,8 +2163,7 @@ void World::Update(uint32 diff)
         sTerrainMgr.Update(diff);
 }
 
-// Send a packet to all players (except self if mentioned)
-void World::SendGlobalMessage(WorldPacket* packet, WorldSession* self, uint32 team)
+void World::SendGlobalMessage(WorldPacket const* binaryPacket, WorldSession const* self, uint32 team)
 {
     for (const auto& itr : m_sessions)
     {
@@ -2168,12 +2171,22 @@ void World::SendGlobalMessage(WorldPacket* packet, WorldSession* self, uint32 te
         {
             if (session != self)
             {
-                Player* player = session->GetPlayer();
+                Player const* player = session->GetPlayer();
                 if (player && player->IsInWorld() && (team == TEAM_NONE || player->GetTeam() == team))
-                    session->SendPacket(packet);
+                    session->SendPacket(binaryPacket);
             }
         }
     }
+}
+
+// Send a packet to all players (except self if mentioned)
+void World::SendGlobalMessage(std::unique_ptr<ServerPacket const> packet, WorldSession const* self, uint32 team)
+{
+    // TODO Use broadcaster which does the binary conversion automatically
+    WorldPacket binaryPacket;
+    binaryPacket.SetOpcode(packet->GetOpcode());
+    packet->AppendBodyTo(binaryPacket);
+    SendGlobalMessage(&binaryPacket, self, team);
 }
 
 namespace MaNGOS
@@ -2393,23 +2406,22 @@ void World::SendGMText(int32 string_id, ...)
 // DEPRICATED, only for debug purpose. Send a System Message to all players (except self if mentioned)
 void World::SendGlobalText(char const* text, WorldSession* self)
 {
-    WorldPacket data;
-
     // need copy to prevent corruption by strtok call in LineFromMessage original string
     char* buf = mangos_strdup(text);
     char* pos = buf;
 
     while (char* line = ChatHandler::LineFromMessage(pos))
     {
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_SYSTEM, line);
-        SendGlobalMessage(&data, self);
+        WorldPacket binaryPacket;
+        ChatHandler::BuildChatPacket(binaryPacket, CHAT_MSG_SYSTEM, line);
+        SendGlobalMessage(&binaryPacket, self);
     }
 
     delete [] buf;
 }
 
 // Send a packet to all players (or players selected team) in the zone (except self if mentioned)
-void World::SendZoneMessage(uint32 zone, WorldPacket* packet, WorldSession* self, uint32 team)
+void World::SendZoneMessage(uint32 zone, WorldPacket const* binaryPacket, WorldSession const* self, uint32 team)
 {
     for (const auto& itr : m_sessions)
     {
@@ -2422,7 +2434,7 @@ void World::SendZoneMessage(uint32 zone, WorldPacket* packet, WorldSession* self
                    (player->GetZoneId() == zone) &&
                    (team == TEAM_NONE || player->GetTeam() == team))
                 {
-                    session->SendPacket(packet);
+                    session->SendPacket(binaryPacket);
                 }
             }
         }
@@ -2430,7 +2442,7 @@ void World::SendZoneMessage(uint32 zone, WorldPacket* packet, WorldSession* self
 }
 
 // Send a System Message to all players in the zone (except self if mentioned)
-void World::SendZoneText(uint32 zone, char const* text, WorldSession* self, uint32 team)
+void World::SendZoneText(uint32 zone, char const* text, WorldSession const* self, uint32 team)
 {
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_SYSTEM, text);
@@ -2777,17 +2789,9 @@ void World::SendServerMessage(ServerMessageType type, char const* text, Player* 
     packet->text = text;
 
     if (player)
-    {
         player->GetSession()->SendPacket(std::move(packet));
-    }
     else
-    {
-        // TODO Use broadcaster which does the binary conversion automatically
-        WorldPacket data;
-        data.SetOpcode(packet->GetOpcode());
-        packet->AppendBodyTo(data);
-        SendGlobalMessage(&data);
-    }
+        SendGlobalMessage(std::move(packet));
 }
 
 void World::UpdateSessions(uint32 diff)
@@ -3103,9 +3107,9 @@ bool World::configNoReload(bool reload, eConfigBoolValues index, char const* fie
 void World::InvalidatePlayerDataToAllClient(ObjectGuid guid)
 {
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_9_4
-    WorldPacket data(SMSG_INVALIDATE_PLAYER, 8);
-    data << guid;
-    SendGlobalMessage(&data);
+    auto packet = std::make_unique<WorldPackets::Misc::InvalidatePlayer>();
+    packet->playerGuid = guid;
+    SendGlobalMessage(std::move(packet));
 #endif
 }
 

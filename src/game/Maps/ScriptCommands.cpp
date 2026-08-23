@@ -27,6 +27,7 @@
 #include "ObjectMgr.h"
 #include "Group.h"
 #include "CreatureGroups.h"
+#include "Utilities/Random.h"
 
 // Script commands should return false by default.
 // If they return true the rest of the script is aborted.
@@ -1099,7 +1100,7 @@ bool Map::ScriptCommand_TerminateCondition(ScriptInfo const& script, WorldObject
     WorldObject* pTarget = target;
 
     bool terminateResult = IsConditionSatisfied(script.terminateCond.conditionId, pTarget, this, pSource, CONDITION_FROM_DBSCRIPTS);
-    
+
     if (script.terminateCond.flags & SF_TERMINATECONDITION_WHEN_FALSE)
         terminateResult = !terminateResult;
 
@@ -1223,7 +1224,7 @@ bool Map::ScriptCommand_MeetingStone(ScriptInfo const& script, WorldObject* sour
 bool Map::ScriptCommand_SetData(ScriptInfo const& script, WorldObject* source, WorldObject* target)
 {
     InstanceData* pInst = GetInstanceData();
-    
+
     if (!pInst)
     {
         sLog.Out(LOG_SCRIPTS, LOG_LVL_ERROR, "SCRIPT_COMMAND_SET_INST_DATA (script id %u) call for map without an instance script, skipping.", script.id);
@@ -1254,7 +1255,7 @@ bool Map::ScriptCommand_SetData(ScriptInfo const& script, WorldObject* source, W
 bool Map::ScriptCommand_SetData64(ScriptInfo const& script, WorldObject* source, WorldObject* target)
 {
     InstanceData* pInst = GetInstanceData();
-    
+
     if (!pInst)
     {
         sLog.Out(LOG_SCRIPTS, LOG_LVL_ERROR, "SCRIPT_COMMAND_SET_INST_DATA64 (script id %u) call for map without an instance script, skipping.", script.id);
@@ -1537,7 +1538,7 @@ bool Map::ScriptCommand_DealDamage(ScriptInfo const& script, WorldObject* source
         return ShouldAbortScript(script);
     }
 
-    Unit* pTarget = ToUnit(source);
+    Unit* pTarget = ToUnit(target);
 
     if (!pTarget)
     {
@@ -1697,7 +1698,7 @@ bool Map::ScriptCommand_RemoveGuardians(ScriptInfo const& script, WorldObject* s
         sLog.Out(LOG_SCRIPTS, LOG_LVL_ERROR, "SCRIPT_COMMAND_REMOVE_GUARDIANS (script id %u) call for a nullptr or non-unit source (TypeId: %u), skipping.", script.id, source ? source->GetTypeId() : 0);
         return ShouldAbortScript(script);
     }
-    
+
     if (script.removeGuardian.creatureId)
     {
         pSource->RemoveGuardiansWithEntry(script.removeGuardian.creatureId);
@@ -1720,9 +1721,13 @@ bool Map::ScriptCommand_AddSpellCooldown(ScriptInfo const& script, WorldObject* 
     }
 
     if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(script.addCooldown.spellId))
-    pSource->AddCooldown(*pSpellEntry, nullptr, false, script.addCooldown.cooldown * IN_MILLISECONDS);
-    if (Player* pPlayer = pSource->ToPlayer())
-        pPlayer->SendSpellCooldown(script.addCooldown.spellId, script.addCooldown.cooldown * IN_MILLISECONDS, pPlayer->GetObjectGuid());
+    {
+        pSource->AddCooldown(pSpellEntry, nullptr, false, script.addCooldown.cooldown * IN_MILLISECONDS);
+
+        if (Player* pPlayer = pSource->ToPlayer())
+            pPlayer->SendSpellCooldown(pSpellEntry->Id, Milliseconds(script.addCooldown.cooldown * IN_MILLISECONDS), pPlayer->GetObjectGuid());
+    }
+
 
     return false;
 }
@@ -1739,7 +1744,10 @@ bool Map::ScriptCommand_RemoveSpellCooldown(ScriptInfo const& script, WorldObjec
     }
 
     if (script.removeCooldown.spellId)
-        pSource->RemoveSpellCooldown(script.removeCooldown.spellId, true);
+    {
+        if (SpellEntry const* spellEntry = sSpellMgr.GetSpellEntry(script.removeCooldown.spellId))
+            pSource->RemoveSpellCooldown(spellEntry, true);
+    }
     else
         pSource->RemoveAllCooldowns();
 
@@ -1878,7 +1886,7 @@ bool Map::ScriptCommand_RemoveMapEventTarget(ScriptInfo const& script, WorldObje
                         continue;
                     }
                 }
-                
+
                 ++itr;
             }
             break;
@@ -2033,7 +2041,7 @@ bool Map::ScriptCommand_StartScriptForAll(ScriptInfo const& script, WorldObject*
         if (!script.startScriptForAll.objectEntry || (pWorldObject->GetEntry() == script.startScriptForAll.objectEntry))
             ScriptsStart(sGenericScripts, script.startScriptForAll.scriptId, pWorldObject->GetObjectGuid(), target ? target->GetObjectGuid() : ObjectGuid());
     }
-    
+
     return false;
 }
 
@@ -2149,7 +2157,7 @@ bool Map::ScriptCommand_CombatStop(ScriptInfo const& script, WorldObject* source
     {
         pSource->CombatStop(true);
         pSource->DeleteThreatList();
-    }  
+    }
 
     return false;
 }
@@ -2515,7 +2523,7 @@ bool Map::ScriptCommand_LoadCreatureSpawn(ScriptInfo const& script, WorldObject*
         if (!LoadCreatureSpawn(script.loadCreature.dbGuid))
             return ShouldAbortScript(script);
     }
-       
+
     return false;
 }
 
@@ -2533,6 +2541,59 @@ bool Map::ScriptCommand_StartScriptOnZone(ScriptInfo const& script, WorldObject*
                     ScriptsStart(sGenericScripts, script.startScriptOnZone.scriptId, pPet->GetObjectGuid(), target ? target->GetObjectGuid() : ObjectGuid());
         }
     }
+
+    return false;
+}
+
+// SCRIPT_COMMAND_FOLLOW_ESCORT (93)
+bool Map::ScriptCommand_FollowEscort(ScriptInfo const& script, WorldObject* source, WorldObject* target)
+{
+    Creature* pSource = ToCreature(source);
+
+    if (!pSource)
+    {
+        sLog.Out(LOG_SCRIPTS, LOG_LVL_ERROR, "SCRIPT_COMMAND_FOLLOW_ESCORT (script id %u) call for a nullptr or non-creature source (TypeId: %u), skipping.", script.id, source ? source->GetTypeId() : 0);
+        return ShouldAbortScript(script);
+    }
+
+    if (!pSource->GetCharmerOrOwnerGuid().IsEmpty())
+    {
+        sLog.Out(LOG_SCRIPTS, LOG_LVL_ERROR, "SCRIPT_COMMAND_FOLLOW_ESCORT (script id %u) wrongly used for pet. The command is intended for regular npcs. Consider using SCRIPT_COMMAND_SET_COMMAND_STATE instead.", script.id);
+        return ShouldAbortScript(script);
+    }
+
+    if (script.followEscort.doFollow)
+    {
+        if (!pSource->IsAlive())
+            return ShouldAbortScript(script);
+
+        Unit* pTarget = ToUnit(target);
+        if (!pTarget)
+        {
+            sLog.Out(LOG_SCRIPTS, LOG_LVL_ERROR, "SCRIPT_COMMAND_FOLLOW_ESCORT (script id %u) call for a nullptr or non-unit target (TypeId: %u), skipping.", script.id, target ? target->GetTypeId() : 0);
+            return ShouldAbortScript(script);
+        }
+        if (pTarget == pSource)
+        {
+            sLog.Out(LOG_SCRIPTS, LOG_LVL_ERROR, "SCRIPT_COMMAND_FOLLOW_ESCORT (script id %u) call for identical source and target, skipping.", script.id);
+            return ShouldAbortScript(script);
+        }
+        if (pSource->IsHostileTo(pTarget))
+        {
+            sLog.Out(LOG_SCRIPTS, LOG_LVL_ERROR, "SCRIPT_COMMAND_FOLLOW_ESCORT (script id %u) call for hostile target, skipping.", script.id);
+            return ShouldAbortScript(script);
+        }
+
+        if (!pTarget->IsAlive())
+            return ShouldAbortScript(script);
+
+        pSource->SetFollowTargetGuid(pTarget->GetObjectGuid());
+
+        if (!pSource->GetVictim())
+            pSource->GetMotionMaster()->MoveFollow(pTarget, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+    }
+    else
+        pSource->SetFollowTargetGuid(ObjectGuid());
 
     return false;
 }

@@ -51,10 +51,10 @@
 #include "Chat.h"
 #include "MonsterChatBuilder.h"
 #include "Anticheat.h"
-
 #include "packet_builder.h"
 #include "MovementBroadcaster.h"
 #include "PlayerBroadcaster.h"
+#include "Utilities/Random.h"
 
 ////////////////////////////////////////////////////////////
 // Methods of class MovementInfo
@@ -498,9 +498,9 @@ void Object::DestroyForPlayer(Player const* target) const
 {
     MANGOS_ASSERT(target);
 
-    WorldPacket data(SMSG_DESTROY_OBJECT, 8);
-    data << GetObjectGuid();
-    target->GetSession()->SendPacket(&data);
+    auto packet = std::make_unique<WorldPackets::Misc::DestroyObject>();
+    packet->objectGuid = GetObjectGuid();
+    target->GetSession()->SendPacket(std::move(packet));
 }
 
 void Object::BuildMovementUpdate(ByteBuffer* data, uint8 updateFlags) const
@@ -824,7 +824,7 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
 
                     *data << uint32(faction);
                 }
-                // RAID ally-horde : pas de flag FFA
+                // RAID ally-horde : no FFA flag
                 else if (index == PLAYER_FLAGS && (m_uint32Values[index] & PLAYER_FLAGS_FFA_PVP))
                 {
                     Player* owner = ((Unit*)this)->GetCharmerOrOwnerPlayerOrPlayerItself();
@@ -1143,10 +1143,27 @@ void Object::_SetCreateBits(UpdateMask& updateMask, Player const* target) const
     uint16 const* flags = nullptr;
     uint16 visibleFlag = GetUpdateFieldFlagsForTarget(target, flags);
     ASSERT(flags);
+    bool const* guidFieldStart = UpdateFields::GetGuidFieldStartArray(GetTypeId());
 
     for (uint16 index = 0; index < m_valuesCount; ++index)
     {
-        if ((m_uint32Values[index] != 0) && (flags[index] & visibleFlag))
+        if (!(flags[index] & visibleFlag))
+            continue;
+
+        // Guid fields must be networked with both halves or not at all. The client
+        // ignores 64 bit values that are only partially present in the create stage,
+        // so sending just the non-zero half (player guids have a zero high half)
+        // makes it display no target for example. See comment in SetUInt64Value.
+        if (guidFieldStart && guidFieldStart[index])
+        {
+            if ((m_uint32Values[index] != 0) || (m_uint32Values[index + 1] != 0))
+            {
+                updateMask.SetBit(index);
+                updateMask.SetBit(index + 1);
+            }
+            ++index; // high half handled together with the low half
+        }
+        else if (m_uint32Values[index] != 0)
             updateMask.SetBit(index);
     }
 }
@@ -1959,12 +1976,16 @@ bool WorldObject::GetRandomPoint(float x, float y, float z, float distance, floa
     // 1st case we can fly => Position in the air, easy.
     if (pUnit && pUnit->CanFly())
     {
-        float randAngle1 = rand_norm_f() * 2 * M_PI;
-        float randAngle2 = rand_norm_f() * 2 * M_PI;
+        float theta = rand_norm_f() * 2.0f * M_PI;
+        float u = rand_norm_f() * 2.0f - 1.0f;
         float randDist = rand_norm_f() * distance;
-        rand_x = x + randDist * cos(randAngle1) * sin(randAngle2);
-        rand_y = y + randDist * sin(randAngle2) * sin(randAngle2);
-        rand_z = z + randDist * sin(randAngle2);
+
+        float sinPhi = sqrtf(1.0f - u * u); // Radius of sphere at z
+
+        rand_x = x + randDist * sinPhi * cos(theta);
+        rand_y = y + randDist * sinPhi * sin(theta);
+        rand_z = z + randDist * u;
+
         // May happen in the border of the map
         if (!MaNGOS::IsValidMapCoord(x, y, z) || !MaNGOS::IsValidMapCoord(rand_x, rand_y, rand_z))
             return false;
@@ -2173,6 +2194,15 @@ bool WorldObject::IsPositionValid() const
     return MaNGOS::IsValidMapCoord(m_position.x, m_position.y, m_position.z, m_position.o);
 }
 
+void WorldObject::SendMessageToSet(std::unique_ptr<ServerPacket const> packet, bool self) const
+{
+    // TODO Use broadcaster which does the binary conversion automatically
+    WorldPacket binaryPacket;
+    binaryPacket.SetOpcode(packet->GetOpcode());
+    packet->AppendBodyTo(binaryPacket);
+    SendMessageToSet(&binaryPacket, self);
+}
+
 void WorldObject::SendMessageToSet(WorldPacket* data, bool /*bToSelf*/) const
 {
     //if object is in world, map for it already created!
@@ -2240,9 +2270,23 @@ void WorldObject::SendObjectMessageToSetImpl(WorldPacket* data, bool self, World
     cell.Visit(p, message, *GetMap(), *this, std::max(GetMap()->GetVisibilityDistance(), GetVisibilityModifier()));
 }
 
+void WorldObject::SendObjectMessageToSet(std::unique_ptr<ServerPacket const> packet, bool self, WorldObject const* except) const
+{
+    WorldPacket binaryPacket(packet->GetOpcode());
+    packet->AppendBodyTo(binaryPacket);
+    SendObjectMessageToSet(&binaryPacket, self, except);
+}
+
 void WorldObject::SendObjectMessageToSet(WorldPacket* data, bool self, WorldObject const* except) const
 {
     SendObjectMessageToSetImpl<ObjectViewersDeliverer>(data, self, except);
+}
+
+void WorldObject::SendMovementMessageToSet(std::unique_ptr<ServerPacket const> packet, bool self, WorldObject const* except)
+{
+    WorldPacket binaryPacket(packet->GetOpcode());
+    packet->AppendBodyTo(binaryPacket);
+    SendMovementMessageToSet(std::move(binaryPacket), self, except);
 }
 
 void WorldObject::SendMovementMessageToSet(WorldPacket data, bool self, WorldObject const* except)
@@ -2280,16 +2324,16 @@ void WorldObject::SendMessageToSetExcept(WorldPacket* data, Player const* skippe
 
 void WorldObject::SendObjectSpawnAnim() const
 {
-    WorldPacket data(SMSG_GAMEOBJECT_SPAWN_ANIM, 8);
-    data << GetObjectGuid();
-    SendObjectMessageToSet(&data, true);
+    auto packet = std::make_unique<WorldPackets::Misc::GameObjectSpawnAnim>();
+    packet->gameObjectGuid = GetObjectGuid();
+    SendObjectMessageToSet(std::move(packet), true);
 }
 
 void WorldObject::SendObjectDeSpawnAnim() const
 {
-    WorldPacket data(SMSG_GAMEOBJECT_DESPAWN_ANIM, 8);
-    data << GetObjectGuid();
-    SendObjectMessageToSet(&data, true);
+    auto packet = std::make_unique<WorldPackets::Misc::GameObjectDespawnAnim>();
+    packet->gameObjectGuid = GetObjectGuid();
+    SendObjectMessageToSet(std::move(packet), true);
 }
 
 bool WorldObject::IsWithinVisibilityDistanceOf(Unit const* viewer, WorldObject const* viewPoint, bool inVisibleList) const
@@ -2341,6 +2385,16 @@ TerrainInfo const* WorldObject::GetTerrain() const
 {
     MANGOS_ASSERT(m_currMap);
     return m_currMap->GetTerrain();
+}
+
+bool WorldObject::IsInWater() const
+{
+    return GetTerrain()->IsInWater(GetPositionX(), GetPositionY(), GetPositionZ());
+}
+
+bool WorldObject::IsUnderwater() const
+{
+    return GetTerrain()->IsUnderWater(GetPositionX(), GetPositionY(), GetPositionZ());
 }
 
 void WorldObject::AddObjectToRemoveList()
@@ -2806,33 +2860,33 @@ void WorldObject::GetNearPointAroundPosition(WorldObject const* searcher, float 
 void WorldObject::PlayDistanceSound(uint32 sound_id, Player const* target /*= nullptr*/) const
 {
     // Nostalrius: ignored by client if unit is not loaded
-    WorldPacket data(SMSG_PLAY_OBJECT_SOUND, 4 + 8);
-    data << uint32(sound_id);
-    data << GetObjectGuid();
+    auto packet = std::make_unique<WorldPackets::Misc::PlayObjectSound>();
+    packet->soundId = sound_id;
+    packet->sourceGuid = GetObjectGuid();
     if (target)
-        target->SendDirectMessage(&data);
+        target->GetSession()->SendPacket(std::move(packet));
     else
-        SendObjectMessageToSet(&data, true);
+        SendObjectMessageToSet(std::move(packet), true);
 }
 
 void WorldObject::PlayDirectSound(uint32 sound_id, Player const* target /*= nullptr*/) const
 {
-    WorldPacket data(SMSG_PLAY_SOUND, 4);
-    data << uint32(sound_id);
+    auto packet = std::make_unique<WorldPackets::Misc::PlaySound>();
+    packet->soundId = sound_id;
     if (target)
-        target->SendDirectMessage(&data);
+        target->GetSession()->SendPacket(std::move(packet));
     else
-        SendMessageToSet(&data, true);
+        SendMessageToSet(std::move(packet), true);
 }
 
 void WorldObject::PlayDirectMusic(uint32 music_id, Player const* target /*= nullptr*/) const
 {
-    WorldPacket data(SMSG_PLAY_MUSIC, 4);
-    data << uint32(music_id);
+    auto packet = std::make_unique<WorldPackets::Misc::PlayMusic>();
+    packet->musicId = music_id;
     if (target)
-        target->SendDirectMessage(&data);
+        target->GetSession()->SendPacket(std::move(packet));
     else
-        SendMessageToSet(&data, true);
+        SendMessageToSet(std::move(packet), true);
 }
 
 void WorldObject::UpdateVisibilityAndView()
@@ -3079,15 +3133,6 @@ GameObject* WorldObject::FindRandomGameObject(uint32 entry, float range) const
     return *tcIter;
 }
 
-GameObject* WorldObject::FindNearbyClosedDoor(float range) const
-{
-    GameObject* door = nullptr;
-    MaNGOS::AnyClosedDoorInRangeCheck go_check(this, range);
-    MaNGOS::GameObjectSearcher<MaNGOS::AnyClosedDoorInRangeCheck> checker(door, go_check);
-    Cell::VisitGridObjects(this, checker, range);
-    return door;
-}
-
 Player* WorldObject::FindNearestPlayer(float range) const
 {
     Player* target = nullptr;
@@ -3300,14 +3345,14 @@ void WorldObject::SetActiveObjectState(bool on)
 
     bool world = IsInWorld();
 
-    Map* map;
+    Map* map = nullptr;
     if (world)
     {
         map = GetMap();
         if (GetTypeId() == TYPEID_UNIT)
-            map->Remove((Creature*)this, false);
+            map->Remove(static_cast<Creature*>(this), false);
         else
-            map->Remove((GameObject*)this, false);
+            map->Remove(static_cast<GameObject*>(this), false);
     }
 
     m_isActiveObject = on;
@@ -3315,9 +3360,9 @@ void WorldObject::SetActiveObjectState(bool on)
     if (world)
     {
         if (GetTypeId() == TYPEID_UNIT)
-            map->Add((Creature*)this);
+            map->Add(static_cast<Creature*>(this));
         else
-            map->Add((GameObject*)this);
+            map->Add(static_cast<GameObject*>(this));
     }
 }
 

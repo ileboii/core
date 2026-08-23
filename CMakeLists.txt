@@ -104,7 +104,9 @@ if(WIN32)
   set(OPENSSL_SSL_LIBRARIES ${CMAKE_SOURCE_DIR}/dep/windows/lib/${DEP_ARCH}_release/libssl-3-x64.lib)
   set(OPENSSL_SSL_DEBUG_LIBRARIES ${CMAKE_SOURCE_DIR}/dep/windows/lib/${DEP_ARCH}_debug/libssl-3-x64.lib)
   set(ZLIB_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/dep/windows/include/zlib)
-  if (REQUIRES_LIBCURL)
+  if (REQUIRES_LIBCURL AND MSVC)
+    # MinGW falls through to find_package(CURL) below, which picks up
+    # libcurl from the toolchain environment (e.g., MSYS2).
     set(CURL_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/dep/windows/optional_dependencies/curl/include)
     set(CURL_LIBRARY     ${CMAKE_SOURCE_DIR}/dep/windows/optional_dependencies/curl/lib/libcurl.lib)
   endif()
@@ -204,7 +206,7 @@ if(MSVC)
   #  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LARGEADDRESSAWARE")
   #endif()
 
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
+  set(MANGOS_CXX_FLAGS "${MANGOS_CXX_FLAGS} /bigobj")
 endif()
 
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
@@ -279,8 +281,7 @@ set_property(DIRECTORY APPEND PROPERTY
   COMPILE_DEFINITIONS $<$<CONFIG:Release>:${DEFINITIONS_RELEASE}>
 )
 
-message(STATUS "Build flags (RELEASE) : ${CMAKE_CXX_FLAGS_RELEASE}")
-message(STATUS "Build flags (DEBUG)   : ${CMAKE_CXX_FLAGS_DEBUG}")
+message(STATUS "MaNGOS CXX flags      : ${MANGOS_CXX_FLAGS}")
 
 add_subdirectory(src)
 add_subdirectory(dep)

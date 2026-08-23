@@ -156,6 +156,7 @@ Map::Map(uint32 id, time_t expiry, uint32 InstanceId)
     m_persistentState = sMapPersistentStateMgr.AddPersistentState(m_mapEntry, GetInstanceId(), 0, IsDungeon());
     m_persistentState->SetUsedByMapState(this);
     m_weatherSystem = new WeatherSystem(this);
+    sCreatureGroupsManager->InitializeGroupManagerForMap(id, m_creatureGroupManager);
 
     if (IsContinent())
     {
@@ -370,7 +371,6 @@ bool Map::EnsureGridLoaded(Cell const& cell)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[Map%u][CRASH] Grid [%u:%u] NOT loaded !!", m_id, cell.GridX(), cell.GridY());
         throw new std::string("Crash AT EnsureGridLoaded");
-        ASSERT(false);
     }
 
     if (!grid->isGridObjectDataLoaded())
@@ -1108,7 +1108,7 @@ ScriptedEvent* Map::StartScriptedEvent(uint32 id, WorldObject* source, WorldObje
 {
     if (m_mScriptedEvents.find(id) != m_mScriptedEvents.end())
         return nullptr;
-    
+
     auto itr = m_mScriptedEvents.emplace(std::piecewise_construct, std::forward_as_tuple(id), std::forward_as_tuple(id, source ? source->GetObjectGuid() : ObjectGuid(), target ? target->GetObjectGuid() : ObjectGuid(), *this, time_t(sWorld.GetGameTime() + timelimit), failureCondition, failureScript, successCondition, successScript));
 
     return &itr.first->second;
@@ -1331,7 +1331,7 @@ Map::Remove(T* obj, bool remove)
             obj->SaveRespawnTime(); // requires map not being reset
 
     obj->ResetMap();
-    
+
     if (remove) // Note: In case resurrectable corpse and pet its removed from global lists in own destructor
         delete obj;
 }
@@ -1844,6 +1844,14 @@ uint32 Map::GetPlayersCountExceptGMs() const
     return count;
 }
 
+void Map::SendToPlayers(std::unique_ptr<ServerPacket const> packet, Team team) const
+{
+    // TODO Use broadcaster which does the binary conversion automatically
+    WorldPacket data(packet->GetOpcode());
+    packet->AppendBodyTo(data);
+    SendToPlayers(&data, team);
+}
+
 void Map::SendToPlayers(WorldPacket const* data, Team team) const
 {
     for (const auto& itr : m_mapRefManager)
@@ -1874,7 +1882,7 @@ void Map::SendDefenseMessage(int32 textId, uint32 zoneId) const
     {
         Player* pPlayer = itr.getSource();
         char const* text = textId > 0 ? sObjectMgr.GetBroadcastText(textId, pPlayer->GetSession()->GetSessionDbLocaleIndex(), pPlayer->GetGender()) : sObjectMgr.GetMangosString(textId, pPlayer->GetSession()->GetSessionDbLocaleIndex());
-        
+
         WorldPacket data(SMSG_DEFENSE_MESSAGE);
         data << uint32(zoneId);
         data << uint32(strlen(text) + 1);
@@ -2147,7 +2155,7 @@ bool DungeonMap::CanEnter(Player* player)
     }
 
     // World of Warcraft Client Patch 1.11.0 (2006-06-20)
-    // - Instituted an anti-exploit measure on certain encounters (almost 
+    // - Instituted an anti-exploit measure on certain encounters (almost
     //   entirely raid bosses).These encounters will prevent people from
     //   zoning into the instance while that encounter is engaged.If you
     //   attempt to zone into the instance while that encounter is engaged,
@@ -2158,7 +2166,7 @@ bool DungeonMap::CanEnter(Player* player)
     //   graveyard rushing in instances.
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_10_2
     Group* pGroup = player->GetGroup();
-    if (IsRaid() && GetInstanceData() && GetInstanceData()->IsEncounterInProgress() && 
+    if (IsRaid() && GetInstanceData() && GetInstanceData()->IsEncounterInProgress() &&
         pGroup && pGroup->InCombatToInstance(GetInstanceId()) && player->IsAlive() && !player->IsGameMaster())
     {
         player->SendTransferAborted(TRANSFER_ABORT_ZONE_IN_COMBAT);
@@ -2530,7 +2538,7 @@ void Map::ScriptsStart(ScriptMapMap const& scripts, uint32 id, ObjectGuid source
     // Schedule script execution for all scripts in the script map
     ScriptMap const* s2 = &(s->second);
     bool immedScript = false;
-    
+
     std::lock_guard<MapMutexType> lock(m_scriptSchedule_lock);
     for (ScriptMap::const_iterator iter = s2->begin(); iter != s2->end(); ++iter)
     {
@@ -2563,8 +2571,8 @@ void Map::ScriptCommandStart(ScriptInfo const& script, uint32 delay, ObjectGuid 
 
 bool Map::ScriptCommandStartDirect(ScriptInfo const& script, WorldObject* source, WorldObject* target)
 {
-    if ((script.command != SCRIPT_COMMAND_DISABLED) && 
-        FindScriptFinalTargets(source, target, script) && 
+    if ((script.command != SCRIPT_COMMAND_DISABLED) &&
+        FindScriptFinalTargets(source, target, script) &&
         (!script.condition || IsConditionSatisfied(script.condition, target, this, source, CONDITION_FROM_DBSCRIPTS)))
         return (this->*(m_ScriptCommands[script.command]))(script, source, target);
 
@@ -2898,8 +2906,8 @@ void Map::SendObjectUpdates()
     if (threads < m_objUpdatesThreads)
         m_objUpdatesThreads = threads;
 #endif
-    if (threads > objectsCount)
-        threads = objectsCount;
+    if (static_cast<uint32>(threads) > objectsCount)
+        threads = static_cast<int>(objectsCount);
     int step = objectsCount / threads;
 
     ASSERT(step > 0);
@@ -3013,7 +3021,7 @@ void Map::UpdateVisibilityForRelocations()
     if (threads > objectsCount)
         threads = objectsCount;
     uint32 step = objectsCount / threads;
-    
+
     ASSERT(step > 0);
 
     std::vector<std::unordered_set<Unit*>::iterator> t;
@@ -3236,11 +3244,16 @@ bool Map::GetWalkHitPosition(GenericTransport* transport, float srcX, float srcY
         return false;
     }
 
+    if (t == 0)
+    {
+        return false;
+    }
+
     // We hit a wall - calculate new endposition
     if ((t < 1) && (t > 0))
     {
         for (int i = 0; i < 3; ++i)
-            endPosition[i] = point[i] + (endPosition[i] - point[i]) * hitNormal[i];
+            endPosition[i] = point[i] + (endPosition[i] - point[i]) * t;
     }
 
     if (dtStatusFailed(navMeshQuery->closestPointOnPoly(visited[visitedCount - 1], endPosition, endPosition, nullptr)))
@@ -3766,7 +3779,7 @@ Creature* Map::LoadCreatureSpawn(uint32 dbGuid, bool delaySpawn)
         if (sWorld.getConfig(CONFIG_BOOL_SAVE_RESPAWN_TIME_IMMEDIATELY) || pCreature->IsWorldBoss())
             pCreature->SaveRespawnTime();
     }
-    
+
     Add(pCreature);
     return pCreature;
 }
@@ -3814,7 +3827,7 @@ GameObject* Map::LoadGameObjectSpawn(uint32 dbGuid, bool delaySpawn)
         delete pGameObject;
         return nullptr;
     }
-    
+
     if (delaySpawn)
     {
         pGameObject->SetRespawnTime(pGameObject->GetRespawnDelay());
