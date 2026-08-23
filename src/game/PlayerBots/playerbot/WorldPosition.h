@@ -117,6 +117,8 @@ namespace ai
 
         float operator*(const WorldPosition& p1) const { return (x * x) + (y * y) + (z * z); }
 
+        float projectOnSegment(const WorldPosition& p1, const WorldPosition& p2) const;
+
         //Getters
         uint32 getMapId() const { return mapId; }
         float getX() const { return x; }

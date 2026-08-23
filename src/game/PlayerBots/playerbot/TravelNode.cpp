@@ -1005,6 +1005,13 @@ WorldPosition TravelPath::getNextPoint(WorldPosition startPos, float maxDist, Tr
     if (std::next(nextP) != ed)
         nextP = std::next(nextP);
 
+    if (startP != ed && startP->isWalkable() && nextP != ed &&
+        startPos.projectOnSegment(startP->point, nextP->point) > 0.0f &&
+        startPos.projectOnSegment(startP->point, nextP->point) < 1.0f)
+    {
+        startP = nextP;
+    }
+
     WorldPosition nextPoint = startP->point;
 
     //We are moving towards a teleport. Move to portal an activate area trigger

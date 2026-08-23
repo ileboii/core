@@ -404,6 +404,24 @@ G3D::Vector3 WorldPosition::getVector3() const
     return G3D::Vector3(x, y, z); 
 }
 
+float WorldPosition::projectOnSegment(const WorldPosition& p1, const WorldPosition& p2) const
+{
+    if (p1.getMapId() != p2.getMapId() || p1.getMapId() != getMapId())
+        return 0.0f;
+
+    float dx = p2.getX() - p1.getX();
+    float dy = p2.getY() - p1.getY();
+    float dz = p2.getZ() - p1.getZ();
+    float lengthSquared = dx * dx + dy * dy + dz * dz;
+
+    if (lengthSquared == 0.0f)
+        return 0.0f;
+
+    return ((getX() - p1.getX()) * dx +
+            (getY() - p1.getY()) * dy +
+            (getZ() - p1.getZ()) * dz) / lengthSquared;
+}
+
 std::string WorldPosition::print() const
 {
     std::ostringstream out;
