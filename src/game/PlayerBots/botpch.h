@@ -1,6 +1,7 @@
 //add here most rarely modified headers to speed up debug build compilation
 #include "WorldSocket.h"
 #include "Common.h"
+#include "Utilities/Random.h"
 
 // vmangos is vanilla WoW (expansion 0)
 #define MANGOSBOT_ZERO 1

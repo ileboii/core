@@ -97,7 +97,7 @@ SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets
         SendSpellStart();
         // add gcd server side (client side is handled by client itself)
         if (!m_caster->IsPlayer() || !static_cast<Player*>(m_caster)->HasCheatOption(PLAYER_CHEAT_NO_COOLDOWN))
-            m_caster->AddGCD(*m_spellInfo);
+            m_caster->AddGCD(m_spellInfo);
 
         // For instant non-triggered spells, cast immediately instead of waiting for SpellEvent
         if (m_timer == 0 && !m_spellInfo->IsNextMeleeSwingSpell() && !IsAutoRepeat())
@@ -711,8 +711,8 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 {
                     if (!HasItemCooldown(itemId))
                     {
-                        bot->RemoveSpellCooldown(*spellInfo, false);
-                        bot->AddCooldown(*spellInfo, proto, false);
+                bot->RemoveSpellCooldown(spellInfo, false);
+                bot->AddCooldown(spellInfo, proto, false);
                     }
                 }
 

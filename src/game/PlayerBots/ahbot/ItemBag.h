@@ -1,5 +1,6 @@
 #pragma once
 #include "Category.h"
+#include "Utilities/Random.h"
 #if defined(MANGOSBOT_TWO) || MAX_EXPANSION == 2
 #include "Util.h"
 #else

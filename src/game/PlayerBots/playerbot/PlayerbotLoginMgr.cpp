@@ -1,5 +1,6 @@
 #include "PlayerbotLoginMgr.h"
 #include "Database/DatabaseImpl.h"
+#include "Utilities/Random.h"
 #include "PlayerbotMgr.h"
 #include "PlayerbotAIConfig.h"
 #include "RandomPlayerbotMgr.h"

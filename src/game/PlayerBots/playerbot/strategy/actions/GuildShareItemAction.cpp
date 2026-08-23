@@ -41,7 +41,8 @@ bool GuildShareItemAction::Execute(Event& event)
         if (giveCount == stackCount)
         {
             ItemPosCountVec dest;
-            InventoryResult msg = receiver->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false);
+    uint8 bagSlot = NULL_BAG;
+    InventoryResult msg = receiver->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, bagSlot, false);
             if (msg != EQUIP_ERR_OK)
             {
                 sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot #%d <%s> cannot give %s to %s - bags full",

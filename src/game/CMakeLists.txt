@@ -621,6 +621,9 @@ add_library(game STATIC
   ${game_SRCS}
 )
 mangos_target_flags(game)
+if(MSVC)
+  target_compile_options(game PRIVATE /bigobj)
+endif()
 if(GAME_EXTRA_CXX_FLAGS)
   target_compile_options(game PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${GAME_EXTRA_CXX_FLAGS}>)
 endif()
@@ -657,6 +660,7 @@ else()
       target_precompile_headers(game PRIVATE
       Server/WorldSocket.h
       ../shared/Common.h
+      ../shared/Utilities/Random.h
       Maps/MapManager.h
       ../shared/Log.h
       ObjectAccessor.h

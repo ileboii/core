@@ -140,8 +140,8 @@ namespace ai
                             const SpellEntry* spellInfo = sSpellMgr.GetSpellEntry(spellData.SpellId);
                             if (spellInfo)
                             {
-                                bot->RemoveSpellCooldown(*spellInfo, false);
-                                bot->AddCooldown(*spellInfo, proto, false);
+                                bot->RemoveSpellCooldown(spellInfo, false);
+                                bot->AddCooldown(spellInfo, proto, false);
                                 break;
                             }
                         }
@@ -263,8 +263,8 @@ namespace ai
                             const SpellEntry* spellInfo = sSpellMgr.GetSpellEntry(spellData.SpellId);
                             if (spellInfo)
                             {
-                                bot->RemoveSpellCooldown(*spellInfo, false);
-                                bot->AddCooldown(*spellInfo, proto, false);
+                                bot->RemoveSpellCooldown(spellInfo, false);
+                                bot->AddCooldown(spellInfo, proto, false);
                                 break;
                             }
                         }
@@ -690,7 +690,7 @@ namespace ai
 
                 ai->CastSpell(24355, bot);
                 SetDuration(drinkDuration);
-                bot->RemoveSpellCooldown(*pSpellInfo);
+                bot->RemoveSpellCooldown(pSpellInfo);
 
                 // Eat and drink at the same time
 
@@ -700,7 +700,7 @@ namespace ai
                     if (pSpellInfo2)
                     {
                         ai->AddAura(bot, 24005);
-                        bot->RemoveSpellCooldown(*pSpellInfo2);
+                        bot->RemoveSpellCooldown(pSpellInfo2);
                     }
                 }
 
@@ -767,7 +767,7 @@ namespace ai
 
                 ai->CastSpell(24005, bot);
                 SetDuration(eatDuration);
-                bot->RemoveSpellCooldown(*pSpellInfo);
+                bot->RemoveSpellCooldown(pSpellInfo);
 
                 // Eat and drink at the same time
                 if (AI_VALUE(bool, "should drink"))
@@ -776,7 +776,7 @@ namespace ai
                     if (pSpellInfo2)
                     {
                         ai->AddAura(bot, 24355);
-                        bot->RemoveSpellCooldown(*pSpellInfo2);
+                        bot->RemoveSpellCooldown(pSpellInfo2);
                     }
                 }
 

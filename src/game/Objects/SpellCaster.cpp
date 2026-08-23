@@ -28,6 +28,12 @@
 #include "Opcodes.h"
 #include "Utilities/Random.h"
 
+bool SpellCaster::IsSpellReady(uint32 spellId, ItemPrototype const* itemProto) const
+{
+    SpellEntry const* spellEntry = sSpellMgr.GetSpellEntry(spellId);
+    return spellEntry && IsSpellReady(spellEntry, itemProto);
+}
+
 Unit* SpellCaster::SelectMagnetTarget(Unit* victim, Spell* spell, SpellEffectIndex eff)
 {
     if (!victim)

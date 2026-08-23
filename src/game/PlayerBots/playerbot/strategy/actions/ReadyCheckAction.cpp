@@ -200,9 +200,9 @@ bool ReadyCheckAction::ReadyCheck(Player* requester)
 
     ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
-    WorldPacket packet(MSG_RAID_READY_CHECK);
-    packet << uint8(1);
-    bot->GetSession()->HandleRaidReadyCheckOpcode(MakeTypedPacket<WorldPackets::Group::RaidReadyCheck>(packet));
+    WorldPackets::Group::RaidReadyCheckFromClient packet;
+    packet.state = uint8(1);
+    bot->GetSession()->HandleRaidReadyCheckOpcode(packet);
 
     ai->ChangeStrategy("-ready check", BotState::BOT_STATE_NON_COMBAT);
 

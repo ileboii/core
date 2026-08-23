@@ -1,4 +1,5 @@
 #pragma once
+#include "Utilities/Random.h"
 #include "playerbot/strategy/Value.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"

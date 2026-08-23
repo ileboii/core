@@ -1,6 +1,7 @@
 //add here most rarely modified headers to speed up debug build compilation
 #include "WorldSocket.h"
 #include "Common.h"
+#include "Utilities/Random.h"
 
 #include "MapManager.h"
 #include "Log.h"

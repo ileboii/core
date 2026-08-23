@@ -4084,19 +4084,22 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
 
         if (!damage)
         {
-            for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
-            {
-                bool immune = target->IsImmuneToSpellEffect(spellInfo, (SpellEffectIndex)i, false);
-                if (immune)
-                {
-                    if (checkResult)
-                    {
-                        *checkResult = SPELL_FAILED_IMMUNE;
-                    }
-
-                    return false;
-                }
+            bool immune = target->IsImmuneToSpell(spellInfo, false);
+            if (!immune)
+     {
+  for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
+        immune = target->IsImmuneToSpellEffect(spellInfo, (SpellEffectIndex)i, false);
             }
+
+            if (immune)
+            {
+       if (checkResult)
+   {
+     *checkResult = SPELL_FAILED_IMMUNE;
+           }
+
+           return false;
+   }
         }
 
         if (!ignoreRange && bot != target && sServerFacade.GetDistance2d(bot, target) > sPlayerbotAIConfig.sightDistance)

@@ -6,6 +6,7 @@
 #include "GossipDef.h"
 #include "Chat.h"
 #include "Common.h"
+#include "Utilities/Random.h"
 #include "World.h"
 #include "SpellMgr.h"
 #include "ObjectMgr.h"

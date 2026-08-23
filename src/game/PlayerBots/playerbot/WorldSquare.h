@@ -1,5 +1,6 @@
 #pragma once
 #include "WorldPosition.h"
+#include "Utilities/Random.h"
 
 //This is a location container for quicker lookup of a collection of related points.
 //Locations are added and sorted into map, grid, cell containers and the bounding box of each container are calculated.

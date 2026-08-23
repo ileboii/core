@@ -515,7 +515,7 @@ void AuctionHouseBot::AddLootToItemMap(LootStore* store, std::vector<int32>& loo
         // VMaNGOS Loot ctor takes WorldObject const* - use nullptr for synthetic loot generation
         Loot loot(nullptr);
         for (uint32 repeat = urand(lootConfig[2], lootConfig[3]); repeat > 0; --repeat)
-            lootTable->Process(loot, *store, store->IsRatesAllowed());
+            lootTable->Process(loot, *store, nullptr, store->IsRatesAllowed());
 
         // VMaNGOS: iterate the public items vector directly
         for (auto const& lootItem : loot.items)

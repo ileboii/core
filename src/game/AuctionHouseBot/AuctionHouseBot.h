@@ -1,6 +1,7 @@
 #ifndef AUCTION_HOUSE_BOT_H
 #define AUCTION_HOUSE_BOT_H
 
+#include "Utilities/Random.h"
 #include "AuctionHouseMgr.h"
 #include "Config/Config.h"
 #include "ItemPrototype.h"

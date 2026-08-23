@@ -710,8 +710,8 @@ bool CastItemTargetAction::Execute(Event& event)
         {
             if (!HasSpellCooldown(itemId))
             {
-                bot->RemoveSpellCooldown(*spellInfo, false);
-                bot->AddCooldown(*spellInfo, proto, false);
+                bot->RemoveSpellCooldown(spellInfo, false);
+                bot->AddCooldown(spellInfo, proto, false);
             }
         }
 

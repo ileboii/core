@@ -34,7 +34,8 @@ bool GiveItemAction::Execute(Event& event)
             continue;
 
         ItemPosCountVec dest;
-        InventoryResult msg = receiver->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false);
+    uint8 bagSlot = NULL_BAG;
+    InventoryResult msg = receiver->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, bagSlot, false);
         if (msg == EQUIP_ERR_OK)
         {
             bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);
