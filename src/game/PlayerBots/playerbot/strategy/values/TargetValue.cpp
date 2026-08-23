@@ -131,10 +131,7 @@ WorldPosition LastLongMoveValue::Calculate()
 
 WorldPosition HomeBindValue::Calculate()
 {
-    float x, y, z;
-    uint32 mapId;
-    mapId = bot->GetHomeBindMap(); x = 0; y = 0; z = 0 /* no GetHomeBind x/y/z accessors */;
-    return WorldPosition(mapId, x, y, z, 0.0);
+    return WorldPosition(bot->GetHomeBindLocation());
 }
 
 std::string HomeBindValue::Format()
