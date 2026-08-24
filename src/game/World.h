@@ -884,6 +884,7 @@ class World
         static uint32 GetCurrentMSTime() { return m_currentMSTime; }
         static TimePoint GetCurrentClockTime() { return m_currentTime; }
         static uint32 GetCurrentDiff() { return m_currentDiff; }
+        static uint32 GetAverageDiff() { return m_averageDiff; }
 
         // Manually override timer update secs to force a faster update
         void SetWorldUpdateTimer(WorldTimers timer, uint32 current);
@@ -1003,6 +1004,12 @@ class World
         static uint32 m_currentMSTime;
         static TimePoint m_currentTime;
         static uint32 m_currentDiff;
+
+        static uint32 m_averageDiff;
+        static uint64 m_diffAccumulator;
+        static uint32 m_diffSampleCount;
+        static uint32 m_averageDiffTimer;
+
 
         Messager<World> m_messager;
 };

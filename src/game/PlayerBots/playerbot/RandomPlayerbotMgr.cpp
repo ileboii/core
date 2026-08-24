@@ -707,9 +707,9 @@ void RandomPlayerbotMgr::ScaleBotActivity()
     //if (activityPercentage >= 100.0f || activityPercentage <= 0.0f) pid.reset(); //Stop integer buildup during max/min activity
 
     //    % increase/decrease                   wanted diff                                         , avg diff
-    float activityPercentageMod = pid.calculate(sRandomPlayerbotMgr.GetPlayers().empty() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer, sWorld.GetCurrentDiff());
+    float activityPercentageMod = pid.calculate(sRandomPlayerbotMgr.GetPlayers().empty() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer, sWorld.GetAverageDiff());
 
-    float activityPercentage = activityPercentageMod + 50;
+    float activityPercentage = activityPercentageMod;
 
     //Cap the percentage between 0 and 100.
     activityPercentage = std::max(0.0f, std::min(100.0f, activityPercentage));
@@ -737,9 +737,9 @@ void RandomPlayerbotMgr::ScaleBotActivity()
         std::ostringstream out;
         out << sWorld.GetCurrentMSTime() << ", ";
 
-        out << sWorld.GetCurrentDiff() << ",";
-        out << sWorld.GetCurrentDiff() << ",";
-        out << sWorld.GetCurrentDiff() << ",";
+        out << sWorld.GetAverageDiff() << ",";
+        out << sWorld.GetAverageDiff() << ",";
+        out << sWorld.GetAverageDiff() << ",";
         out << virtualMemUsedByMe << ",";
         out << activityPercentage << ",";
         out << activityPercentageMod << ",";
@@ -4363,7 +4363,7 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleDiff(std::string param)
     if (param.empty())
     {
         std::stringstream ss;
-        ss << "Avg diff: " << sWorld.GetCurrentDiff() << "\n";
+        ss << "Avg diff: " << sWorld.GetAverageDiff() << "\n";
         ss << "Max diff: " << sWorld.GetCurrentDiff() << "\n";
         ss << "char db ping: " << sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") << "\n";
         ss << "Sessions online: " << sWorld.GetActiveSessionCount() << "\n";

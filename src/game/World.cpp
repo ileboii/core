@@ -113,6 +113,11 @@ uint32 World::m_currentMSTime = 0;
 TimePoint World::m_currentTime = TimePoint();
 uint32 World::m_currentDiff = 0;
 
+uint32 World::m_averageDiff = 0;
+uint64 World::m_diffAccumulator = 0;
+uint32 World::m_diffSampleCount = 0;
+uint32 World::m_averageDiffTimer = 0;
+
 void LoadGameObjectModelList();
 
 World& GetSWorld()
@@ -1994,6 +1999,22 @@ void World::Update(uint32 diff)
     m_currentMSTime = WorldTimer::getMSTime();
     m_currentTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
     m_currentDiff = diff;
+
+    m_diffAccumulator += diff;
+    ++m_diffSampleCount;
+    m_averageDiffTimer += diff;
+
+    if (m_averageDiffTimer >= 60000)
+    {
+        if (m_diffSampleCount)
+        {
+            m_averageDiff = static_cast<uint32>(m_diffAccumulator / m_diffSampleCount);
+        }
+
+        m_diffAccumulator = 0;
+        m_diffSampleCount = 0;
+        m_averageDiffTimer = 0;
+    }
 
     // Update the different timers
     for (auto& timer : m_timers)

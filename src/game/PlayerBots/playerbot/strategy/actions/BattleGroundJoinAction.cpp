@@ -362,7 +362,7 @@ bool BGJoinAction::shouldJoinBg(BattleGroundQueueTypeId queueTypeId, BattleGroun
     bool isRated = false;
     bool hasTeam = false;
     bool isTeamLead = false;
-    bool noLag = sWorld.GetCurrentDiff() < (!sRandomPlayerbotMgr.HasPlayers() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer) * 1.1;
+    bool noLag = sWorld.GetAverageDiff() < (!sRandomPlayerbotMgr.HasPlayers() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer) * 1.1;
 
     if (sPlayerbotAIConfig.disableActivityPriorities)
     {
@@ -852,7 +852,7 @@ bool FreeBGJoinAction::shouldJoinBg(BattleGroundQueueTypeId queueTypeId, BattleG
     bool isArena = false;
     bool isRated = false;
     bool hasTeam = false;
-    bool noLag = sWorld.GetCurrentDiff() < (!sRandomPlayerbotMgr.HasPlayers() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer) * 1.5;
+    bool noLag = sWorld.GetAverageDiff() < (!sRandomPlayerbotMgr.HasPlayers() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer) * 1.5;
 
     if (sPlayerbotAIConfig.disableActivityPriorities)
     {

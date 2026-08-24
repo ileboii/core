@@ -556,7 +556,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
         if (currentSpell && (currentSpell->getState() == SPELL_STATE_CASTING) && (currentSpell->GetCastedTime() > 0U))
         {
-            SetAIInternalUpdateDelay(currentSpell->GetCastedTime() + sPlayerbotAIConfig.reactDelay + sWorld.GetCurrentDiff());
+            SetAIInternalUpdateDelay(currentSpell->GetCastedTime() + sPlayerbotAIConfig.reactDelay + sWorld.GetAverageDiff());
 
             // Cancel the update if the new delay increased
             if (!CanUpdateAIInternal())
@@ -1840,7 +1840,7 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 
         // write jump time
         uint32 curTime = sWorld.GetCurrentMSTime();
-        jumpTime = curTime + sWorld.GetCurrentDiff() + (uint32)(timeToLand * static_cast<uint32>(IN_MILLISECONDS)) + 1000;
+        jumpTime = curTime + sWorld.GetAverageDiff() + (uint32)(timeToLand * static_cast<uint32>(IN_MILLISECONDS)) + 1000;
         SetJumpDestination(dest_calculated);
 
         // set highest jump point to relocate
