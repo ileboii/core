@@ -6060,6 +6060,11 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
 {
     ActivePiorityType type = GetPriorityType();
 
+    if (sPlayerbotAIConfig.forceActiveWhenNearPlayer && type == ActivePiorityType::VISIBLE_FOR_PLAYER)
+    {
+        return true;
+    }
+
     if (activityType == DETAILED_MOVE_ACTIVITY)
     {
         switch (type)
@@ -6098,8 +6103,6 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
         case ActivePiorityType::IS_ALWAYS_ACTIVE:
             return true;
         case ActivePiorityType::VISIBLE_FOR_PLAYER:
-            if (sPlayerbotAIConfig.forceActiveWhenNearPlayer)
-                return true;
             break;
         case ActivePiorityType::IN_COMBAT:
         case ActivePiorityType::NEARBY_PLAYER:
