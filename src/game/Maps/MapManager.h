@@ -221,7 +221,6 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
         // Handle creation of new maps for teleport while continents are being updated.
         void CreateNewInstancesForPlayers();
         std::unordered_set<Player*> m_scheduledNewInstancesForPlayers;
-        std::mutex m_scheduledNewInstancesMutex;
 
         std::mutex m_scheduledFarTeleportsLock;
         typedef std::map<Player*, ScheduledTeleportData*> ScheduledTeleportMap;
