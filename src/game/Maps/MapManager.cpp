@@ -34,6 +34,7 @@
 #include "BattleGround.h"
 #include "ThreadPool.h"
 #include "IO/Multithreading/CreateThread.h"
+#include <mutex>
 
 typedef MaNGOS::ClassLevelLockable<MapManager, std::recursive_mutex> MapManagerLock;
 INSTANTIATE_SINGLETON_2(MapManager, MapManagerLock);
@@ -246,7 +247,10 @@ void MapManager::ScheduleNewWorldOnFarTeleport(Player* pPlayer)
         DungeonPersistentState* pSave = pPlayer->GetBoundInstanceSaveForSelfOrGroup(pMapEntry->id);
         if (!pSave || !FindMap(pMapEntry->id, pSave->GetInstanceId()))
         {
-            m_scheduledNewInstancesForPlayers.insert(pPlayer);
+            {
+                std::lock_guard<std::mutex> lock(m_scheduledNewInstancesMutex);
+                m_scheduledNewInstancesForPlayers.insert(pPlayer);
+            }
             return;
         }
     }
@@ -257,39 +261,39 @@ void MapManager::ScheduleNewWorldOnFarTeleport(Player* pPlayer)
 
 void MapManager::CreateNewInstancesForPlayers()
 {
-    do
+    std::unordered_set<Player*> players;
+
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        std::unordered_set<Player*> players;
+        std::lock_guard<std::mutex> lock(m_scheduledNewInstancesMutex);
         std::swap(players, m_scheduledNewInstancesForPlayers);
+    }
 
-        for (auto const& player : players)
+    for (auto const& player : players)
+    {
+        WorldLocation const& dest = player->GetTeleportDest();
+        if (!player->IsBeingTeleportedFar())
         {
-            WorldLocation const& dest = player->GetTeleportDest();
-            if (!player->IsBeingTeleportedFar())
-            {
-                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Scheduled instance creation for map %u for player %u but he is no longer being teleported!", dest.mapId, player->GetGUIDLow());
-                continue;
-            }
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Scheduled instance creation for map %u for player %u but he is no longer being teleported!", dest.mapId, player->GetGUIDLow());
+            continue;
+        }
 
-            MapEntry const* pMapEntry = sMapStorage.LookupEntry<MapEntry>(dest.mapId);
-            MANGOS_ASSERT(pMapEntry->IsDungeon());
+        MapEntry const* pMapEntry = sMapStorage.LookupEntry<MapEntry>(dest.mapId);
+        MANGOS_ASSERT(pMapEntry->IsDungeon());
 
-            DungeonMap* pMap = static_cast<DungeonMap*>(CreateInstance(dest.mapId, player));
-            if (pMap->CanEnter(player))
-            {
-                pMap->ForceLoadGridsAroundPosition(dest.x, dest.y);
-                pMap->BindPlayerOrGroupOnEnter(player);
-                player->SendNewWorld();
-            } 
-            else
-            {
-                WorldLocation oldLoc;
-                player->GetPosition(oldLoc);
-                player->HandleReturnOnTeleportFail(oldLoc);
-            }
-        } 
-    } while (asyncMapUpdating);
+        DungeonMap* pMap = static_cast<DungeonMap*>(CreateInstance(dest.mapId, player));
+        if (pMap->CanEnter(player))
+        {
+            pMap->ForceLoadGridsAroundPosition(dest.x, dest.y);
+            pMap->BindPlayerOrGroupOnEnter(player);
+            player->SendNewWorld();
+        }
+        else
+        {
+            WorldLocation oldLoc;
+            player->GetPosition(oldLoc);
+            player->HandleReturnOnTeleportFail(oldLoc);
+        }
+    }
 }
 
 void MapManager::Update(uint32 diff)
@@ -340,10 +344,15 @@ void MapManager::Update(uint32 diff)
         }
     }
 
-    std::vector<std::function<void()>> instanceCreators;
-    instanceCreators.emplace_back([this]() {CreateNewInstancesForPlayers();});
-    std::future<void> instances = m_instanceCreationThreads->processWorkload(std::move(instanceCreators),
-        ThreadPool::Callable());
+std::future<void> instances;
+
+    if (!m_scheduledNewInstancesForPlayers.empty())
+    {
+        std::vector<std::function<void()>> instanceCreators;
+        instanceCreators.emplace_back([this]() { CreateNewInstancesForPlayers(); });
+
+        instances = m_instanceCreationThreads->processWorkload(std::move(instanceCreators), ThreadPool::Callable());
+    }
 
     i_maxContinentThread = continentsIdx;
     i_continentUpdateFinished.store(0);
