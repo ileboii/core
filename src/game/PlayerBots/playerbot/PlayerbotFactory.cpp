@@ -668,12 +668,6 @@ void PlayerbotFactory::InitPet()
 
         pet->ToggleAutocast(spellId, true);
     }
-
-    // Force dismiss pet to fix missing flags
-    if (pet->IsAlive())
-    {
-        pet->SetDeathState(JUST_DIED);
-    }
 }
 
 void PlayerbotFactory::InitPetSpells()

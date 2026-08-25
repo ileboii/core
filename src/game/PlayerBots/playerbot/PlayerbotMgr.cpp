@@ -553,6 +553,12 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
 #endif
             bot->StoreNewItemInBestSlots(6948, 1);
     }
+    if (bot->GetLevel() >= 10 && (bot->GetClass() == CLASS_HUNTER || bot->GetClass() == CLASS_WARLOCK) && !bot->GetPet())
+    {
+        PlayerbotFactory factory(bot, bot->GetLevel());
+        factory.InitPet();
+        factory.InitPetSpells();
+    }
 }
 
 std::string PlayerbotHolder::ProcessBotCommand(std::string cmd, ObjectGuid guid, ObjectGuid masterguid, bool admin, uint32 masterAccountId, uint32 masterGuildId, const std::string param)
