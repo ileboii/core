@@ -30,6 +30,7 @@ void DestroyItemAction::DestroyItem(FindItemVisitor* visitor, Player* requester)
 		Item* item = *i;
         std::ostringstream out; out << chat->formatItem(item) << " destroyed";
         bot->DestroyItem(item->GetBagSlot(),item->GetSlot(), true);
+        ai->ClearItemParseCache();
         ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
     }
 }
@@ -137,6 +138,7 @@ bool DestroyAllGrayItemsAction::Execute(Event& event)
                             std::ostringstream out; out << ai->GetChatHelper()->formatItem(pItem->GetProto()) << " destroyed";
                             sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "%s via DestroyAllGrayItemsAction", out.str().c_str());
                             bot->DestroyItem(pItem->GetBagSlot(), pItem->GetSlot(), true);
+                            ai->ClearItemParseCache();
                             ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
                             hasDestroyedAnyItems = true;
@@ -158,6 +160,7 @@ bool DestroyAllGrayItemsAction::Execute(Event& event)
                     std::ostringstream out; out << ai->GetChatHelper()->formatItem(pItem->GetProto()) << " destroyed";
                     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "%s via DestroyAllGrayItemsAction", out.str().c_str());
                     bot->DestroyItem(pItem->GetBagSlot(), pItem->GetSlot(), true);
+                    ai->ClearItemParseCache();
                     ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
                     hasDestroyedAnyItems = true;

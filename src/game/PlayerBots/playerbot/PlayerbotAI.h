@@ -16,6 +16,7 @@
 #include "VmangosCompat.h"
 #include "Chat.h"
 #include "Group.h"
+#include <unordered_map>
 
 class Player;
 class PlayerbotMgr;
@@ -354,8 +355,15 @@ public:
     virtual void UpdateAI(uint32 elapsed, bool minimal = false);
 
     void HandleCommands();
+
+    void ClearItemParseCache()
+    {
+        itemParseCache.clear();
+    }
+
 private:
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
+    std::unordered_map<std::string, std::list<Item*>> itemParseCache;
 
 public:
     static std::string BotStateToString(BotState state);

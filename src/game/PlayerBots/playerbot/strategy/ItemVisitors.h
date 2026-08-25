@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/ServerFacade.h"
 #include "values/ItemUsageValue.h"
+#include <unordered_map>
 
 char * strstri (const char* str1, const char* str2);
 

@@ -79,6 +79,7 @@ bool BankAction::Withdraw(Player* requester, const uint32 itemid)
 
     bot->RemoveItem(pItem->GetBagSlot(), pItem->GetSlot(), true);
     bot->StoreItem(dest, pItem, true);
+    ai->ClearItemParseCache();
 
     std::ostringstream out;
     out << "got " << chat->formatItem(pItem, pItem->GetCount()) << " from bank";
@@ -101,6 +102,7 @@ bool BankAction::Deposit(Player* requester, Item* pItem)
 
     bot->RemoveItem(pItem->GetBagSlot(), pItem->GetSlot(), true);
     bot->BankItem(dest, pItem, true);
+    ai->ClearItemParseCache();
 
     out << "put " << chat->formatItem(pItem, pItem->GetCount()) << " to bank";
     ai->TellPlayer(requester, out.str());
