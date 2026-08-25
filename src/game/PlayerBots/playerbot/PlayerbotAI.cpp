@@ -7328,10 +7328,6 @@ std::list<Item*> PlayerbotAI::InventoryParseItems(std::string text, IterateItems
 
 std::string cacheKey = text + ":" + std::to_string((uint32)mask);
 
-    auto cache = itemParseCache.find(cacheKey);
-    if (cache != itemParseCache.end())
-        return cache->second;
-
     AiObjectContext* context = aiObjectContext;
 
     std::set<Item*> found;
@@ -7519,7 +7515,7 @@ std::string cacheKey = text + ":" + std::to_string((uint32)mask);
 
 if (found.size() == 0 && quality == MAX_ITEM_QUALITY && itemClass == MAX_ITEM_CLASS && fromSlot == EQUIPMENT_SLOT_END && outfit.empty())
     {
-    auto cacheIt = itemParseCache.find(text);
+    auto cacheIt = itemParseCache.find(cacheKey);
 
     if (cacheIt != itemParseCache.end())
     {
@@ -7530,7 +7526,7 @@ if (found.size() == 0 && quality == MAX_ITEM_QUALITY && itemClass == MAX_ITEM_CL
         FindNamedItemVisitor visitor(bot, text);
         VISIT;
 
-        itemParseCache[text] = std::list<Item*>(found.begin(), found.end());
+        itemParseCache[cacheKey] = std::list<Item*>(found.begin(), found.end());
     }
     }
 
