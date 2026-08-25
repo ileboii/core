@@ -363,7 +363,7 @@ public:
 
 private:
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
-    std::unordered_map<std::string, std::list<Item*>> itemParseCache;
+    std::unordered_map<std::string, std::list<ObjectGuid>> itemParseCache;
 
 public:
     static std::string BotStateToString(BotState state);

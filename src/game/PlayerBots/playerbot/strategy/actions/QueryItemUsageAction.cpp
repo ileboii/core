@@ -247,7 +247,16 @@ std::string QueryItemUsageAction::QueryItemPrice(ItemQualifier& qualifier)
 
 std::string QueryItemUsageAction::QueryQuestItem(uint32 itemId)
 {
-    Player *bot = ai->GetBot();
+    Player* bot = ai->GetBot();
+
+    sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "QueryQuestItem: ai=%p bot=%p", ai, bot);
+
+    if (!bot)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "QueryQuestItem: bot is NULL!");
+        return "";
+    }
+
     QuestStatusMap& questMap = bot->GetQuestStatusMap();
     for (QuestStatusMap::const_iterator i = questMap.begin(); i != questMap.end(); i++)
     {

@@ -7308,8 +7308,7 @@ void PlayerbotAI::InventoryTellItem(Player* player, ItemPrototype const* proto, 
     for (std::set<Item*>::iterator i = found.begin(); i != found.end(); ++i)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          \
         result.push_back(*i);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         \
     result.sort(compare_items_by_level);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              \
-    itemParseCache[cacheKey] = result;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   \
-    return result
+    return result;
 
 #define RETURN_FOUND \
     std::list<Item*> result; \
@@ -7515,19 +7514,28 @@ std::string cacheKey = text + ":" + std::to_string((uint32)mask);
 
 if (found.size() == 0 && quality == MAX_ITEM_QUALITY && itemClass == MAX_ITEM_CLASS && fromSlot == EQUIPMENT_SLOT_END && outfit.empty())
     {
-    auto cacheIt = itemParseCache.find(cacheKey);
+        auto cacheIt = itemParseCache.find(text);
 
-    if (cacheIt != itemParseCache.end())
-    {
-        found.insert(cacheIt->second.begin(), cacheIt->second.end());
-    }
-    else
-    {
-        FindNamedItemVisitor visitor(bot, text);
-        VISIT;
+        if (cacheIt != itemParseCache.end())
+        {
+            for (std::list<ObjectGuid>::const_iterator i = cacheIt->second.begin(); i != cacheIt->second.end(); ++i)
+            {
+                if (Item* pItem = bot->GetItemByGuid(*i))
+                    found.insert(pItem);
+            }
+        }
+        else
+        {
+            FindNamedItemVisitor visitor(bot, text);
+            VISIT;
 
-        itemParseCache[cacheKey] = std::list<Item*>(found.begin(), found.end());
-    }
+            std::list<ObjectGuid> guids;
+            for (std::set<Item*>::const_iterator i = found.begin(); i != found.end(); ++i)
+                guids.push_back((*i)->GetObjectGuid());
+
+            if (!guids.empty())
+                itemParseCache[text] = guids;
+        }
     }
 
     RETURN_SORT_FOUND;
