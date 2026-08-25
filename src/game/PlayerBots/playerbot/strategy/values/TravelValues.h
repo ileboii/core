@@ -170,6 +170,9 @@ namespace ai
         ShouldTravelNamedValue(PlayerbotAI* ai, std::string name = "should travel named", int checkInterval = 15) : BoolCalculatedValue(ai, name, checkInterval), Qualified() {};
 
         virtual bool Calculate() override;
+
+    private:
+        bool IsGuildMeetingTime();
     };
 
     class InOverworldValue : public BoolCalculatedValue

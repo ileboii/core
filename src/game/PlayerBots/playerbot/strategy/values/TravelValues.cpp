@@ -321,14 +321,93 @@ bool NeedTravelPurposeValue::Calculate()
     return false;
 }
 
+bool ShouldTravelNamedValue::IsGuildMeetingTime()
+{
+    if (!bot->GetGuildId())
+        return false;
+
+    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
+    if (!guild)
+        return false;
+
+    std::string motd = guild->GetMOTD();
+    if (motd.empty())
+        return false;
+
+    // Parse guild MOTD for the meeting time.
+    // Meeting: <location> <start time> <end time>
+    auto pos = motd.find("Meeting:");
+    if (pos == std::string::npos)
+        return false;
+
+    std::string body = motd.substr(pos + 8);
+    std::vector<std::string> tokens;
+    {
+        std::istringstream iss(body);
+        std::string t;
+        while (iss >> t)
+            tokens.push_back(t);
+    }
+    if (tokens.size() < 3)
+        return false;
+
+    auto parseTime = [](const std::string& tok, int& h, int& m) -> bool
+    {
+        auto colon = tok.find(':');
+        if (colon == std::string::npos)
+            return false;
+        h = std::stoi(tok.substr(0, colon));
+        std::string rest = tok.substr(colon + 1);
+        std::string digits, suffix;
+        for (char c : rest)
+        {
+            if (std::isdigit(c))
+                digits += c;
+            else
+                suffix += (char)toupper(c);
+        }
+        m = std::stoi(digits);
+        if (h < 0 || h > 23 || m < 0 || m > 59)
+            return false;
+        if (suffix == "PM" && h != 12)
+            h += 12;
+        if (suffix == "AM" && h == 12)
+            h = 0;
+        return true;
+    };
+
+    int sh, sm, eh, em;
+    if (!parseTime(tokens[tokens.size() - 2], sh, sm))
+        return false;
+    if (!parseTime(tokens[tokens.size() - 1], eh, em))
+        return false;
+
+    time_t now = time(nullptr);
+    tm local = *localtime(&now);
+    tm startTm = local;
+    startTm.tm_hour = sh;
+    startTm.tm_min = sm;
+    startTm.tm_sec = 0;
+    tm endTm = local;
+    endTm.tm_hour = eh;
+    endTm.tm_min = em;
+    endTm.tm_sec = 0;
+    time_t start = mktime(&startTm);
+    time_t end = mktime(&endTm);
+    if (end < start)
+        end += 24 * 3600;
+
+    return (now >= start - 30 * 60) && (now <= end);
+}
+
 bool ShouldTravelNamedValue::Calculate()
 {
     std::string name = getQualifier();
 
-    WorldPosition botPos(bot);
-
     if (name == "city")
     {
+        WorldPosition botPos(bot);
+
         if (bot->GetLevel() <= 5)
             return false;
 
@@ -337,7 +416,7 @@ bool ShouldTravelNamedValue::Calculate()
 
         uint32 rpgPhase = ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, 60, 1);
 
-        if (rpgPhase > 20) //Only first 20 minutes of the hour allow generic city pvp without reason.
+        if (rpgPhase > 20)
             return false;
 
         if (AI_VALUE2(bool, "manual bool", "is travel refresh"))
@@ -347,6 +426,8 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name == "pvp")
     {
+        WorldPosition botPos(bot);
+
         if (bot->GetLevel() <= 50)
             return false;
 
@@ -355,12 +436,12 @@ bool ShouldTravelNamedValue::Calculate()
         if (rpgStyle < 0)
             rpgStyle = ai->GetFixedBotNumber(BotTypeNumber::RPG_STYLE_NUMBER, 100);
 
-        if (rpgStyle > 10) //Only 10% of the bots like to go to world-pvp.
+        if (rpgStyle > 10)
             return false;
 
         uint32 rpgPhase = ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, 60, 1);
 
-        if (rpgPhase > 15) //Only first 15 minutes of the hour allow world pvp.
+        if (rpgPhase > 15)
             return false;
 
         if (!botPos.isOverworld())
@@ -370,56 +451,7 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name == "guild meeting")
     {
-        if (!bot->GetGuildId())
-            return false;
-
-        Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-        if (!guild)
-            return false;
-
-        std::string motd = guild->GetMOTD();
-        if (motd.empty()) 
-            return false;
-
-        // Parse guild MOTD for the meeting time.
-        // Meeting: <location> <start time> <end time>
-        auto pos = motd.find("Meeting:");
-        if (pos == std::string::npos)
-            return false;
-
-        std::string body = motd.substr(pos + 8);
-        std::vector<std::string> tokens;
-        { std::istringstream iss(body); std::string t; while (iss >> t) tokens.push_back(t); }
-        if (tokens.size() < 3)
-            return false;
-
-        auto parseTime = [](const std::string& tok, int& h, int& m) -> bool {
-            auto colon = tok.find(':');
-            if (colon == std::string::npos) return false;
-            h = std::stoi(tok.substr(0, colon));
-            std::string rest = tok.substr(colon + 1);
-            std::string digits, suffix;
-            for (char c : rest) { if (std::isdigit(c)) digits += c; else suffix += (char)toupper(c); }
-            m = std::stoi(digits);
-            if (h < 0 || h > 23 || m < 0 || m > 59) return false;
-            if (suffix == "PM" && h != 12) h += 12;
-            if (suffix == "AM" && h == 12) h = 0;
-            return true;
-        };
-
-        int sh, sm, eh, em;
-        if (!parseTime(tokens[tokens.size() - 2], sh, sm)) return false;
-        if (!parseTime(tokens[tokens.size() - 1], eh, em)) return false;
-
-        time_t now = time(nullptr);
-        tm local = *localtime(&now);
-        tm startTm = local; startTm.tm_hour = sh; startTm.tm_min = sm; startTm.tm_sec = 0;
-        tm endTm = local;   endTm.tm_hour = eh;   endTm.tm_min = em;   endTm.tm_sec = 0;
-        time_t start = mktime(&startTm);
-        time_t end = mktime(&endTm);
-        if (end < start) end += 24 * 3600;
-
-        return (now >= start - 30 * 60) && (now <= end);
+        return IsGuildMeetingTime();
     }
     else if (name == "guild order")
     {
