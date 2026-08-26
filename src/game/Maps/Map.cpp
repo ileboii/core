@@ -926,15 +926,10 @@ void Map::UpdatePlayers()
 
     m_currentTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
 
-    uint32 const skipUpdates = sWorld.getConfig(CONFIG_UINT32_INACTIVE_PLAYERS_SKIP_UPDATES);
-
-    uint32 const updateCycle = skipUpdates + 1;
-    uint32 const updateSlot = m_inactivePlayersSkippedUpdates;
-
-    if (++m_inactivePlayersSkippedUpdates >= updateCycle)
-        m_inactivePlayersSkippedUpdates = 0;
-
-    bool const updateInactivePlayers = !IsContinent();
+    ++m_inactivePlayersSkippedUpdates;
+    bool updateInactivePlayers = m_inactivePlayersSkippedUpdates > sWorld.getConfig(CONFIG_UINT32_INACTIVE_PLAYERS_SKIP_UPDATES);
+    if (!IsContinent())
+        updateInactivePlayers = true;
     for (m_mapRefIter = m_mapRefManager.begin(); m_mapRefIter != m_mapRefManager.end(); ++m_mapRefIter)
     {
         Player* plr = m_mapRefIter->getSource();
@@ -980,11 +975,7 @@ void Map::UpdatePlayers()
             }
         }
 
-        bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->HasScheduledEvent();
-
-        bool const scheduledInactiveUpdate = (plr->GetGUIDLow() % updateCycle) == updateSlot;
-
-        if (!updateInactivePlayers && !playerNearby && !playerIsActive && !scheduledInactiveUpdate)
+        if (!updateInactivePlayers && !playerNearby && !plr->IsInCombat() && !plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) && !plr->HasScheduledEvent())
         {
             plr->AddSkippedUpdateTime(diff);
             continue;
@@ -993,6 +984,8 @@ void Map::UpdatePlayers()
         helper.UpdateRealTime(now, diff + plr->GetSkippedUpdateTime());
         plr->ResetSkippedUpdateTime();
     }
+    if (updateInactivePlayers)
+        m_inactivePlayersSkippedUpdates = 0;
     m_lastPlayersUpdate = now;
 }
 
