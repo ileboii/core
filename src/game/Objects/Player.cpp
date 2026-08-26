@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
  * Copyright (C) 2009-2011 MaNGOSZero <https://github.com/mangos/zero>
  * Copyright (C) 2011-2016 Nostalrius <https://nostalrius.org>
@@ -84,6 +84,7 @@
 #include "GameEventMgr.h"
 #include "world/scourge_invasion.h"
 #include "world/world_event_wareffort.h"
+#include "PlayerbotFactory.h"
 
 #include <climits>
 
@@ -3236,6 +3237,12 @@ void Player::GiveLevel(uint32 level)
     m_playedTime[PLAYED_TIME_LEVEL] = 0;               // Level Played Time reset
     SetLevel(level);
     UpdateSkillsForLevel();
+
+    if (GetPlayerbotAI() && sPlayerbotAIConfig.autoLearnTrainerSpells)
+    {
+        PlayerbotFactory factory(this, level);
+        factory.LearnTrainerSpells();
+    }
 
     // save base values (bonuses already included in stored stats
     for (int i = STAT_STRENGTH; i < MAX_STATS; ++i)

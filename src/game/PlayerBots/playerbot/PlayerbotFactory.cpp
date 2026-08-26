@@ -3412,11 +3412,126 @@ void PlayerbotFactory::SetRandomSkill(uint16 id)
         bot->SetSkill(id, value, maxValue);
 }
 
+void PlayerbotFactory::LearnTrainerSpells()
+{
+    std::set<uint32> checkedTrainerTemplates;
+
+    for (auto const& itr : sObjectMgr.GetCreatureInfoMap())
+    {
+        CreatureInfo const* cInfo = itr.second.get();
+        if (!cInfo)
+            continue;
+
+        if (!(cInfo->npc_flags & UNIT_NPC_FLAG_TRAINER))
+            continue;
+
+        if (cInfo->trainer_type != TRAINER_TYPE_CLASS)
+            continue;
+
+        if (cInfo->trainer_class != bot->GetClass())
+            continue;
+
+        if (TrainerSpellData const* cSpells = sObjectMgr.GetNpcTrainerSpells(itr.first))
+        {
+            bool learnedAnything;
+
+            do
+            {
+                learnedAnything = false;
+
+                for (const auto& spellItr : cSpells->spellList)
+                {
+                    TrainerSpell const* tSpell = &spellItr.second;
+
+                    TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
+
+                    if (state != TRAINER_SPELL_GREEN)
+                        continue;
+
+                    SpellEntry const* trainerSpell = sSpellMgr.GetSpellEntry(tSpell->spell);
+
+                    if (!trainerSpell)
+                        continue;
+
+                    for (auto const& spellId : trainerSpell->EffectTriggerSpell)
+                    {
+                        if (!spellId)
+                            continue;
+
+                        if (sSpellMgr.IsPrimaryProfessionFirstRankSpell(spellId))
+                            continue;
+
+                        if (!bot->IsSpellFitByClassAndRace(spellId))
+                            continue;
+
+                        bot->LearnSpell(spellId, false);
+                        learnedAnything = true;
+                    }
+                }
+            }
+            while (learnedAnything);
+        }
+
+        if (cInfo->trainer_id)
+        {
+            uint32 trainerId = cInfo->trainer_id;
+
+            if (checkedTrainerTemplates.find(trainerId) != checkedTrainerTemplates.end())
+            {
+                continue;
+            }
+
+            checkedTrainerTemplates.insert(trainerId);
+
+            if (TrainerSpellData const* tSpells = sObjectMgr.GetNpcTrainerTemplateSpells(trainerId))
+            {
+                bool learnedAnything;
+
+                do
+                {
+                    learnedAnything = false;
+
+                    for (const auto& spellItr : tSpells->spellList)
+                    {
+                        TrainerSpell const* tSpell = &spellItr.second;
+
+                        TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
+
+                        if (state != TRAINER_SPELL_GREEN)
+                            continue;
+
+                        SpellEntry const* trainerSpell = sSpellMgr.GetSpellEntry(tSpell->spell);
+
+                        if (!trainerSpell)
+                            continue;
+
+                        for (auto const& spellId : trainerSpell->EffectTriggerSpell)
+                        {
+                            if (!spellId)
+                                continue;
+
+                            if (sSpellMgr.IsPrimaryProfessionFirstRankSpell(spellId))
+                                continue;
+
+                            if (!bot->IsSpellFitByClassAndRace(spellId))
+                                continue;
+
+                            bot->LearnSpell(spellId, false);
+                            learnedAnything = true;
+                        }
+                    }
+                }
+                while (learnedAnything);
+            }
+        }
+    }
+}
+
 void PlayerbotFactory::InitAvailableSpells()
 {
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Spells1");
     bot->LearnDefaultSpells();
-    // learnClassLevelSpells not available in vmangos
+    LearnTrainerSpells();
 
 #ifndef MANGOSBOT_TWO
     if (bot->GetClass() == CLASS_PALADIN)

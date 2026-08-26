@@ -66,6 +66,7 @@ public:
     void InitAmmo();
     void InitPet();
     void InitPetSpells();
+    void LearnTrainerSpells();
 
 private:
     void Prepare();
