@@ -357,7 +357,7 @@ bool CheckMountStateAction::CanMountInBg() const
             return false;
         GameObject* AllianceflagStand = bg->GetBgMap()->GetGameObject(ObjectGuid(HIGHGUID_GAMEOBJECT, id, lowguid));
 
-        if (bot->IsWithinDistInMap(AllianceflagStand, 3.0f))
+        if (AllianceflagStand && bot->IsWithinDistInMap(AllianceflagStand, 3.0f))
             return false;
 
         //check near H Flag
@@ -365,7 +365,7 @@ bool CheckMountStateAction::CanMountInBg() const
         id = 179831;
         GameObject* HordeflagStand = bg->GetBgMap()->GetGameObject(ObjectGuid(HIGHGUID_GAMEOBJECT, id, lowguid));
 
-        if (bot->IsWithinDistInMap(HordeflagStand, 3.0f))
+        if (HordeflagStand && bot->IsWithinDistInMap(HordeflagStand, 3.0f))
             return false;
 #endif
     }
