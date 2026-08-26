@@ -559,6 +559,11 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
         factory.InitPet();
         factory.InitPetSpells();
     }
+    if (sPlayerbotAIConfig.autoLearnTrainerSpells)
+    {
+        PlayerbotFactory factory(bot, bot->GetLevel());
+        factory.LearnTrainerSpells();
+    }
 }
 
 std::string PlayerbotHolder::ProcessBotCommand(std::string cmd, ObjectGuid guid, ObjectGuid masterguid, bool admin, uint32 masterAccountId, uint32 masterGuildId, const std::string param)
