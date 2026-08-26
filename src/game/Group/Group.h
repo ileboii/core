@@ -368,6 +368,8 @@ class Group
         bool CountRollVote(Player* player, ObjectGuid const& lootedTarget, uint32 itemSlot, RollVote vote);
         void StartLootRoll(Creature* lootTarget, LootMethod method, Loot* loot, uint8 itemSlot);
         void EndRoll(Loot* loot);
+        LootItem* GetRollLootItem(ObjectGuid const& lootGuid, uint32 itemSlot);
+        bool IsLootRollActive(ObjectGuid const& lootGuid, uint32 itemSlot) const;
 
         void LinkMember(GroupReference* pRef) { m_memberMgr.insertFirst(pRef); }
         void DelinkMember(GroupReference* /*pRef*/) { }

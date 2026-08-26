@@ -940,6 +940,44 @@ void Group::MasterLoot(Creature* creature, Loot* loot, Player* player)
     player->GetSession()->SendPacket(std::move(packet));
 }
 
+bool Group::IsLootRollActive(ObjectGuid const& lootGuid, uint32 itemSlot) const
+{
+    for (Rolls::const_iterator itr = RollId.begin(); itr != RollId.end(); ++itr)
+    {
+        Roll* roll = *itr;
+
+        if (!roll || !roll->isValid())
+            continue;
+
+        if (roll->lootedTargetGUID == lootGuid && roll->itemSlot == itemSlot)
+            return true;
+    }
+
+    return false;
+}
+
+LootItem* Group::GetRollLootItem(ObjectGuid const& lootGuid, uint32 itemSlot)
+{
+    for (Rolls::const_iterator itr = RollId.begin(); itr != RollId.end(); ++itr)
+    {
+        Roll* roll = *itr;
+
+        if (!roll || !roll->isValid())
+            continue;
+
+        if (roll->lootedTargetGUID != lootGuid || roll->itemSlot != itemSlot)
+            continue;
+
+        Loot* loot = roll->getLoot();
+        if (!loot || itemSlot >= loot->items.size())
+            return nullptr;
+
+        return &loot->items[itemSlot];
+    }
+
+    return nullptr;
+}
+
 bool Group::CountRollVote(Player* player, ObjectGuid const& lootedTarget, uint32 itemSlot, RollVote vote)
 {
     Rolls::iterator rollI = RollId.begin();

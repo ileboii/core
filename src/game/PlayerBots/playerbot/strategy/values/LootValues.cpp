@@ -378,42 +378,36 @@ bool ShouldLootObject::Calculate()
 
 void ActiveRolls::CleanUp(Player* bot, LootRollMap& rollMap, ObjectGuid guid, uint32 slot)
 {
-	for (auto roll = rollMap.begin(); roll != rollMap.end();)
-	{
-		if (guid && roll->first != guid)
-		{
-			++roll;
-			continue;
-		}
+    Group* group = bot->GetGroup();
 
-		if (slot && roll->second != slot)
-		{
-			++roll;
-			continue;
-		}
+    for (auto roll = rollMap.begin(); roll != rollMap.end();)
+    {
+        if (guid && roll->first != guid)
+        {
+            ++roll;
+            continue;
+        }
 
-		Loot* loot = (Loot*)nullptr /* sLootMgr not in vmangos */;
-		if (!loot)
-		{
-			roll = rollMap.erase(roll);
-			continue;
-		}
+        if (slot && roll->second != slot)
+        {
+            ++roll;
+            continue;
+        }
 
-		/* GroupLootRoll not in vmangos */
-		if (!nullptr)
-		{
-			roll = rollMap.erase(roll);
-			continue;
-		}
+        if (!group || !group->IsLootRollActive(roll->first, roll->second))
+        {
+            roll = rollMap.erase(roll);
+            continue;
+        }
 
-		if(guid)
-		{
-			roll = rollMap.erase(roll);
-			continue;
-		}
+        if (guid)
+        {
+            roll = rollMap.erase(roll);
+            continue;
+        }
 
-		++roll;
-	}
+        ++roll;
+    }
 }
 
 std::string ActiveRolls::Format()

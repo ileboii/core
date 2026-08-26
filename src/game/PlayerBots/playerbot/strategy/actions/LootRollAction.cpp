@@ -39,13 +39,7 @@ bool LootStartRollAction::Execute(Event& event)
     if (lootRolls.find(creatureGuid) != lootRolls.end())
         return false;
 
-    Loot* loot = (Loot*)nullptr /* sLootMgr not in vmangos */;
-    if (!loot)
-        return false;
-
-    for(uint8 i=0;i< MAX_NR_LOOT_ITEMS;i++)
-        if(nullptr /* GetRollForSlot not in vmangos */)
-            lootRolls.insert({ creatureGuid, i });
+    lootRolls.insert({creatureGuid, itemSlot});
         
     ActiveRolls::CleanUp(bot,lootRolls);
 
@@ -164,12 +158,11 @@ bool RollAction::Execute(Event& event)
 
 ItemQualifier RollAction::GetRollItem(ObjectGuid lootGuid, uint32 slot)
 {
-    Loot* loot = (Loot*)nullptr /* sLootMgr not in vmangos */;
-    if (!loot)
+    Group* group = bot->GetGroup();
+    if (!group)
         return ItemQualifier();
 
-    LootItem* item = ((slot < loot->items.size()) ? &loot->items[slot] : nullptr);
-
+    LootItem* item = group->GetRollLootItem(lootGuid, slot);
     if (!item)
         return ItemQualifier();
 
@@ -239,20 +232,11 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
 
 bool RollAction::RollOnItemInSlot(RollVote vote, ObjectGuid lootGuid, uint32 slot)
 {
-    Loot* loot = (Loot*)nullptr /* sLootMgr not in vmangos */;
-    if (!loot)
+    Group* group = bot->GetGroup();
+    if (!group)
         return false;
 
-    LootItem* item = ((slot < loot->items.size()) ? &loot->items[slot] : nullptr);
-    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(item->itemid);
-    if (!proto)
-        return false;
-
-    /* GroupLootRoll not in vmangos */
-    if (!nullptr)
-        return false;
-
-    bool didRoll = false;
+    bool didRoll = group->CountRollVote(bot, lootGuid, slot, vote);
 
     if (didRoll)
     {
@@ -291,6 +275,8 @@ bool LootRollAction::Execute(Event& event)
 
 bool AutoLootRollAction::Execute(Event& event)
 {
+    ai->TellPlayerNoFacing(bot, "AUTO LOOT ROLL TEST");
+
     LootRollMap lootRolls = AI_VALUE(LootRollMap, "active rolls");
 
     auto currentRoll = lootRolls.begin();
