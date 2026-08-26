@@ -71,7 +71,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     if (creature && sServerFacade.GetDistance2d(bot, creature) > INTERACTION_DISTANCE)
         return false;
 
-    if (creature && creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE) && !creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE))
+    if (creature && creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
     {
         if (!lootObject.IsLootPossible(bot)) //Clear loot if bot can't loot it.
             return true;
@@ -270,9 +270,15 @@ bool StoreLootAction::Execute(Event& event)
         p >> items;     // 1 number of items on corpse
     }
 
-    bot->SetLootGuid(guid);
+bot->SetLootGuid(guid);
 
-    Loot* loot = (Loot*)nullptr /* sLootMgr not in vmangos */;
+    Loot* loot = nullptr;
+
+    if (guid.IsCreature())
+    {
+        if (Creature* creature = ai->GetCreature(guid))
+            loot = &creature->loot;
+    }
 
     if (!loot)
         return false;
@@ -325,7 +331,7 @@ bool StoreLootAction::Execute(Event& event)
             continue;
 
         //have no right to loot
-        if (false || lootItem->AllowedForPlayer(bot, nullptr) == false)
+        if (lootItem->AllowedForPlayer(bot, loot->GetLootTarget()) == false)
             continue;
 
         Player* master = ai->GetMaster();

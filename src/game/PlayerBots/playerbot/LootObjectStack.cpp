@@ -229,17 +229,6 @@ bool LootObject::IsLootPossible(Player* bot)
     if (reqItem && !bot->HasItemCount(reqItem, 1))
         return false;
 
-    if (guid.IsCreature())
-    {
-        Creature* creature = ai->GetCreature(guid);
-        if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
-        {
-            if (creature->loot.gold > 0 && skillId != SKILL_SKINNING)
-                if (!creature->loot.items.empty())
-                    return false;
-        }
-    }
-
     AiObjectContext* context = ai->GetAiObjectContext();
 
     if (!AI_VALUE2_LAZY(bool, "should loot object", std::to_string(guid.GetRawValue())))
