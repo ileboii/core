@@ -980,7 +980,7 @@ void Map::UpdatePlayers()
             }
         }
 
-        bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->HasScheduledEvent();
+        bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SELF_ITEMS) || plr->HasScheduledEvent();
 
         bool const scheduledInactiveUpdate = (plr->GetGUIDLow() % updateCycle) == updateSlot;
 
