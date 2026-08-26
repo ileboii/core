@@ -984,7 +984,9 @@ void Map::UpdatePlayers()
 
         bool const scheduledInactiveUpdate = (plr->GetGUIDLow() % updateCycle) == updateSlot;
 
-        if (!updateInactivePlayers && !playerNearby && !playerIsActive && !scheduledInactiveUpdate)
+        bool const playerHasPendingItemUpdates = plr->HasPendingItemUpdates();
+
+        if (!updateInactivePlayers && !playerNearby && !playerIsActive && !scheduledInactiveUpdate && !playerHasPendingItemUpdates)
         {
             plr->AddSkippedUpdateTime(diff);
             continue;

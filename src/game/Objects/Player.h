@@ -791,6 +791,8 @@ class Player final: public Unit
                 m_ExtraFlags |= PLAYER_EXTRA_AUCTION_NEUTRAL;
         }
 
+        bool HasPendingItemUpdates() const { return !m_itemUpdateQueue.empty(); }
+
         /*********************************************************/
         /***                 GAMEMASTER SYSTEM                 ***/
         /*********************************************************/
