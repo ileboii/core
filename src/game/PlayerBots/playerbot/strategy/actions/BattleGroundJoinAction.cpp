@@ -672,6 +672,21 @@ bool BGJoinAction::JoinQueue(uint32 type)
     if (!bot->GetBGAccessByLevel(bgTypeId))
         return false;
 
+    BattleGroundQueue& bgQueue = sBattleGroundMgr.m_battleGroundQueues[queueTypeId];
+
+    GroupQueueInfo* ginfo = bgQueue.AddGroup(bot, nullptr, bgTypeId, bracketId, false, 0, nullptr);
+
+    if (!ginfo || ginfo->players.empty())
+        return false;
+
+    uint32 queueSlot = bot->AddBattleGroundQueueId(queueTypeId);
+
+    bot->SetBattleGroundEntryPoint(bot, false);
+
+    sBattleGroundMgr.ScheduleQueueUpdate(queueTypeId, bgTypeId, bracketId);
+
+    return true;
+
     // get BattleMaster unit
     // Find BattleMaster by Entry
     /*uint32 BmEntry = sRandomPlayerbotMgr.GetBattleMasterEntry(bot, bgTypeId, true);
@@ -691,11 +706,7 @@ bool BGJoinAction::JoinQueue(uint32 type)
     }*/
 
    // get BG MapId
-#ifdef MANGOSBOT_ZERO
-   uint32 mapId = GetBattleGrounMapIdByTypeId(bgTypeId);
-#else
-   uint32 bgTypeId_ = bgTypeId;
-#endif
+   uint32 mapId = bg->GetMapId();
    uint32 instanceId = 0; // 0 = First Available
    uint8 joinAsGroup = bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetObjectGuid());
    bool isPremade = false;
@@ -710,24 +721,6 @@ bool BGJoinAction::JoinQueue(uint32 type)
    ArenaType arenaType = sServerFacade.BgArenaType(queueTypeId);
    if (arenaType != ARENA_TYPE_NONE)
        isArena = true;
-#endif
-
-   // get battlemaster
-   Unit* unit = ai->GetUnit(AI_VALUE2(CreatureDataPair const*, "bg master", bgTypeId));
-#ifndef MANGOSBOT_TWO
-   if (!unit)
-#else
-   if (!unit && isArena)
-#endif
-   {
-       sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot %d could not find Battlemaster to join", bot->GetGUIDLow());
-       return false;
-   }
-// in wotlk only arena requires battlemaster guid
-#ifndef MANGOSBOT_TWO
-   ObjectGuid guid = unit->GetObjectGuid();
-#else
-   ObjectGuid guid = isArena ? unit->GetObjectGuid() : bot->GetObjectGuid();
 #endif
 
    switch (bgTypeId)
@@ -814,17 +807,14 @@ bool BGJoinAction::JoinQueue(uint32 type)
        sRandomPlayerbotMgr.BgBots[queueTypeId][bracketId][TeamId] += bot->GetGroup()->GetMembersCount();
 
    ai->GetAiObjectContext()->GetValue<uint32>("bg type")->Set(0);
-
-   WorldPacket packet(CMSG_BATTLEMASTER_JOIN, 20);
 #ifdef MANGOSBOT_ZERO
-   packet << unit->GetObjectGuid() << mapId << instanceId << joinAsGroup;
    sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot #%d %s:%d <%s> queued %s", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), _bgType.c_str());
 #else
    sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot #%d %s:%d <%s> queued %s %s", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), _bgType.c_str(), isRated ? "Rated Arena" : isArena ? "Arena" :
                                                                                                                                                                                                       "");
    if (!isArena)
    {
-       packet << guid << bgTypeId_ << instanceId << joinAsGroup;
+       packet << guid << mapId << instanceId << joinAsGroup;
    }
    else
    {
@@ -835,7 +825,6 @@ bool BGJoinAction::JoinQueue(uint32 type)
    }
 #endif
 
-   ai->QueuePacket(packet);
    return true;
 }
 
@@ -849,6 +838,7 @@ bool FreeBGJoinAction::shouldJoinBg(BattleGroundQueueTypeId queueTypeId, BattleG
     if (!bg)
         return false;
 
+    uint32 mapId = bg->GetMapId();
     bool isArena = false;
     bool isRated = false;
     bool hasTeam = false;
