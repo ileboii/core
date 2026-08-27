@@ -4127,8 +4127,6 @@ bool BGTactics::moveToObjective()
         // don't try to move if already close
         if (sqrt(bot->GetDistance(pos.x, pos.y, pos.z)) < 5.0f)
         {
-            resetObjective();
-
             return true;
         }
 
@@ -4306,19 +4304,18 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
 
     uint32 const lastPointInPath = reverse ? 0 : ((*currentPath).size() - 1);
 
-    if ((currentPoint == lastPointInPath) ||
+if ((currentPoint == lastPointInPath) ||
 #ifdef MANGOSBOT_ZERO
         (bot->IsInCombat() && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG))) || !bot->IsAlive())
 #else
         (bot->IsInCombat() && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) || bot->HasAura(EY_SPELL_NETHERSTORM_FLAG))) || !bot->IsAlive())
 #endif
     {
-        // Path is over.
-        //ostringstream out; out << "Reached path end!";
-        //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
-        resetObjective();
         return false;
     }
+
+    if (currentPoint == lastPointInPath)
+        return false;
 
     uint32 currPoint = currentPoint;
 
