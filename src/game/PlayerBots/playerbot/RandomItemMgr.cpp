@@ -220,9 +220,10 @@ void RandomItemMgr::BuildRandomItemCache()
     else
     {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Building random item cache from %u items", sObjectMgr.GetItemPrototypeMap().size());
-        for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+        for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
         {
-            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+            uint32 itemId = itemPair.first;
+            ItemPrototype const* proto = &itemPair.second;
             if (!proto)
                 continue;
 
@@ -980,11 +981,12 @@ void RandomItemMgr::BuildItemInfoCache()
     CharacterDatabase.BeginTransaction();
 
     // generate stat weights for classes/specs
-    for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+    for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
     {
         bar.step();
 
-        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+        uint32 itemId = itemPair.first;
+        ItemPrototype const* proto = &itemPair.second;
         if (!proto)
             continue;
 
@@ -3370,9 +3372,10 @@ void RandomItemMgr::BuildEquipCache()
                             BotEquipKey key(level, clazz, spec, slot, quality);
 
                             RandomItemList items;
-                            for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+                            for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
                             {
-                                ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+                                uint32 itemId = itemPair.first;
+                                ItemPrototype const* proto = &itemPair.second;
                                 if (!proto)
                                     continue;
 
@@ -3539,9 +3542,10 @@ void RandomItemMgr::BuildPotionCache()
         {
             uint32 effect = effects[i];
 
-            for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+            for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
             {
-                ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+                uint32 itemId = itemPair.first;
+                ItemPrototype const* proto = &itemPair.second;
                 if (!proto)
                     continue;
 
@@ -3610,9 +3614,10 @@ void RandomItemMgr::BuildFoodCache()
         {
             uint32 category = categories[i];
 
-            for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+            for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
             {
-                ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+                uint32 itemId = itemPair.first;
+                ItemPrototype const* proto = &itemPair.second;
                 if (!proto)
                     continue;
 
@@ -3754,9 +3759,10 @@ void RandomItemMgr::BuildTradeCache()
 	int counter4 = 0;
     for (uint32 level = 1; level <= maxLevel+1; level+=10)
     {
-        for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+        for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
         {
-            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+            uint32 itemId = itemPair.first;
+            ItemPrototype const* proto = &itemPair.second;
             if (!proto)
                 continue;
 
@@ -3799,9 +3805,10 @@ std::vector<uint32> RandomItemMgr::GetGemsList()
 #ifndef MANGOSBOT_ZERO
     if (_gems.empty())
     {
-        for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+        for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
         {
-            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+            uint32 itemId = itemPair.first;
+            ItemPrototype const* proto = &itemPair.second;
             if (!proto)
                 continue;
 
@@ -3841,10 +3848,12 @@ void RandomItemMgr::BuildRarityCache()
     {
         sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "Building item rarity cache from %u items", sObjectMgr.GetItemPrototypeMap().size());
         BarGoLink bar(sObjectMgr.GetItemPrototypeMap().size());
-        for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+        for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
         {
             bar.step();
-            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+
+            uint32 itemId = itemPair.first;
+            ItemPrototype const* proto = &itemPair.second;
             if (!proto)
                 continue;
 
@@ -3961,9 +3970,10 @@ void RandomItemMgr::BuildRarityCache()
 void RandomItemMgr::BuildGlyphCache()
 {
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Building glyphCache", sObjectMgr.GetItemPrototypeMap().size());
-    for (uint32 itemId = 0; itemId < sObjectMgr.GetItemPrototypeMap().size(); ++itemId)
+    for (auto const& itemPair : sObjectMgr.GetItemPrototypeMap())
     {
-        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+        uint32 itemId = itemPair.first;
+        ItemPrototype const* proto = &itemPair.second;
         if (!proto)
             continue;
 
