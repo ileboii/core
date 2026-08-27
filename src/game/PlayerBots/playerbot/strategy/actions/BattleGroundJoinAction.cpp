@@ -390,7 +390,7 @@ bool BGJoinAction::shouldJoinBg(BattleGroundQueueTypeId queueTypeId, BattleGroun
     if (!sPlayerbotAIConfig.randomBotAutoJoinBG && !hasPlayers)
         return false;
 
-    if (!hasPlayers && !noLag)
+    if (!hasPlayers)
         return false;
 
     if (ai->HasRealPlayerMaster())
