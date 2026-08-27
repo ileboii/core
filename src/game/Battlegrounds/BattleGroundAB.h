@@ -219,6 +219,16 @@ class BattleGroundAB : public BattleGround
         /* Nodes occupying */
         virtual void EventPlayerClickedOnFlag(Player* source, GameObject* targetGo);
 
+bool BattleGroundAB::IsNodeOccupiedByTeam(uint8 node, Team team) const
+        {
+            if (node >= BG_AB_NODES_MAX)
+                return false;
+
+            uint8 teamIndex = GetTeamIndexByTeamId(team);
+
+            return m_nodes[node] == teamIndex + BG_AB_NODE_TYPE_CONTESTED || m_nodes[node] == teamIndex + BG_AB_NODE_TYPE_OCCUPIED;
+        }
+
     private:
         /* Gameobject spawning/despawning */
         void _CreateBanner(uint8 node, uint8 type, uint8 teamIndex);

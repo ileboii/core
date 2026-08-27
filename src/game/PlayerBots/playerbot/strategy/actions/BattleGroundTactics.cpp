@@ -2849,8 +2849,15 @@ bool BGTactics::Execute(Event& event)
             return false;
     }
 
-    if (getName() == "check objective")
-        return resetObjective();
+if (getName() == "check objective")
+    {
+        ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
+
+        if (pos.isSet())
+            return false;
+
+        return selectObjective();
+    }
 
     return false;
 }
@@ -3126,78 +3133,175 @@ bool BGTactics::selectObjective(bool reset)
         break;
     }
     case BATTLEGROUND_AB:
-    {
-        // Common setup for both HORDE and ALLIANCE
-        uint32 role = context->GetValue<uint32>("bg role")->Get();
-        bool defender = role < 5;
-        uint32 botGUID = bot->GetGUIDLow();
-
-        bool isDead = bot->IsDead();
-
-        if (isDead && (botSelectedObjectives[botGUID] != nullptr))
         {
-            bot->Say("I'm dead, guess I'll reset my objective.", LANG_UNIVERSAL);
-            botSelectedObjectives[botGUID] = nullptr; // Reset objective if we die... maybe more lucky elsewhere -- wait I don't think this is executed on dead bots so it's never triggered? Try something else
-            botObjectiveSelectionTime[botGUID] = 0;
-        }
+            uint32 role = context->GetValue<uint32>("bg role")->Get();
+            uint32 botGUID = bot->GetGUIDLow();
 
-        std::set<GameObject*> uniqueObjectives;
+            bool isDead = bot->IsDead();
 
-        for (const auto& objective : AB_AttackObjectives)
-        {
-            bool isActiveNeutral = bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_NEUTRAL);
-
-            bool isOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED);
-            bool isContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED);
-            bool isFriendly = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED) || bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED) || bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED);
-
-            // If we're a defender, target friendly, neutral or under attack objectives (maybe remove the under attack ones?). if we're an attacker, target enemy, neutral or under attack objectives. 
-            if ((defender && (isActiveNeutral || isFriendly || isContested)) || (!defender && (isActiveNeutral || isContested || isOccupied)))
+            if (isDead && (botSelectedObjectives[botGUID] != nullptr))
             {
-                if (GameObject* pGO = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(objective.first, BG_AB_NODE_STATUS_NEUTRAL)))
-                {
-                    // Add it to the list if it's valid.
-                    uniqueObjectives.insert(pGO);
-                }
+                botSelectedObjectives[botGUID] = nullptr;
+                botObjectiveSelectionTime[botGUID] = 0;
             }
-        }
 
-        GameObject* BgObjective = nullptr;
+            std::set<GameObject*> uniqueObjectives;
 
+            uint32 friendlyBases = 0;
+            uint32 enemyBases = 0;
+            uint32 neutralBases = 0;
+            uint32 friendlyContested = 0;
+            uint32 enemyContested = 0;
 
-
-        // Check if the bot has previously selected an objective and if it's still valid
-        if (botSelectedObjectives.find(botGUID) != botSelectedObjectives.end() &&
-            uniqueObjectives.find(botSelectedObjectives[botGUID]) != uniqueObjectives.end())
-        {
-            uint32 elapsedTime = WorldTimer::getMSTime() - botObjectiveSelectionTime[botGUID];
-            float probabilityToKeepSameObjective = 1.0f; // Start at 100% then lower over time
-
-            GameObject* lastObj = botSelectedObjectives[botGUID];
-            float const lastObjDist = bot->GetDistance(lastObj);
-
-            if (lastObjDist < 50.00f) // if we are close, stick to the objective a bit longer
+            for (const auto& objective : AB_AttackObjectives)
             {
-                if (elapsedTime > 60000)
-                {
-                    uint32 extraTime = (elapsedTime - 60000) / 1000; // Calculate seconds past the 60 seconds mark
-                    probabilityToKeepSameObjective -= (0.01f * extraTime); // Decrease by 1% for each second past 40 seconds
-                }
+                bool isNeutral = bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_NEUTRAL);
 
-                float randomValue = float(rand() % 101) / 100.0f;
+                bool isFriendlyOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED);
 
-                if (randomValue <= probabilityToKeepSameObjective)
-                {
-                    BgObjective = botSelectedObjectives[botGUID];
-                }
-                else uniqueObjectives.erase(lastObj);
+                bool isEnemyOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED);
+
+                bool isFriendlyContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED);
+
+                bool isEnemyContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED);
+
+                if (isNeutral)
+                    ++neutralBases;
+
+                if (isFriendlyOccupied)
+                    ++friendlyBases;
+
+                if (isEnemyOccupied)
+                    ++enemyBases;
+
+                if (isFriendlyContested)
+                    ++friendlyContested;
+
+                if (isEnemyContested)
+                    ++enemyContested;
+            }
+
+             // Dynamic attack/defense balance.
+
+            bool losing = enemyBases > friendlyBases;
+            bool heavilyLosing = enemyBases >= friendlyBases + 2;
+            bool winning = friendlyBases > enemyBases;
+            bool heavilyWinning = friendlyBases >= enemyBases + 2;
+
+            bool defender = false;
+
+            if (heavilyLosing)
+            {
+                defender = role == 0;
+            }
+            else if (losing)
+            {
+                defender = role < 1;
+            }
+            else if (heavilyWinning)
+            {
+                defender = role < 3;
+            }
+            else if (winning)
+            {
+                defender = role < 2;
             }
             else
             {
-                if (elapsedTime > 40000)
+                defender = role < 2;
+            }
+
+            if (defender)
+            {
+                for (const auto& objective : AB_AttackObjectives)
                 {
-                    uint32 extraTime = (elapsedTime - 40000) / 1000; // Calculate seconds past the 40 seconds mark
-                    probabilityToKeepSameObjective -= (0.01f * extraTime); // Decrease by 1% for each second past 40 seconds
+                    bool isFriendlyContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED);
+
+                    if (!isFriendlyContested)
+                        continue;
+
+                    if (GameObject* pGO = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(objective.first, BG_AB_NODE_STATUS_NEUTRAL)))
+                    {
+                        uniqueObjectives.insert(pGO);
+                    }
+                }
+
+            }
+
+            if (!defender)
+            {
+                std::set<GameObject*> enemyObjectives;
+                std::set<GameObject*> neutralObjectives;
+
+                for (const auto& objective : AB_AttackObjectives)
+                {
+                    bool isNeutral = bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_NEUTRAL);
+
+                    bool isEnemyOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED);
+
+                    if (!isNeutral && !isEnemyOccupied)
+                        continue;
+
+                    GameObject* pGO = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(objective.first, BG_AB_NODE_STATUS_NEUTRAL));
+
+                    if (!pGO)
+                        continue;
+
+                    if (isEnemyOccupied)
+                        enemyObjectives.insert(pGO);
+                    else if (isNeutral)
+                        neutralObjectives.insert(pGO);
+                }
+
+                if (!enemyObjectives.empty())
+                {
+                    uniqueObjectives.insert(enemyObjectives.begin(), enemyObjectives.end());
+                }
+                else
+                {
+                    uniqueObjectives.insert(neutralObjectives.begin(), neutralObjectives.end());
+                }
+            }
+
+            if (defender && uniqueObjectives.empty())
+            {
+                for (const auto& objective : AB_AttackObjectives)
+                {
+                    bool isFriendlyOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED);
+
+                    if (!isFriendlyOccupied)
+                        continue;
+
+                    if (GameObject* pGO = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(objective.first, BG_AB_NODE_STATUS_NEUTRAL)))
+                    {
+                        uniqueObjectives.insert(pGO);
+                    }
+                }
+            }
+
+            GameObject* BgObjective = nullptr;
+
+            if (botSelectedObjectives.find(botGUID) != botSelectedObjectives.end() && uniqueObjectives.find(botSelectedObjectives[botGUID]) != uniqueObjectives.end())
+            {
+                uint32 elapsedTime = WorldTimer::getMSTime() - botObjectiveSelectionTime[botGUID];
+
+                float probabilityToKeepSameObjective = 1.0f;
+
+                if (bot->GetDistance(botSelectedObjectives[botGUID]) < 50.0f)
+                {
+                    if (elapsedTime > 60000)
+                    {
+                        uint32 extraTime = (elapsedTime - 60000) / 1000;
+                        probabilityToKeepSameObjective -= 0.01f * extraTime;
+                    }
+                }
+                else
+                {
+                    if (elapsedTime > 40000)
+                    {
+                        uint32 extraTime = (elapsedTime - 40000) / 1000;
+                        probabilityToKeepSameObjective -= 0.01f * extraTime;
+                    }
                 }
 
                 float randomValue = float(rand() % 101) / 100.0f;
@@ -3206,44 +3310,33 @@ bool BGTactics::selectObjective(bool reset)
                 {
                     BgObjective = botSelectedObjectives[botGUID];
                 }
-                else uniqueObjectives.erase(lastObj);
+                else
+                {
+                    uniqueObjectives.erase(botSelectedObjectives[botGUID]);
+                }
             }
+
+            if (!BgObjective && !uniqueObjectives.empty())
+            {
+                std::vector<GameObject*> objectives(uniqueObjectives.begin(), uniqueObjectives.end());
+
+                BgObjective = objectives[urand(0, objectives.size() - 1)];
+
+                botSelectedObjectives[botGUID] = BgObjective;
+                botObjectiveSelectionTime[botGUID] = WorldTimer::getMSTime();
+            }
+
+            if (BgObjective)
+            {
+                pos.Set(BgObjective->GetPositionX(), BgObjective->GetPositionY(), BgObjective->GetPositionZ(), BgObjective->GetMapId());
+
+                posMap["bg objective"] = pos;
+
+                return true;
+            }
+
+            break;
         }
-
-        // If BgObjective is still nullptr at this point, select a new one
-        if (!BgObjective && !uniqueObjectives.empty())
-        {
-            std::vector<GameObject*> objectives(uniqueObjectives.begin(), uniqueObjectives.end());
-
-            // Select a random objective from your unique objectives
-            BgObjective = objectives[urand(0, objectives.size() - 1)];
-            botSelectedObjectives[botGUID] = BgObjective; // Remember this objective for the bot
-            botObjectiveSelectionTime[botGUID] = WorldTimer::getMSTime(); // Remember the time of selection
-        }
-
-        if (BgObjective)
-        {
-            pos.Set(BgObjective->GetPositionX(), BgObjective->GetPositionY(), BgObjective->GetPositionZ(), BgObjective->GetMapId());
-            posMap["bg objective"] = pos;
-            std::string ObjVerbose = "";
-
-            if (std::abs(pos.x - 977.016) <= 10.0) ObjVerbose = "Blacksmith";
-            else if (std::abs(pos.x - 806.182) <= 10.0) ObjVerbose = "Farm";
-            else if (std::abs(pos.x - 856.142) <= 10.0) ObjVerbose = "Lumber Mill";
-            else if (std::abs(pos.x - 1166.79) <= 10.0) ObjVerbose = "Stables";
-            else if (std::abs(pos.x - 1146.92) <= 10.0) ObjVerbose = "Gold Mine";
-
-            // DEBUG SAY
-            //ostringstream out;
-            //if(defender) out << "Defending " + ObjVerbose;
-            //else out << "Attacking " + ObjVerbose;
-            //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
-
-
-            return true;
-        }
-        break;
-    }
 #ifndef MANGOSBOT_ZERO
     case BATTLEGROUND_EY: //Role < 4: Defender, else Attacker. In the beginning split for all points. Afterwards pick random strategies
     {
@@ -4024,8 +4117,6 @@ bool BGTactics::moveToObjective()
 
         if (sServerFacade.GetDistance2d(bot, pos.x, pos.y) > 100.0f)
         {
-            //ostringstream out; out << "It is too far away! " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.GetDistance2d(bot, pos.x, pos.y);
-            //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
             return false;
         }
 
@@ -4187,26 +4278,21 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
 bool BGTactics::resetObjective()
 {
-    BattleGround *bg = bot->GetBattleGround();
+    BattleGround* bg = bot->GetBattleGround();
     if (!bg)
         return false;
 
-    // sometimes change role
-#ifdef MANGOSBOT_ZERO
-    if (!urand(0, 3) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)))
-#else
-    if (!urand(0, 3) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) || bot->HasAura(EY_SPELL_NETHERSTORM_FLAG)))
-#endif
-        context->GetValue<uint32>("bg role")->Set(urand(0, 9));
-
     ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
-    ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
-    // do not switch hiding spots - disabled for now until hiding spots reimplemented since it causes bots to stop moving
+    ai::PositionEntry pos = posMap["bg objective"];
+
     if (teamFlagTaken() && (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)))
     {
         if (pos.x != WS_FLAG_POS_HORDE.x && pos.x != WS_FLAG_POS_ALLIANCE.x && pos.y != WS_FLAG_POS_HORDE.y && pos.y != WS_FLAG_POS_ALLIANCE.y)
+        {
             return false;
+        }
     }
+
     pos.Reset();
     posMap["bg objective"] = pos;
 
@@ -4436,19 +4522,60 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (!go)
             continue;
 
-        std::vector<uint32>::const_iterator f = find(vFlagIds.begin(), vFlagIds.end(), go->GetEntry());
+std::vector<uint32>::const_iterator f = find(vFlagIds.begin(), vFlagIds.end(), go->GetEntry());
         if (f == vFlagIds.end())
             continue;
 
-        if (!sServerFacade.isSpawned(go)  || go->GetGoState() != GO_STATE_READY)
+        if (!sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY)
             continue;
 
         if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE) && bgType != BATTLEGROUND_WS)
             continue;
-        
+
         if (flagRange)
             if (!bot->IsWithinDistInMap(go, flagRange))
                 continue;
+
+        if (bgType == BATTLEGROUND_AB)
+        {
+            bool validABFlag = false;
+
+            for (const auto& objective : AB_AttackObjectives)
+            {
+                uint32 eventId = objective.first;
+
+                ObjectGuid neutralGuid = bg->GetSingleGameObjectGuid(eventId, BG_AB_NODE_STATUS_NEUTRAL);
+
+                ObjectGuid allianceContestedGuid = bg->GetSingleGameObjectGuid(eventId, BG_AB_NODE_STATUS_ALLY_CONTESTED);
+
+                ObjectGuid hordeContestedGuid = bg->GetSingleGameObjectGuid(eventId, BG_AB_NODE_STATUS_HORDE_CONTESTED);
+
+                ObjectGuid allianceOccupiedGuid = bg->GetSingleGameObjectGuid(eventId, BG_AB_NODE_STATUS_ALLY_OCCUPIED);
+
+                ObjectGuid hordeOccupiedGuid = bg->GetSingleGameObjectGuid(eventId, BG_AB_NODE_STATUS_HORDE_OCCUPIED);
+
+                if (go->GetObjectGuid() != neutralGuid && go->GetObjectGuid() != allianceContestedGuid && go->GetObjectGuid() != hordeContestedGuid && go->GetObjectGuid() != allianceOccupiedGuid && go->GetObjectGuid() != hordeOccupiedGuid)
+                {
+                    continue;
+                }
+
+                bool isFriendlyOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(eventId, BG_AB_NODE_STATUS_HORDE_OCCUPIED) : bg->IsActiveEvent(eventId, BG_AB_NODE_STATUS_ALLY_OCCUPIED);
+
+                bool isFriendlyContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(eventId, BG_AB_NODE_STATUS_HORDE_CONTESTED) : bg->IsActiveEvent(eventId, BG_AB_NODE_STATUS_ALLY_CONTESTED);
+
+                if (isFriendlyOccupied)
+                    continue;
+
+                if (isFriendlyContested)
+                    continue;
+
+                validABFlag = true;
+                break;
+            }
+
+            if (!validABFlag)
+                continue;
+        }
 
         bool atBase = go->GetEntry() == vFlagsWS[(bot->GetTeam() == HORDE ? 1 : 0)];
 #ifndef MANGOSBOT_ZERO
