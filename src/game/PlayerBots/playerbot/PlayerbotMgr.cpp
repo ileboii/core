@@ -2320,11 +2320,10 @@ std::string PlayerbotHolder::HandleBotPrepare(Player* bot, Player* master, const
 std::string PlayerbotHolder::HandleBotInit(Player* bot, Player* master, const std::string param)
 {
     uint32 level = master ? master->GetLevel() : bot->GetLevel();
-
     if (param.empty())
     {
-        PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
-        factory.Randomize(true, false);
+        PlayerbotFactory factory(bot, level);
+        factory.Randomize(false, false);
     }
     else if (param == "white" || param == "common")
     {
