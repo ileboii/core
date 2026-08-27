@@ -268,7 +268,7 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
         LoadEnchantContainer();
     }
 
-    InitEquipment(incremental, syncWithMaster, false);
+    InitEquipment(incremental, syncWithMaster);
     InitGems();
     pmo.reset();
 
