@@ -2805,36 +2805,46 @@ bool BGTactics::Execute(Event& event)
             return false;
         }
 
-        /*
-         * WSG MIDFIELD WANDER
-         *
-         * Roles 2-4 are our midfield group.
-         *
-         * When there is no enemy FC to chase, midfielders should
-         * continuously move around the center of the battlefield
-         * instead of standing on one random point indefinitely.
-         *
-         * Once they reach their current midfield objective, select
-         * another random midfield position.
-         */
         if (bgType == BATTLEGROUND_WS)
         {
             uint32 role = context->GetValue<uint32>("bg role")->Get();
 
+            Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
             Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
 
-            if (role >= 2 && role < 5 && !enemyFC && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)))
+            bool carryingFlag = bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG);
+
+            if (role >= 2 && role < 5 && !enemyFC && !carryingFlag)
             {
                 ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
-                ai::PositionEntry pos = posMap["bg objective"];
 
-                if (pos.isSet() && sServerFacade.GetDistance2d(bot, pos.x, pos.y) < 10.0f)
+                ai::PositionEntry midPos = posMap["bg objective"];
+
+                if (!midPos.isSet())
                 {
-                    pos.Reset();
-                    posMap["bg objective"] = pos;
+                    float rx, ry, rz;
 
-                    return selectObjective(true);
+                    bot->GetRandomPoint(1227.446f, 1476.235f, 307.484f, 130.0f, rx, ry, rz);
+
+                    midPos.Set(rx, ry, rz, bot->GetMapId());
+                    posMap["bg objective"] = midPos;
+
+                    return MoveTo(bot->GetMapId(), rx, ry, rz);
                 }
+
+                if (sServerFacade.GetDistance2d(bot, midPos.x, midPos.y) < 15.0f)
+                {
+                    float rx, ry, rz;
+
+                    bot->GetRandomPoint(1227.446f, 1476.235f, 307.484f, 130.0f, rx, ry, rz);
+
+                    midPos.Set(rx, ry, rz, bot->GetMapId());
+                    posMap["bg objective"] = midPos;
+
+                    return MoveTo(bot->GetMapId(), rx, ry, rz);
+                }
+
+                return MoveTo(bot->GetMapId(), midPos.x, midPos.y, midPos.z);
             }
         }
 
