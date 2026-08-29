@@ -2776,13 +2776,18 @@ bool BGTactics::Execute(Event& event)
     
     if (getName() == "protect fc")
     {
+        Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
+
+        if (!teamFC)
+            return false;
+
         if (!bot->IsMounted() && !sServerFacade.IsInCombat(bot))
             if (ai->DoSpecificAction("check mount state"))
                 return true;
 
         uint32 role = context->GetValue<uint32>("bg role")->Get();
-        bool supporter = role < 5;
-        if (supporter)
+
+        if (role >= 5)
             if (protectFC())
                 return true;
     }
