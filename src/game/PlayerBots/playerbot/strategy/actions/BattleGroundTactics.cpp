@@ -2323,7 +2323,7 @@ bool BGTactics::wsgPaths()
 
     if (pos.x > bot->GetPositionX()) //He's somewhere at the alliance side
     {
-        if (Preference < 4 && !atHordeGY) //preference < 4 = move through tunnel (< 6 becuse GY disabled)
+        if ((bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)) || (Preference < 4 && !atHordeGY))
         {
             if (bot->GetPositionX() < 1006.f) //to the fasty
             {
@@ -2447,7 +2447,7 @@ bool BGTactics::wsgPaths()
     }
     else //move towards horde base
     {
-        if (Preference < 4 && !atAllyGY) //through the tunnel
+        if ((bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)) || (Preference < 4 && !atAllyGY))
         {
             if (bot->GetPositionX() > 1449.7f) //to the fasty
             {
@@ -2801,9 +2801,50 @@ bool BGTactics::Execute(Event& event)
         if (sServerFacade.IsInCombat(bot) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) || bot->HasAura(EY_SPELL_NETHERSTORM_FLAG)))
 #endif
         {
-            //bot->GetMotionMaster()->MovementExpired();
+            // bot->GetMotionMaster()->MovementExpired();
             return false;
         }
+
+        /*
+         * WSG MIDFIELD WANDER
+         *
+         * Roles 2-4 are our midfield group.
+         *
+         * When there is no enemy FC to chase, midfielders should
+         * continuously move around the center of the battlefield
+         * instead of standing on one random point indefinitely.
+         *
+         * Once they reach their current midfield objective, select
+         * another random midfield position.
+         */
+        if (bgType == BATTLEGROUND_WS)
+        {
+            uint32 role = context->GetValue<uint32>("bg role")->Get();
+
+            Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
+
+            if (role >= 2 && role < 5 && !enemyFC && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)))
+            {
+                ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+                ai::PositionEntry pos = posMap["bg objective"];
+
+                if (pos.isSet() && sServerFacade.GetDistance2d(bot, pos.x, pos.y) < 10.0f)
+                {
+                    pos.Reset();
+                    posMap["bg objective"] = pos;
+
+                    return selectObjective(true);
+                }
+            }
+        }
+
+        if (!moveToObjective())
+        {
+            if (selectObjectiveWp(*vPaths))
+                return true;
+        }
+        else
+            return true;
 
         if (!moveToObjective())
         {
@@ -2851,7 +2892,51 @@ bool BGTactics::Execute(Event& event)
 
 if (getName() == "check objective")
     {
-        ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
+        ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+        ai::PositionEntry pos = posMap["bg objective"];
+
+        BattleGround* bg = bot->GetBattleGround();
+
+        if (!bg)
+            return false;
+
+        /*
+         * WSG:
+         *
+         * If our team has the enemy flag, bots that were assigned to
+         * assault the enemy flag must abandon that objective and switch
+         * to the FC / midfield behaviour.
+         *
+         * We only do this if the CURRENT objective is the enemy flag.
+         * This prevents the objective from being reset every 3 seconds.
+         */
+        if (bg->GetTypeID() == BATTLEGROUND_WS && pos.isSet())
+        {
+            Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
+
+            if (teamFC && !bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) && !bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG))
+            {
+                bool attackingEnemyFlag = false;
+
+                if (bot->GetTeam() == ALLIANCE)
+                {
+                    attackingEnemyFlag = pos.x == WS_FLAG_POS_HORDE.x && pos.y == WS_FLAG_POS_HORDE.y;
+                }
+                else
+                {
+                    attackingEnemyFlag = pos.x == WS_FLAG_POS_ALLIANCE.x && pos.y == WS_FLAG_POS_ALLIANCE.y;
+                }
+
+                if (attackingEnemyFlag)
+                {
+                    pos.Reset();
+                    posMap["bg objective"] = pos;
+
+                    return selectObjective(true);
+                }
+            }
+        }
 
         if (pos.isSet())
             return false;
@@ -2974,12 +3059,85 @@ bool BGTactics::selectObjective(bool reset)
     if (bg->GetStatus() != STATUS_IN_PROGRESS)
         return false;
 
-    ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
-    ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
-    if (pos.isSet() && !reset)
-        return false;
+ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+    ai::PositionEntry pos = posMap["bg objective"];
 
     BattleGroundTypeId bgType = bg->GetTypeID();
+#ifdef MANGOSBOT_TWO
+    if (bgType == BATTLEGROUND_RB)
+        bgType = bg->GetTypeID();
+#endif
+
+    /*
+     * WSG objectives can become invalid while the bot is travelling.
+     *
+     * Example:
+     *
+     *     Bot is travelling to enemy flag
+     *             ↓
+     *     Our bot captures enemy flag
+     *             ↓
+     *     "team flag carrier" now exists
+     *             ↓
+     *     Old enemy-flag objective is no longer useful
+     *
+     * Re-evaluate the objective immediately when a flag carrier appears.
+     */
+    if (pos.isSet() && !reset && bgType == BATTLEGROUND_WS)
+    {
+        Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
+        Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
+
+        /*
+         * If there is an enemy FC, this bot should be reacting to them
+         * unless it is specifically escorting our own FC.
+         */
+        if (enemyFC)
+        {
+            uint32 role = context->GetValue<uint32>("bg role")->Get();
+
+            if (teamFC && role < 3)
+            {
+                if (bot->GetDistance(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ()) > 75.0f)
+                {
+                    pos.Reset();
+                    posMap["bg objective"] = pos;
+                }
+            }
+            else
+            {
+                if (bot->GetDistance(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ()) > 75.0f)
+                {
+                    pos.Reset();
+                    posMap["bg objective"] = pos;
+                }
+            }
+        }
+        /*
+         * Our FC exists and there is no enemy FC.
+         *
+         * The old offensive/midfield objective is now obsolete.
+         */
+        else if (teamFC)
+        {
+            if (bot->GetDistance(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ()) > 75.0f)
+            {
+                pos.Reset();
+                posMap["bg objective"] = pos;
+            }
+        }
+
+        /*
+         * If the objective was not reset above, keep it.
+         */
+        if (pos.isSet())
+            return false;
+    }
+    else if (pos.isSet() && !reset)
+    {
+        return false;
+    }
+
 #ifdef MANGOSBOT_TWO
     if (bgType == BATTLEGROUND_RB)
         bgType = bg->GetTypeID();
@@ -3012,126 +3170,238 @@ bool BGTactics::selectObjective(bool reset)
         break;
     }
     case BATTLEGROUND_WS:
-    {
-        // test free roam
-        // if (!flagTaken() && !teamFlagTaken())
-        //     break;
-
-        if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG))
-        {
-            if (bot->GetTeam() == ALLIANCE)
-            {
-                if (teamFlagTaken())
-                {
-                    Position hidePos = WS_FLAG_HIDE_ALLIANCE[urand(0, 4)];
-                    pos.Set(hidePos.x, hidePos.y, hidePos.z, bot->GetMapId());
-                }
-                else
-                {
-                    pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
-                }
-            }
-            else
-            {
-                if (teamFlagTaken())
-                {
-                    Position hidePos = WS_FLAG_HIDE_HORDE[urand(0, 4)];
-                    pos.Set(hidePos.x, hidePos.y, hidePos.z, bot->GetMapId());
-                }
-                else
-                {
-                    pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
-                }
-            }
-        }
-        else
         {
             uint32 role = context->GetValue<uint32>("bg role")->Get();
-            bool supporter = role < 4;
 
-            //ostringstream out;
-            //out << "Role: " << role;
-            //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
+            Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
+            Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
 
-            if (supporter)
+            /*
+             * FLAG CARRIER
+             *
+             * If we are carrying the flag, our objective is ALWAYS our own
+             * flag/base.
+             *
+             * Do not preserve an old enemy-flag objective.
+             */
+            if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG))
             {
-                Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
-                if (teamFC)
+                if (bot->GetTeam() == ALLIANCE)
                 {
-                    //ostringstream out;
-                    //out << "Protecting " << (bot->GetTeam() == ALLIANCE ? "Alliance FC" : "Horde FC");
-                    //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
-                    pos.Set(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ(), bot->GetMapId());
+                    if (teamFlagTaken())
+                    {
+                        Position hidePos = WS_FLAG_HIDE_ALLIANCE[urand(0, 4)];
+
+                        pos.Set(hidePos.x, hidePos.y, hidePos.z, bot->GetMapId());
+                    }
+                    else
+                    {
+                        pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
+                    }
+                }
+                else
+                {
+                    if (teamFlagTaken())
+                    {
+                        Position hidePos = WS_FLAG_HIDE_HORDE[urand(0, 4)];
+
+                        pos.Set(hidePos.x, hidePos.y, hidePos.z, bot->GetMapId());
+                    }
+                    else
+                    {
+                        pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
+                    }
+                }
+
+                posMap["bg objective"] = pos;
+                return true;
+            }
+
+            /*
+             * STATE 1:
+             *
+             * Enemy has our flag.
+             *
+             * Defense remains defense.
+             * Midfield actively chases the enemy FC.
+             * Assault continues attacking the enemy flag.
+             */
+            if (enemyFC)
+            {
+                /*
+                 * DEFENSE
+                 *
+                 * Roles 0-1 stay near our flag/base.
+                 */
+                if (role < 2)
+                {
+                    if (bot->GetTeam() == ALLIANCE)
+                    {
+                        pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
+                    }
+                    else
+                    {
+                        pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
+                    }
+                }
+
+                /*
+                 * MIDFIELD
+                 *
+                 * Roles 2-4 chase the enemy FC.
+                 */
+                else if (role < 5)
+                {
+                    pos.Set(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ(), enemyFC->GetMapId());
+                }
+
+                /*
+                 * ASSAULT
+                 *
+                 * Roles 5+ continue attacking the enemy flag.
+                 */
+                else
+                {
+                    if (bot->GetTeam() == ALLIANCE)
+                    {
+                        pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
+                    }
+                    else
+                    {
+                        pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
+                    }
+                }
+            }
+
+            /*
+             * STATE 2:
+             *
+             * Our team has the enemy flag.
+             *
+             * Defense stays defense.
+             * Midfield stays midfield.
+             * Former assault bots become FC escorts.
+             */
+            else if (teamFC)
+            {
+                /*
+                 * DEFENSE
+                 *
+                 * Roles 0-1 continue defending our own base.
+                 */
+                if (role < 2)
+                {
+                    if (bot->GetTeam() == ALLIANCE)
+                    {
+                        pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
+                    }
+                    else
+                    {
+                        pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
+                    }
+                }
+
+                /*
+                 * MIDFIELD
+                 *
+                 * Roles 2-4 continue controlling midfield.
+                 */
+                else if (role < 5)
+                {
+                    float rx, ry, rz;
+
+                    bot->GetRandomPoint(1227.446f, 1476.235f, 307.484f, 130.0f, rx, ry, rz);
+
+                    pos.Set(rx, ry, rz, bot->GetMapId());
+                }
+
+                /*
+                 * FC PROTECTION
+                 *
+                 * Roles 5+ were previously assaulting the enemy flag.
+                 *
+                 * As soon as our team obtains the flag, they abandon the
+                 * enemy flag room and protect our friendly FC.
+                 */
+                else
+                {
+                    pos.Set(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ(), teamFC->GetMapId());
+
                     if (sServerFacade.GetDistance2d(bot, teamFC) < 50.0f)
                         Follow(teamFC);
                 }
-                else
-                {
-                    Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
-                    if (enemyFC)
-                    {
-                        pos.Set(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ(), bot->GetMapId());
-
-                        //ostringstream out;
-                        //out << "Attacking " << (bot->GetTeam() == ALLIANCE ? "Horde FC" : "Alliance FC");
-                        //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
-                    }
-                    else
-                    {
-                        if (bot->GetTeam() == ALLIANCE)
-                            pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
-                        else
-                            pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
-
-                        //ostringstream out;
-                        //out << "Going to " << (bot->GetTeam() == ALLIANCE ? "take Horde flag" : "take Alliance flag");
-                        //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
-                    }
-                }
             }
+
+            /*
+             * STATE 3:
+             *
+             * Neither flag is currently being carried.
+             *
+             * Normal WSG formation:
+             *
+             *   0-1 = defense
+             *   2-4 = midfield
+             *   5+  = assault enemy flag
+             */
             else
             {
-                Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
-                if (enemyFC)
+                /*
+                 * DEFENSE
+                 *
+                 * Roles 0-1.
+                 */
+                if (role < 2)
                 {
-                    pos.Set(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ(), bot->GetMapId());
-
-                    //ostringstream out;
-                    //out << "Attacking " << (bot->GetTeam() == ALLIANCE ? "Horde FC" : "Alliance FC");
-                    //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
-                }
-                else
-                {
-                    if (role > 9)  // test patrol
+                    if (bot->GetTeam() == ALLIANCE)
                     {
-                        float rx, ry, rz;
-                        bot->GetRandomPoint(1227.446f, 1476.235f, 307.484f, 150.0f, rx, ry, rz);
-                        pos.Set(rx, ry, rz, bot->GetMapId());
-                        //ostringstream out;
-                        //out << "Patrolling battlefield";
-                        //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
+                        pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
                     }
                     else
                     {
-                        if (bot->GetTeam() == ALLIANCE)
-                            pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
-                        else
-                            pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
+                        pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
+                    }
+                }
 
-                        //ostringstream out;
-                        //out << "Going to " << (bot->GetTeam() == ALLIANCE ? "take Horde flag" : "take Alliance flag");
-                        //bot->Say(out.str().c_str(), LANG_UNIVERSAL);
+                /*
+                 * MIDFIELD
+                 *
+                 * Roles 2-4.
+                 */
+                else if (role < 5)
+                {
+                    float rx, ry, rz;
+
+                    bot->GetRandomPoint(1227.446f, 1476.235f, 307.484f, 130.0f, rx, ry, rz);
+
+                    pos.Set(rx, ry, rz, bot->GetMapId());
+                }
+
+                /*
+                 * ASSAULT
+                 *
+                 * Roles 5+ assault the enemy flag.
+                 */
+                else
+                {
+                    if (bot->GetTeam() == ALLIANCE)
+                    {
+                        pos.Set(WS_FLAG_POS_HORDE.x, WS_FLAG_POS_HORDE.y, WS_FLAG_POS_HORDE.z, bot->GetMapId());
+                    }
+                    else
+                    {
+                        pos.Set(WS_FLAG_POS_ALLIANCE.x, WS_FLAG_POS_ALLIANCE.y, WS_FLAG_POS_ALLIANCE.z, bot->GetMapId());
                     }
                 }
             }
+
+            if (pos.isSet())
+            {
+                posMap["bg objective"] = pos;
+                return true;
+            }
+
+            break;
         }
-        if (pos.isSet())
-        {
-            posMap["bg objective"] = pos;
-            return true;
-        }
-        break;
-    }
     case BATTLEGROUND_AB:
         {
             uint32 role = context->GetValue<uint32>("bg role")->Get();
