@@ -580,9 +580,9 @@ endif()
 
 if(BUILD_PLAYERBOTS)
   include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Playerbots
-    ${CMAKE_CURRENT_SOURCE_DIR}/Playerbots/playerbot
-    ${CMAKE_CURRENT_SOURCE_DIR}/Playerbots/ahbot
+    ${CMAKE_CURRENT_SOURCE_DIR}/PlayerBots
+    ${CMAKE_CURRENT_SOURCE_DIR}/PlayerBots/playerbot
+    ${CMAKE_CURRENT_SOURCE_DIR}/PlayerBots/ahbot
   )
   add_definitions(-DENABLE_PLAYERBOTS)
 endif()
@@ -637,7 +637,7 @@ target_link_libraries(game
 )
 
 if(BUILD_PLAYERBOTS)
-  add_subdirectory(Playerbots)
+  add_subdirectory(PlayerBots)
   target_link_libraries(game playerbots)
 endif()
 
