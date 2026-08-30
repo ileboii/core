@@ -14,7 +14,7 @@ namespace ai
         void Set(WorldPosition pos) { this->x = pos.x; this->y = pos.y; this->z = pos.z; this->mapId = pos.mapId; this->valueSet = true; }
         WorldPosition Get() { return WorldPosition(mapId, x, y, z); }
         void Reset() { valueSet = false; }
-        bool isSet() { return valueSet; }
+        bool isSet() const { return valueSet; }
 
     public:
         float x, y, z;

@@ -13,6 +13,7 @@
 #include "BattleGroundSA.h"
 #endif
 #include "CheckMountStateAction.h"
+#include "playerbot/strategy/values/PositionValue.h"
 
 using namespace ai;
 
@@ -80,6 +81,9 @@ private:
     uint32 getDefendersCount(Position point, float range, bool combat = true);
     bool IsLockedInsideKeep();
     bool IsAvQuester();
+    bool AvQuesterNeedsArmorer();
+    bool IsAvQuesterArmorerObjective(ai::PositionEntry const& pos);
+    bool HandleAvQuesterArmorer();
 };
 
 class ArenaTactics : public MovementAction

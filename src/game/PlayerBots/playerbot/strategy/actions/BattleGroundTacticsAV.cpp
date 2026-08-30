@@ -3,6 +3,18 @@
 #include "BattleGroundAV.h"
 #include "BattleGroundTactics.h"
 #include "BattleGroundMgr.h"
+#include "AcceptQuestAction.h"
+#include "TalkToQuestGiverAction.h"
+
+static constexpr uint32 AV_ARMOR_SCRAPS_ITEM = 17422;
+static constexpr uint32 AV_ARMOR_SCRAPS_REQUIRED = 20;
+
+static constexpr uint32 AV_ARMORER_ALLIANCE = 13257; // Murgot Deepforge
+static constexpr uint32 AV_ARMORER_HORDE = 13176; // Smith Regzar
+
+static Position const AV_ARMORER_POS_ALLIANCE = {647.61f, -61.1548f, 41.7405f, 4.24115f};
+
+static Position const AV_ARMORER_POS_HORDE = {-1251.5f, -316.327f, 62.6565f, 5.02655f};
 
 static std::tuple<uint32, uint32, std::string> AV_HordeAttackObjectives[] =
 {
@@ -581,10 +593,219 @@ bool BGTactics::IsAvQuester()
 
 bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
 {
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || !ai->IsAvQuester())
+        return false;
+
+    /*
+     * No active Armor Scraps quest, or enough scraps to turn in:
+     * return to our armorer.
+     */
+    if (AvQuesterNeedsArmorer())
+    {
+        Position const& armorerPos = bot->GetTeam() == ALLIANCE ? AV_ARMORER_POS_ALLIANCE : AV_ARMORER_POS_HORDE;
+
+        objectiveLocation = WorldLocation(bot->GetMapId(), armorerPos.x, armorerPos.y, armorerPos.z, armorerPos.o);
+
+        return true;
+    }
+
+    /*
+     * Active Armor Scraps quest:
+     *
+     * Move toward enemy-controlled graveyards/base areas where ordinary
+     * hostile faction NPCs are available to farm.
+     *
+     * Quester flag interaction is disabled separately, so walking to
+     * these locations will NOT make questers capture them.
+     */
+    std::vector<WorldLocation> farmLocations;
+
+    auto addLocation = [&](char const* name)
+    {
+        WorldLocation location;
+
+        if (sRandomPlayerbotMgr.GetNamedLocation(name, location))
+            farmLocations.push_back(location);
+    };
+
+    if (bot->GetTeam() == ALLIANCE)
+    {
+#ifndef MANGOSBOT_TWO
+        if (bg->IsActiveEvent(BG_AV_NODES_ICEBLOOD_GRAVE, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
+        {
+            addLocation("AV_ICEBLOOD_GRAVEYARD");
+        }
+
+        if (bg->IsActiveEvent(BG_AV_NODES_FROSTWOLF_GRAVE, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
+        {
+            addLocation("AV_FROSTWOLF_GRAVEYARD");
+        }
+
+        if (bg->IsActiveEvent(BG_AV_NODES_FROSTWOLF_HUT, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
+        {
+            addLocation("AV_FROSTWOLF_RELIEF_HUT");
+        }
+#else
+        if (bg->IsActiveEvent(BG_AV_NODE_GY_ICEBLOOD, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
+        {
+            addLocation("AV_ICEBLOOD_GRAVEYARD");
+        }
+
+        if (bg->IsActiveEvent(BG_AV_NODE_GY_FROSTWOLF, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
+        {
+            addLocation("AV_FROSTWOLF_GRAVEYARD");
+        }
+
+        if (bg->IsActiveEvent(BG_AV_NODE_GY_FROSTWOLF_KEEP, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
+        {
+            addLocation("AV_FROSTWOLF_RELIEF_HUT");
+        }
+#endif
+
+        // Fallback if all three happen to be contested/captured.
+        if (farmLocations.empty())
+            addLocation("AV_ICEBLOOD_GRAVEYARD");
+    }
+    else
+    {
+#ifndef MANGOSBOT_TWO
+        if (bg->IsActiveEvent(BG_AV_NODES_STONEHEART_GRAVE, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
+        {
+            addLocation("AV_STONEHEART_GRAVEYARD");
+        }
+
+        if (bg->IsActiveEvent(BG_AV_NODES_STORMPIKE_GRAVE, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
+        {
+            addLocation("AV_STORMPIKE_GRAVEYARD");
+        }
+
+        if (bg->IsActiveEvent(BG_AV_NODES_FIRSTAID_STATION, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
+        {
+            addLocation("AV_STORMPIKE_AID_STATION");
+        }
+#else
+        if (bg->IsActiveEvent(BG_AV_NODE_GY_STONEHEARTH, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
+        {
+            addLocation("AV_STONEHEART_GRAVEYARD");
+        }
+
+        if (bg->IsActiveEvent(BG_AV_NODE_GY_STORMPIKE, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
+        {
+            addLocation("AV_STORMPIKE_GRAVEYARD");
+        }
+
+        if (bg->IsActiveEvent(BG_AV_NODE_GY_DUN_BALDAR, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
+        {
+            addLocation("AV_STORMPIKE_AID_STATION");
+        }
+#endif
+
+        if (farmLocations.empty())
+            addLocation("AV_STONEHEART_GRAVEYARD");
+    }
+
+    if (farmLocations.empty())
+        return false;
+
+    objectiveLocation = farmLocations[bot->GetGUIDLow() % farmLocations.size()];
+
+    return true;
+}
+
+bool BGTactics::AvQuesterNeedsArmorer()
+{
     if (!ai->IsAvQuester())
         return false;
 
-    objectiveLocation = WorldLocation(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
+    uint32 firstQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS1 : BG_AV_QUEST_H_SCRAPS1;
+
+    uint32 repeatQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS2 : BG_AV_QUEST_H_SCRAPS2;
+
+    QuestStatus firstStatus = bot->GetQuestStatus(firstQuest);
+    QuestStatus repeatStatus = bot->GetQuestStatus(repeatQuest);
+
+    if (firstStatus == QUEST_STATUS_COMPLETE && !bot->GetQuestRewardStatus(firstQuest))
+    {
+        return true;
+    }
+
+    if (repeatStatus == QUEST_STATUS_COMPLETE)
+        return true;
+
+    bool firstActive = firstStatus == QUEST_STATUS_INCOMPLETE;
+    bool repeatActive = repeatStatus == QUEST_STATUS_INCOMPLETE;
+
+    if ((firstActive || repeatActive) && bot->GetItemCount(AV_ARMOR_SCRAPS_ITEM) >= AV_ARMOR_SCRAPS_REQUIRED)
+    {
+        return true;
+    }
+
+    if (!firstActive && !repeatActive)
+        return true;
+
+    return false;
+}
+
+bool BGTactics::IsAvQuesterArmorerObjective(ai::PositionEntry const& pos)
+{
+    if (!ai->IsAvQuester() || !pos.isSet())
+        return false;
+
+    Position const& armorerPos = bot->GetTeam() == ALLIANCE ? AV_ARMORER_POS_ALLIANCE : AV_ARMORER_POS_HORDE;
+
+    float dx = pos.x - armorerPos.x;
+    float dy = pos.y - armorerPos.y;
+    float dz = pos.z - armorerPos.z;
+
+    return (dx * dx + dy * dy + dz * dz) < 100.0f;
+}
+
+bool BGTactics::HandleAvQuesterArmorer()
+{
+    if (!ai->IsAvQuester())
+        return false;
+
+    uint32 armorerEntry = bot->GetTeam() == ALLIANCE ? AV_ARMORER_ALLIANCE : AV_ARMORER_HORDE;
+
+    Creature* armorer = bot->FindNearestCreature(armorerEntry, 60.0f, true);
+
+    if (!armorer)
+        return false;
+
+    if (!bot->IsWithinDistInMap(armorer, INTERACTION_DISTANCE))
+    {
+        return MoveNear(bot->GetMapId(), armorer->GetPositionX(), armorer->GetPositionY(), armorer->GetPositionZ(), 2.0f);
+    }
+
+    if (bot->IsMounted())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+    ai->StopMoving();
+
+    uint32 firstQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS1 : BG_AV_QUEST_H_SCRAPS1;
+
+    uint32 repeatQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS2 : BG_AV_QUEST_H_SCRAPS2;
+
+    if (bot->GetQuestStatus(firstQuest) == QUEST_STATUS_INCOMPLETE && bot->CanCompleteQuest(firstQuest))
+    {
+        bot->CompleteQuest(firstQuest);
+    }
+
+    if (bot->GetQuestStatus(repeatQuest) == QUEST_STATUS_INCOMPLETE && bot->CanCompleteQuest(repeatQuest))
+    {
+        bot->CompleteQuest(repeatQuest);
+    }
+
+    Event talkEvent("av armor scraps turnin", armorer->GetObjectGuid());
+
+    TalkToQuestGiverAction talk(ai);
+    talk.Execute(talkEvent);
+
+    Event acceptEvent("av armor scraps accept", armorer->GetObjectGuid());
+
+    AcceptAllQuestsAction accept(ai);
+    accept.Execute(acceptEvent);
 
     return true;
 }

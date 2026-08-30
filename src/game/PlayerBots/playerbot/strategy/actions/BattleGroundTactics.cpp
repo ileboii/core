@@ -4490,6 +4490,25 @@ bool BGTactics::moveToObjective()
 
     ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
 
+    if (bgType == BATTLEGROUND_AV && ai->IsAvQuester())
+    {
+        if (pos.isSet())
+        {
+            bool needsArmorer = AvQuesterNeedsArmorer();
+            bool goingToArmorer = IsAvQuesterArmorerObjective(pos);
+
+            if (needsArmorer != goingToArmorer)
+            {
+                return resetObjective();
+            }
+
+            if (goingToArmorer && HandleAvQuesterArmorer())
+            {
+                return true;
+            }
+        }
+    }
+
     if (bgType == BATTLEGROUND_AB)
         {
             uint32 botGUID = bot->GetGUIDLow();
