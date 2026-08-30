@@ -2874,6 +2874,11 @@ bool BGTactics::Execute(Event& event)
 
         if (startNewPathFree(*vPaths))
             return true;
+
+        if (bgType == BATTLEGROUND_AB)
+        {
+            ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
+        }
     }
 
     if (getName() == "use buff")
@@ -3584,10 +3589,44 @@ ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get()
                 hasObjective = true;
             }
 
-            // Convert the stable AB node ID into the banner position used by movement.
             if (hasObjective)
             {
-                ObjectGuid objectiveGuid = bg->GetSingleGameObjectGuid(BgObjectiveNode, BG_AB_NODE_STATUS_NEUTRAL);
+                uint8 objectiveStatus = BG_AB_NODE_STATUS_NEUTRAL;
+                bool foundStatus = true;
+
+                if (bg->IsActiveEvent(BgObjectiveNode, BG_AB_NODE_STATUS_NEUTRAL))
+                {
+                    objectiveStatus = BG_AB_NODE_STATUS_NEUTRAL;
+                }
+                else if (bg->IsActiveEvent(BgObjectiveNode, BG_AB_NODE_STATUS_ALLY_CONTESTED))
+                {
+                    objectiveStatus = BG_AB_NODE_STATUS_ALLY_CONTESTED;
+                }
+                else if (bg->IsActiveEvent(BgObjectiveNode, BG_AB_NODE_STATUS_HORDE_CONTESTED))
+                {
+                    objectiveStatus = BG_AB_NODE_STATUS_HORDE_CONTESTED;
+                }
+                else if (bg->IsActiveEvent(BgObjectiveNode, BG_AB_NODE_STATUS_ALLY_OCCUPIED))
+                {
+                    objectiveStatus = BG_AB_NODE_STATUS_ALLY_OCCUPIED;
+                }
+                else if (bg->IsActiveEvent(BgObjectiveNode, BG_AB_NODE_STATUS_HORDE_OCCUPIED))
+                {
+                    objectiveStatus = BG_AB_NODE_STATUS_HORDE_OCCUPIED;
+                }
+                else
+                {
+                    foundStatus = false;
+                }
+
+                if (!foundStatus)
+                {
+                    botSelectedObjectives.erase(botGUID);
+                    botObjectiveSelectionTime.erase(botGUID);
+                    return false;
+                }
+
+                ObjectGuid objectiveGuid = bg->GetSingleGameObjectGuid(BgObjectiveNode, objectiveStatus);
 
                 GameObject* BgObjective = bot->GetMap()->GetGameObject(objectiveGuid);
 
