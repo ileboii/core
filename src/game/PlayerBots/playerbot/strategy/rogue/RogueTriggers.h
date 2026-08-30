@@ -132,44 +132,52 @@ namespace ai
                 return false;
             }
 
-            Unit* target = AI_VALUE(Unit*, "enemy player target");
+            // Unit calculated values cache raw Unit pointers.
+            // Force target values to be recalculated before using them so we do not
+            // use a unit that has despawned or left the battleground.
+            auto* targetValue = context->GetValue<Unit*>("enemy player target");
+            targetValue->Reset();
+            Unit* target = targetValue->Get();
+
             if (!target)
             {
-                target = AI_VALUE(Unit*, "grind target");
+                targetValue = context->GetValue<Unit*>("grind target");
+                targetValue->Reset();
+                target = targetValue->Get();
             }
+
             if (!target)
             {
-                target = AI_VALUE(Unit*, "dps target");
+                targetValue = context->GetValue<Unit*>("dps target");
+                targetValue->Reset();
+                target = targetValue->Get();
             }
+
             if (!target)
-            {
                 return false;
-            }
+
+            if (!target->IsInWorld() || target->GetMapId() != bot->GetMapId())
+                return false;
 
             float distance = 30.0f;
-            if (target && target->GetVictim())
-            {
-                distance -= 10;
-            }
 
-            if (sServerFacade.isMoving(target) && target->GetVictim())
-            {
+            Unit* victim = target->GetVictim();
+
+            if (victim)
                 distance -= 10;
-            }
+
+            if (victim && sServerFacade.isMoving(target))
+                distance -= 10;
 
             if (bot->InBattleGround())
-            {
                 distance += 20;
-            }
 
 #ifndef MANGOSBOT_ZERO
             if (bot->InArena())
-            {
                 distance += 20;
-            }
 #endif
 
-            return (target && sServerFacade.GetDistance2d(bot, target) < distance);
+            return sServerFacade.GetDistance2d(bot, target) < distance;
         }
     };
 
