@@ -95,6 +95,11 @@ private:
     bool HasAvRiderHideToTurnIn();
     bool SelectAvRiderHideObjective(WorldLocation& objectiveLocation);
     bool TurnInAvRiderHide();
+    bool SelectAvWingCommanderObjective(WorldLocation& objectiveLocation);
+    bool HandleAvWingCommander();
+    bool SelectAvAirBeaconObjective(WorldLocation& objectiveLocation);
+    bool HandleAvAirBeaconAtCommander();
+    bool PlantAvAirBeacon();
 };
 
 class ArenaTactics : public MovementAction

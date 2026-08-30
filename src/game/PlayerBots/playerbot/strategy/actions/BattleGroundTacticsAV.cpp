@@ -15,6 +15,8 @@ namespace
         AvQuestItemUseAction(PlayerbotAI* botAI) : ai::UseAction(botAI, "av quest item use") {}
 
         bool UseOnUnit(uint32 itemId, Unit* target) { return UseItem(nullptr, itemId, target); }
+
+        bool UseNoTarget(uint32 itemId) { return UseItem(nullptr, itemId, static_cast<Unit*>(nullptr)); }
     };
 }
 
@@ -46,9 +48,57 @@ static constexpr uint32 AV_FROSTWOLF_STABLE_MASTER = 13616;
 static constexpr uint32 AV_STORMPIKE_RAM_RIDER_COMMANDER = 13577;
 static constexpr uint32 AV_FROSTWOLF_WOLF_RIDER_COMMANDER = 13441;
 
+static constexpr uint32 AV_WC_SLIDORE = 13438;
+static constexpr uint32 AV_WC_VIPORE = 13439;
+static constexpr uint32 AV_WC_ICHMAN = 13437;
+
+static constexpr uint32 AV_WC_GUSE = 13179;
+static constexpr uint32 AV_WC_JEZTOR = 13180;
+static constexpr uint32 AV_WC_MULVERICK = 13181;
+
+static constexpr uint32 AV_FROSTWOLF_SOLDIER_MEDAL = 17502;
+static constexpr uint32 AV_FROSTWOLF_LIEUTENANT_MEDAL = 17503;
+static constexpr uint32 AV_FROSTWOLF_COMMANDER_MEDAL = 17504;
+
+static constexpr uint32 AV_STORMPIKE_SOLDIER_FLESH = 17326;
+static constexpr uint32 AV_STORMPIKE_LIEUTENANT_FLESH = 17327;
+static constexpr uint32 AV_STORMPIKE_COMMANDER_FLESH = 17328;
+
+static constexpr uint32 AV_SLIDORE_BEACON = 17507;
+static constexpr uint32 AV_VIPORE_BEACON = 17506;
+static constexpr uint32 AV_ICHMAN_BEACON = 17505;
+
+static constexpr uint32 AV_GUSE_BEACON = 17324;
+static constexpr uint32 AV_JEZTOR_BEACON = 17325;
+static constexpr uint32 AV_MULVERICK_BEACON = 17323;
+
+static constexpr uint32 AV_AllianceAirBeacons[3] = {AV_SLIDORE_BEACON, AV_VIPORE_BEACON, AV_ICHMAN_BEACON};
+
+static constexpr uint32 AV_HordeAirBeacons[3] = {AV_GUSE_BEACON, AV_JEZTOR_BEACON, AV_MULVERICK_BEACON};
+
+static constexpr uint32 AV_AirBeaconAssaults[3] = {BG_AV_AIR_ASSAULT_BEACON_SOLDIER, BG_AV_AIR_ASSAULT_BEACON_LIEUTENANT, BG_AV_AIR_ASSAULT_BEACON_COMMANDER};
+
 static Position const AV_ARMORER_POS_ALLIANCE = {647.61f, -61.1548f, 41.7405f, 4.24115f};
 
 static Position const AV_ARMORER_POS_HORDE = {-1251.5f, -316.327f, 62.6565f, 5.02655f};
+
+static Position const AV_AIR_BEACON_EAST = {-294.669f, -283.616f, 6.66756f, 0.0f};
+
+static Position const AV_AIR_BEACON_WEST = {-244.919f, -272.520f, 6.66754f, 0.0f};
+
+static Position const AV_AIR_BEACON_SNOWFALL = {-205.464f, -114.337f, 78.6167f, 0.0f};
+
+struct AvWingCommanderInfo
+{
+    uint32 entry;
+    uint32 questId;
+    uint32 itemId;
+    char const* rescueLocation;
+};
+
+static AvWingCommanderInfo const AV_AllianceWingCommanders[3] = {{AV_WC_SLIDORE, BG_AV_QUEST_A_COMMANDER1, AV_FROSTWOLF_SOLDIER_MEDAL, "AV_TOWERPOINT"}, {AV_WC_VIPORE, BG_AV_QUEST_A_COMMANDER2, AV_FROSTWOLF_LIEUTENANT_MEDAL, "AV_FROSTWOLF_RELIEF_HUT"}, {AV_WC_ICHMAN, BG_AV_QUEST_A_COMMANDER3, AV_FROSTWOLF_COMMANDER_MEDAL, "AV_WEST_FROSTWOLF_TOWER"}};
+
+static AvWingCommanderInfo const AV_HordeWingCommanders[3] = {{AV_WC_GUSE, BG_AV_QUEST_H_COMMANDER1, AV_STORMPIKE_SOLDIER_FLESH, "AV_ICEWING_BUNKER"}, {AV_WC_JEZTOR, BG_AV_QUEST_H_COMMANDER2, AV_STORMPIKE_LIEUTENANT_FLESH, "AV_ICEWING_BUNKER"}, {AV_WC_MULVERICK, BG_AV_QUEST_H_COMMANDER3, AV_STORMPIKE_COMMANDER_FLESH, "AV_DUNBALDAR_NORTH"}};
 
 static std::tuple<uint32, uint32, std::string> AV_HordeAttackObjectives[] =
 {
@@ -509,6 +559,15 @@ bool BGTactics::CheckFlagAv()
 
     if (IsAvQuester())
     {
+        if (PlantAvAirBeacon())
+            return true;
+
+        if (HandleAvAirBeaconAtCommander())
+            return true;
+
+        if (HandleAvWingCommander())
+            return true;
+
         if (HandleAvEmptyStablesAtStableMaster())
             return true;
 
@@ -639,7 +698,7 @@ bool BGTactics::IsAvQuester()
     if (bot->GetLevel() < 51 || bot->GetLevel() > 59)
         return false;
 
-    return (bot->GetGUIDLow() % 5) == 0;
+    return (bot->GetGUIDLow() % 5) <= 4;
 }
 
 bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
@@ -647,6 +706,12 @@ bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
     BattleGround* bg = bot->GetBattleGround();
     if (!bg || !ai->IsAvQuester())
         return false;
+
+    if (SelectAvAirBeaconObjective(objectiveLocation))
+        return true;
+
+    if (SelectAvWingCommanderObjective(objectiveLocation))
+        return true;
 
     if (SelectAvMineSupplyTurnInObjective(objectiveLocation))
         return true;
@@ -1481,4 +1546,533 @@ bool BGTactics::TurnInAvRiderHide()
     }
 
     return false;
+}
+
+bool BGTactics::SelectAvWingCommanderObjective(WorldLocation& objectiveLocation)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    AvWingCommanderInfo const* commanders = bot->GetTeam() == ALLIANCE ? AV_AllianceWingCommanders : AV_HordeWingCommanders;
+
+    char const* homeLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+
+    for (uint32 i = 0; i < 3; ++i)
+    {
+        QuestStatus status = bot->GetQuestStatus(commanders[i].questId);
+
+        bool hasResource = bot->HasItemCount(commanders[i].itemId, 1);
+
+        if (status != QUEST_STATUS_COMPLETE && !(status == QUEST_STATUS_INCOMPLETE && hasResource))
+        {
+            continue;
+        }
+
+        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+        {
+            Creature* commander = ai->GetCreature(guid);
+            if (!commander)
+                continue;
+
+            if (commander->GetEntry() != commanders[i].entry)
+                continue;
+
+            objectiveLocation = WorldLocation(commander->GetMapId(), commander->GetPositionX(), commander->GetPositionY(), commander->GetPositionZ(), commander->GetOrientation());
+
+            return true;
+        }
+
+        return sRandomPlayerbotMgr.GetNamedLocation(homeLocation, objectiveLocation);
+    }
+
+    uint32 rescueIndex = bot->GetGUIDLow() % 3;
+
+    for (uint32 i = 0; i < 3; ++i)
+    {
+        if (bot->GetQuestStatus(commanders[i].questId) == QUEST_STATUS_NONE && bot->HasItemCount(commanders[i].itemId, 1))
+        {
+            rescueIndex = i;
+            break;
+        }
+    }
+
+    AvWingCommanderInfo const& target = commanders[rescueIndex];
+
+    if (bot->GetQuestStatus(target.questId) != QUEST_STATUS_NONE)
+        return false;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* commander = ai->GetCreature(guid);
+        if (!commander)
+            continue;
+
+        if (commander->GetEntry() != target.entry)
+            continue;
+
+        objectiveLocation = WorldLocation(commander->GetMapId(), commander->GetPositionX(), commander->GetPositionY(), commander->GetPositionZ(), commander->GetOrientation());
+
+        return true;
+    }
+
+    WorldLocation rescueLocation;
+
+    if (!sRandomPlayerbotMgr.GetNamedLocation(target.rescueLocation, rescueLocation))
+    {
+        return false;
+    }
+
+    float dx = bot->GetPositionX() - rescueLocation.x;
+    float dy = bot->GetPositionY() - rescueLocation.y;
+
+    if ((dx * dx + dy * dy) < (VISIBILITY_DISTANCE_LARGE * VISIBILITY_DISTANCE_LARGE))
+    {
+        return false;
+    }
+
+    objectiveLocation = rescueLocation;
+    return true;
+}
+
+bool BGTactics::HandleAvWingCommander()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    AvWingCommanderInfo const* commanders = bot->GetTeam() == ALLIANCE ? AV_AllianceWingCommanders : AV_HordeWingCommanders;
+
+    char const* homeLocationName = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+
+    WorldLocation homeLocation;
+    bool hasHomeLocation = sRandomPlayerbotMgr.GetNamedLocation(homeLocationName, homeLocation);
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* commander = ai->GetCreature(guid);
+        if (!commander)
+            continue;
+
+        AvWingCommanderInfo const* info = nullptr;
+
+        for (uint32 i = 0; i < 3; ++i)
+        {
+            if (commanders[i].entry == commander->GetEntry())
+            {
+                info = &commanders[i];
+                break;
+            }
+        }
+
+        if (!info)
+            continue;
+
+        if (!bot->IsWithinDistInMap(commander, INTERACTION_DISTANCE))
+        {
+            continue;
+        }
+
+        if (bot->IsMounted())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+        ai->StopMoving();
+
+        QuestStatus status = bot->GetQuestStatus(info->questId);
+
+        if (status == QUEST_STATUS_COMPLETE)
+        {
+            Event turnInEvent("av wing commander turn in", commander->GetObjectGuid(), bot);
+
+            bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
+
+            if (!turnedIn)
+                continue;
+
+            Event acceptEvent("av wing commander reaccept", commander->GetObjectGuid(), bot);
+
+            ai->DoSpecificAction("accept all quests", acceptEvent, true);
+
+            ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+            ai::PositionEntry pos = posMap["bg objective"];
+
+            pos.Reset();
+            posMap["bg objective"] = pos;
+
+            return true;
+        }
+
+        if (status == QUEST_STATUS_INCOMPLETE)
+            continue;
+
+        Event acceptEvent("av wing commander accept", commander->GetObjectGuid(), bot);
+
+        if (ai->DoSpecificAction("accept all quests", acceptEvent, true))
+        {
+            ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+            ai::PositionEntry pos = posMap["bg objective"];
+
+            pos.Reset();
+            posMap["bg objective"] = pos;
+
+            return true;
+        }
+
+
+        bool commanderNearHome = false;
+
+        if (hasHomeLocation)
+        {
+            float dx = commander->GetPositionX() - homeLocation.x;
+
+            float dy = commander->GetPositionY() - homeLocation.y;
+
+            commanderNearHome = (dx * dx + dy * dy) < (VISIBILITY_DISTANCE_LARGE * VISIBILITY_DISTANCE_LARGE);
+        }
+
+        if (commanderNearHome)
+            continue;
+
+        WorldPacket hello;
+        hello << commander->GetObjectGuid();
+
+        bot->GetSession()->HandleGossipHelloOpcode(MakeTypedPacket<WorldPackets::Npc::GossipHello>(hello));
+
+        if (!bot->PlayerTalkClass)
+            continue;
+
+        GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
+
+        if (!menu.MenuItemCount())
+            continue;
+
+        int rescueOption = -1;
+
+        for (uint32 i = 0; i < menu.MenuItemCount(); ++i)
+        {
+            GossipMenuItem const& item = menu.GetItem(i);
+
+            std::string const& text = item.m_gMessage;
+
+            if (text.find("covered") != std::string::npos || text.find("got your back") != std::string::npos || text.find("count on me") != std::string::npos || text.find("wingman") != std::string::npos || text.find("Move out") != std::string::npos)
+            {
+                rescueOption = (int)i;
+                break;
+            }
+        }
+
+        if (rescueOption < 0 && menu.MenuItemCount() == 1)
+        {
+            rescueOption = 0;
+        }
+
+        if (rescueOption < 0)
+            continue;
+
+        WorldPacket select;
+        select << commander->GetObjectGuid();
+
+#ifdef MANGOSBOT_ZERO
+        select << rescueOption;
+#else
+        select << menu.GetMenuId() << rescueOption;
+#endif
+
+        std::string code;
+        select << code;
+
+        bot->GetSession()->HandleGossipSelectOptionOpcode(MakeTypedPacket<WorldPackets::Npc::GossipSelectOption>(select));
+
+        bot->TalkedToCreature(commander->GetEntry(), commander->GetObjectGuid());
+
+        ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+        ai::PositionEntry pos = posMap["bg objective"];
+
+        pos.Reset();
+        posMap["bg objective"] = pos;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool BGTactics::SelectAvAirBeaconObjective(WorldLocation& objectiveLocation)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    BattleGroundAV* av = static_cast<BattleGroundAV*>(bg);
+
+    uint32 const* beaconItems = bot->GetTeam() == ALLIANCE ? AV_AllianceAirBeacons : AV_HordeAirBeacons;
+
+    for (uint32 i = 0; i < 3; ++i)
+    {
+        if (!bot->HasItemCount(beaconItems[i], 1))
+            continue;
+
+        Position const* deployment = nullptr;
+
+        switch (i)
+        {
+        case 0:
+            deployment = &AV_AIR_BEACON_EAST;
+            break;
+
+        case 1:
+            deployment = &AV_AIR_BEACON_WEST;
+            break;
+
+        case 2:
+            deployment = &AV_AIR_BEACON_SNOWFALL;
+            break;
+        }
+
+        if (!deployment)
+            return false;
+
+        objectiveLocation = WorldLocation(bot->GetMapId(), deployment->x, deployment->y, deployment->z, deployment->o);
+
+        return true;
+    }
+
+    uint32 commanderIndex = bot->GetGUIDLow() % 3;
+
+    uint32 assaultId = AV_AirBeaconAssaults[commanderIndex];
+
+    uint32 teamIdx = BattleGroundAV::GetAVTeamIndexByTeamId(bot->GetTeam());
+
+    if (!av->isAerialChallengeInvocationReady(teamIdx, assaultId))
+    {
+        return false;
+    }
+
+    uint32 factionId = bot->GetTeam() == ALLIANCE ? BG_AV_FACTION_A : BG_AV_FACTION_H;
+
+    if (bot->GetReputationRank(factionId) < av->getMinReputationNeeded(assaultId))
+    {
+        return false;
+    }
+
+    AvWingCommanderInfo const* commanders = bot->GetTeam() == ALLIANCE ? AV_AllianceWingCommanders : AV_HordeWingCommanders;
+
+    uint32 commanderEntry = commanders[commanderIndex].entry;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* commander = ai->GetCreature(guid);
+
+        if (!commander)
+            continue;
+
+        if (commander->GetEntry() != commanderEntry)
+            continue;
+
+        objectiveLocation = WorldLocation(commander->GetMapId(), commander->GetPositionX(), commander->GetPositionY(), commander->GetPositionZ(), commander->GetOrientation());
+
+        return true;
+    }
+
+    char const* homeLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+
+    return sRandomPlayerbotMgr.GetNamedLocation(homeLocation, objectiveLocation);
+}
+
+bool BGTactics::HandleAvAirBeaconAtCommander()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    BattleGroundAV* av = static_cast<BattleGroundAV*>(bg);
+
+    uint32 const* beaconItems = bot->GetTeam() == ALLIANCE ? AV_AllianceAirBeacons : AV_HordeAirBeacons;
+
+    /*
+     * Never collect a second beacon while carrying one.
+     *
+     * The beacon items share a long cooldown.
+     */
+    for (uint32 i = 0; i < 3; ++i)
+    {
+        if (bot->HasItemCount(beaconItems[i], 1))
+            return false;
+    }
+
+    uint32 commanderIndex = bot->GetGUIDLow() % 3;
+
+    uint32 assaultId = AV_AirBeaconAssaults[commanderIndex];
+
+    uint32 teamIdx = BattleGroundAV::GetAVTeamIndexByTeamId(bot->GetTeam());
+
+    if (!av->isAerialChallengeInvocationReady(teamIdx, assaultId))
+    {
+        return false;
+    }
+
+    uint32 factionId = bot->GetTeam() == ALLIANCE ? BG_AV_FACTION_A : BG_AV_FACTION_H;
+
+    if (bot->GetReputationRank(factionId) < av->getMinReputationNeeded(assaultId))
+    {
+        return false;
+    }
+
+    AvWingCommanderInfo const* commanders = bot->GetTeam() == ALLIANCE ? AV_AllianceWingCommanders : AV_HordeWingCommanders;
+
+    uint32 commanderEntry = commanders[commanderIndex].entry;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* commander = ai->GetCreature(guid);
+
+        if (!commander)
+            continue;
+
+        if (commander->GetEntry() != commanderEntry)
+            continue;
+
+        if (!bot->IsWithinDistInMap(commander, INTERACTION_DISTANCE))
+        {
+            continue;
+        }
+
+        if (bot->IsMounted())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+        ai->StopMoving();
+
+        WorldPacket hello;
+        hello << commander->GetObjectGuid();
+
+        bot->GetSession()->HandleGossipHelloOpcode(MakeTypedPacket<WorldPackets::Npc::GossipHello>(hello));
+
+        if (!bot->PlayerTalkClass)
+            return false;
+
+        GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
+
+        int beaconOption = -1;
+
+        for (uint32 i = 0; i < menu.MenuItemCount(); ++i)
+        {
+            GossipMenuItem const& item = menu.GetItem(i);
+
+            std::string const& text = item.m_gMessage;
+
+            if (text.find("beacon") != std::string::npos || text.find("Beacon") != std::string::npos)
+            {
+                beaconOption = (int)i;
+                break;
+            }
+        }
+
+        if (beaconOption < 0)
+            return false;
+
+        WorldPacket select;
+        select << commander->GetObjectGuid();
+
+#ifdef MANGOSBOT_ZERO
+        select << beaconOption;
+#else
+        select << menu.GetMenuId() << beaconOption;
+#endif
+
+        std::string code;
+        select << code;
+
+        bot->GetSession()->HandleGossipSelectOptionOpcode(MakeTypedPacket<WorldPackets::Npc::GossipSelectOption>(select));
+
+        bot->TalkedToCreature(commander->GetEntry(), commander->GetObjectGuid());
+
+        ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+        ai::PositionEntry pos = posMap["bg objective"];
+
+        pos.Reset();
+        posMap["bg objective"] = pos;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool BGTactics::PlantAvAirBeacon()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    uint32 const* beaconItems = bot->GetTeam() == ALLIANCE ? AV_AllianceAirBeacons : AV_HordeAirBeacons;
+
+    uint32 beaconItem = 0;
+    Position const* deployment = nullptr;
+
+    for (uint32 i = 0; i < 3; ++i)
+    {
+        if (!bot->HasItemCount(beaconItems[i], 1))
+            continue;
+
+        beaconItem = beaconItems[i];
+
+        switch (i)
+        {
+        case 0:
+            deployment = &AV_AIR_BEACON_EAST;
+            break;
+
+        case 1:
+            deployment = &AV_AIR_BEACON_WEST;
+            break;
+
+        case 2:
+            deployment = &AV_AIR_BEACON_SNOWFALL;
+            break;
+        }
+
+        break;
+    }
+
+    if (!beaconItem || !deployment)
+        return false;
+
+    if (bot->GetDistance(deployment->x, deployment->y, deployment->z) > 12.0f)
+    {
+        return false;
+    }
+
+    if (bot->IsMounted())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+    if (bot->IsInDisallowedMountForm())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+    ai->StopMoving();
+
+    AvQuestItemUseAction useAction(ai);
+
+    bool used = useAction.UseNoTarget(beaconItem);
+
+    if (!used)
+        return false;
+
+    ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+    ai::PositionEntry pos = posMap["bg objective"];
+
+    pos.Reset();
+    posMap["bg objective"] = pos;
+
+    return true;
 }
