@@ -84,6 +84,8 @@ private:
     bool AvQuesterNeedsArmorer();
     bool IsAvQuesterArmorerObjective(ai::PositionEntry const& pos);
     bool HandleAvQuesterArmorer();
+    bool LootAvMineSupplies();
+    bool SelectAvMineSupplyObjective(WorldLocation& objectiveLocation);
 };
 
 class ArenaTactics : public MovementAction

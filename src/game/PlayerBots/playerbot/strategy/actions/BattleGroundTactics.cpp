@@ -3180,29 +3180,41 @@ ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get()
     switch (bgType)
     {
     case BATTLEGROUND_AV:
-    {
-        bool hasObjective = false;
-        WorldLocation objectiveLocation;
-
-        switch (bot->GetTeam())
         {
-            case ALLIANCE: hasObjective = SelectAvObjectiveAlliance(objectiveLocation); break;
-            case HORDE: hasObjective = SelectAvObjectiveHorde(objectiveLocation); break;
-        }
+            bool hasObjective = false;
+            WorldLocation objectiveLocation;
 
-        if (hasObjective)
-        {
-            if (!pos.isSet())
+            if (ai->IsAvQuester())
             {
-                pos.Set(objectiveLocation.x, objectiveLocation.y, objectiveLocation.z, objectiveLocation.mapId);
+                hasObjective = SelectAvMineSupplyObjective(objectiveLocation);
+            }
+            else
+            {
+                switch (bot->GetTeam())
+                {
+                case ALLIANCE:
+                    hasObjective = SelectAvObjectiveAlliance(objectiveLocation);
+                    break;
+
+                case HORDE:
+                    hasObjective = SelectAvObjectiveHorde(objectiveLocation);
+                    break;
+                }
             }
 
-            posMap["bg objective"] = pos;
+            if (hasObjective)
+            {
+                if (!pos.isSet())
+                {
+                    pos.Set(objectiveLocation.x, objectiveLocation.y, objectiveLocation.z, objectiveLocation.mapId);
+                }
 
-            return true;
+                posMap["bg objective"] = pos;
+                return true;
+            }
+
+            break;
         }
-        break;
-    }
     case BATTLEGROUND_WS:
         {
             uint32 role = context->GetValue<uint32>("bg role")->Get();
@@ -4622,14 +4634,38 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         maxDistanceToPoint = 80.0f;
 #endif
 
+    bool allowOwnMinePath = false;
+
+    if (bgType == BATTLEGROUND_AV)
+    {
+        if (bot->GetTeam() == ALLIANCE)
+        {
+            float dx = pos.x - 881.273f;
+            float dy = pos.y - (-442.002f);
+
+            allowOwnMinePath = (dx * dx + dy * dy) < (100.0f * 100.0f);
+        }
+        else
+        {
+            float dx = pos.x - (-853.671f);
+            float dy = pos.y - (-91.427f);
+
+            allowOwnMinePath = (dx * dx + dy * dy) < (100.0f * 100.0f);
+        }
+    }
+
     for (const auto& pPath : vPaths)
     {
         // skip mine paths of own faction
-        if (bot->GetTeam() == ALLIANCE && std::find(vPaths_AllyMine.begin(), vPaths_AllyMine.end(), pPath) != vPaths_AllyMine.end())
+        if (!allowOwnMinePath && bot->GetTeam() == ALLIANCE && std::find(vPaths_AllyMine.begin(), vPaths_AllyMine.end(), pPath) != vPaths_AllyMine.end())
+        {
             continue;
+        }
 
-        if (bot->GetTeam() == HORDE && std::find(vPaths_HordeMine.begin(), vPaths_HordeMine.end(), pPath) != vPaths_HordeMine.end())
+        if (!allowOwnMinePath && bot->GetTeam() == HORDE && std::find(vPaths_HordeMine.begin(), vPaths_HordeMine.end(), pPath) != vPaths_HordeMine.end())
+        {
             continue;
+        }
 
         float closestDistanceFromMeToPoint = FLT_MAX;
         uint32 nearestPoint = 0;

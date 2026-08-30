@@ -9,6 +9,10 @@
 static constexpr uint32 AV_ARMOR_SCRAPS_ITEM = 17422;
 static constexpr uint32 AV_ARMOR_SCRAPS_REQUIRED = 20;
 
+static constexpr uint32 AV_IRONDEEP_SUPPLIES_ITEM = 17522;
+static constexpr uint32 AV_COLDTOOTH_SUPPLIES_ITEM = 17542;
+static constexpr uint32 AV_MINE_SUPPLIES_REQUIRED = 10;
+
 static constexpr uint32 AV_ARMORER_ALLIANCE = 13257; // Murgot Deepforge
 static constexpr uint32 AV_ARMORER_HORDE = 13176; // Smith Regzar
 
@@ -807,5 +811,111 @@ bool BGTactics::HandleAvQuesterArmorer()
     AcceptAllQuestsAction accept(ai);
     accept.Execute(acceptEvent);
 
+    return true;
+}
+
+bool BGTactics::LootAvMineSupplies()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    BattleGroundAV* av = static_cast<BattleGroundAV*>(bg);
+
+    for (auto closeGameObjectGuid : (*context->GetValue<std::list<ObjectGuid>>("closest game objects static los")).Get())
+    {
+        GameObject* go = ai->GetGameObject(closeGameObjectGuid);
+        if (!go)
+            continue;
+
+        uint32 itemId = 0;
+        uint32 questId = 0;
+
+        switch (go->GetEntry())
+        {
+        case BG_AV_OBJECTID_MINE_N:
+            itemId = AV_IRONDEEP_SUPPLIES_ITEM;
+
+            questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_NEAR_MINE : BG_AV_QUEST_H_OTHER_MINE;
+            break;
+
+        case BG_AV_OBJECTID_MINE_S:
+            itemId = AV_COLDTOOTH_SUPPLIES_ITEM;
+
+            questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_OTHER_MINE : BG_AV_QUEST_H_NEAR_MINE;
+            break;
+
+        default:
+            continue;
+        }
+
+        if (bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE)
+            continue;
+
+        if (bot->HasItemCount(itemId, AV_MINE_SUPPLIES_REQUIRED))
+            continue;
+
+        if (!av->PlayerCanDoMineQuest(go->GetEntry(), bot->GetTeam()))
+            continue;
+
+        if (!sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY)
+            continue;
+
+        if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))
+            continue;
+
+        if (bot->IsMounted())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+        ai->StopMoving();
+
+        SET_AI_VALUE(LootObject, "loot target", LootObject(bot, go->GetObjectGuid()));
+
+        Event event("av mine supplies", go->GetObjectGuid(), bot);
+
+        return ai->DoSpecificAction("open loot", event, true);
+    }
+
+    return false;
+}
+
+bool BGTactics::SelectAvMineSupplyObjective(WorldLocation& objectiveLocation)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    BattleGroundAV* av = static_cast<BattleGroundAV*>(bg);
+
+    uint32 northQuestId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_NEAR_MINE : BG_AV_QUEST_H_OTHER_MINE;
+
+    uint32 southQuestId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_OTHER_MINE : BG_AV_QUEST_H_NEAR_MINE;
+
+    bool needIrondeep = bot->GetQuestStatus(northQuestId) == QUEST_STATUS_INCOMPLETE && !bot->HasItemCount(AV_IRONDEEP_SUPPLIES_ITEM, AV_MINE_SUPPLIES_REQUIRED) && av->PlayerCanDoMineQuest(BG_AV_OBJECTID_MINE_N, bot->GetTeam());
+
+    bool needColdtooth = bot->GetQuestStatus(southQuestId) == QUEST_STATUS_INCOMPLETE && !bot->HasItemCount(AV_COLDTOOTH_SUPPLIES_ITEM, AV_MINE_SUPPLIES_REQUIRED) && av->PlayerCanDoMineQuest(BG_AV_OBJECTID_MINE_S, bot->GetTeam());
+
+    if (!needIrondeep && !needColdtooth)
+        return false;
+
+    WorldLocation irondeep(bot->GetMapId(), 881.273f, -442.002f, 54.664f, 0.0f);
+
+    WorldLocation coldtooth(bot->GetMapId(), -853.671f, -91.427f, 68.569f, 0.0f);
+
+    if (needIrondeep && needColdtooth)
+    {
+        float irondeepDist = bot->GetDistance(irondeep.x, irondeep.y, irondeep.z);
+
+        float coldtoothDist = bot->GetDistance(coldtooth.x, coldtooth.y, coldtooth.z);
+
+        objectiveLocation = irondeepDist <= coldtoothDist ? irondeep : coldtooth;
+
+        return true;
+    }
+
+    objectiveLocation = needIrondeep ? irondeep : coldtooth;
     return true;
 }
