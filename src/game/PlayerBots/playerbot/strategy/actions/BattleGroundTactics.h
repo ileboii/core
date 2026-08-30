@@ -92,6 +92,9 @@ private:
     bool TameAvStableAnimal();
     bool SelectAvEmptyStablesObjective(WorldLocation& objectiveLocation);
     bool HandleAvEmptyStablesAtStableMaster();
+    bool HasAvRiderHideToTurnIn();
+    bool SelectAvRiderHideObjective(WorldLocation& objectiveLocation);
+    bool TurnInAvRiderHide();
 };
 
 class ArenaTactics : public MovementAction

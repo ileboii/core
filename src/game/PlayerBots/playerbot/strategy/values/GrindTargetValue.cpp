@@ -16,6 +16,12 @@ using namespace ai;
 static constexpr uint32 AV_ARMOR_SCRAPS_ITEM = 17422;
 static constexpr uint32 AV_ARMOR_SCRAPS_REQUIRED = 20;
 
+static constexpr uint32 AV_FROSTWOLF_HIDE_ITEM = 17643;
+static constexpr uint32 AV_ALTERAC_RAM_HIDE_ITEM = 17642;
+
+static constexpr uint32 AV_FROSTWOLF_NPC = 10981;
+static constexpr uint32 AV_ALTERAC_RAM_NPC = 10990;
+
 Unit* GrindTargetValue::Calculate()
 {
     uint32 memberCount = 1;
@@ -100,11 +106,17 @@ for (std::list<ObjectGuid>::iterator tIter = targets.begin(); tIter != targets.e
         if (!unit)
             continue;
 
-        // Exception for AV
-        // Remember to include non-hostiles for AV quests later!!!
         if (bot->InBattleGround() && bot->GetBattleGroundTypeId() == BATTLEGROUND_AV && !sServerFacade.IsHostileTo(bot, unit))
         {
-            continue;
+            bool riderHideTarget = false;
+
+            if (ai->IsAvQuester() && bot->GetTeam() == HORDE)
+            {
+                riderHideTarget = bot->GetQuestStatus(BG_AV_QUEST_H_RIDER_HIDE) == QUEST_STATUS_INCOMPLETE && bot->GetItemCount(AV_ALTERAC_RAM_HIDE_ITEM) < 1 && unit->GetEntry() == AV_ALTERAC_RAM_NPC;
+            }
+
+            if (!riderHideTarget)
+                continue;
         }
 
 #ifdef MANGOSBOT_TWO 
@@ -200,41 +212,37 @@ for (std::list<ObjectGuid>::iterator tIter = targets.begin(); tIter != targets.e
 
         if (isAlteracValley && ai->IsAvQuester())
         {
-            uint32 firstQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS1 : BG_AV_QUEST_H_SCRAPS1;
+            uint32 riderQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_HIDE : BG_AV_QUEST_H_RIDER_HIDE;
 
-            uint32 repeatQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS2 : BG_AV_QUEST_H_SCRAPS2;
+            uint32 riderHide = bot->GetTeam() == ALLIANCE ? AV_FROSTWOLF_HIDE_ITEM : AV_ALTERAC_RAM_HIDE_ITEM;
 
-            bool collectingArmorScraps = bot->GetQuestStatus(firstQuest) == QUEST_STATUS_INCOMPLETE || bot->GetQuestStatus(repeatQuest) == QUEST_STATUS_INCOMPLETE;
+            uint32 riderAnimal = bot->GetTeam() == ALLIANCE ? AV_FROSTWOLF_NPC : AV_ALTERAC_RAM_NPC;
 
-            if (!collectingArmorScraps || bot->GetItemCount(AV_ARMOR_SCRAPS_ITEM) >= AV_ARMOR_SCRAPS_REQUIRED)
+            bool collectingRiderHide = bot->GetQuestStatus(riderQuest) == QUEST_STATUS_INCOMPLETE && bot->GetItemCount(riderHide) < 1;
+
+            
+            if (collectingRiderHide)
             {
-                continue;
+                if (!creature || creature->GetEntry() != riderAnimal)
+                    continue;
             }
-
-            if (!creature || !creature->GetCreatureInfo())
-                continue;
-
-            if (creature->GetCreatureType() != CREATURE_TYPE_HUMANOID)
-                continue;
-
-            if (creature->GetCreatureInfo()->rank > CREATURE_ELITE_NORMAL)
-                continue;
-        }
-
-        if (isAlteracValley && ai->IsAvQuester())
-        {
-            uint32 firstQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS1 : BG_AV_QUEST_H_SCRAPS1;
-
-            uint32 repeatQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS2 : BG_AV_QUEST_H_SCRAPS2;
-
-            bool collectingArmorScraps = bot->GetQuestStatus(firstQuest) == QUEST_STATUS_INCOMPLETE || bot->GetQuestStatus(repeatQuest) == QUEST_STATUS_INCOMPLETE;
-
-            if (!collectingArmorScraps || bot->GetItemCount(17422) >= 20)
-                continue;
-
-            if (!creature || creature->GetCreatureType() != CREATURE_TYPE_HUMANOID || creature->IsElite())
+            else
             {
-                continue;
+                uint32 firstQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS1 : BG_AV_QUEST_H_SCRAPS1;
+
+                uint32 repeatQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS2 : BG_AV_QUEST_H_SCRAPS2;
+
+                bool collectingArmorScraps = bot->GetQuestStatus(firstQuest) == QUEST_STATUS_INCOMPLETE || bot->GetQuestStatus(repeatQuest) == QUEST_STATUS_INCOMPLETE;
+
+                if (!collectingArmorScraps || bot->GetItemCount(AV_ARMOR_SCRAPS_ITEM) >= AV_ARMOR_SCRAPS_REQUIRED)
+                {
+                    continue;
+                }
+
+                if (!creature || creature->GetCreatureType() != CREATURE_TYPE_HUMANOID || creature->IsElite())
+                {
+                    continue;
+                }
             }
         }
 

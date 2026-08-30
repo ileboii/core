@@ -31,6 +31,9 @@ static constexpr uint32 AV_FROSTWOLF_NPC = 10981;
 static constexpr uint32 AV_STORMPIKE_TRAINING_COLLAR = 17689;
 static constexpr uint32 AV_FROSTWOLF_MUZZLE = 17626;
 
+static constexpr uint32 AV_FROSTWOLF_HIDE_ITEM = 17643;
+static constexpr uint32 AV_ALTERAC_RAM_HIDE_ITEM = 17642;
+
 static constexpr uint32 AV_ARMORER_ALLIANCE = 13257;
 static constexpr uint32 AV_ARMORER_HORDE = 13176;
 
@@ -39,6 +42,9 @@ static constexpr uint32 AV_FROSTWOLF_QUARTERMASTER = 12097;
 
 static constexpr uint32 AV_STORMPIKE_STABLE_MASTER = 13617;
 static constexpr uint32 AV_FROSTWOLF_STABLE_MASTER = 13616;
+
+static constexpr uint32 AV_STORMPIKE_RAM_RIDER_COMMANDER = 13577;
+static constexpr uint32 AV_FROSTWOLF_WOLF_RIDER_COMMANDER = 13441;
 
 static Position const AV_ARMORER_POS_ALLIANCE = {647.61f, -61.1548f, 41.7405f, 4.24115f};
 
@@ -506,6 +512,9 @@ bool BGTactics::CheckFlagAv()
         if (HandleAvEmptyStablesAtStableMaster())
             return true;
 
+        if (TurnInAvRiderHide())
+            return true;
+
         if (TurnInAvMineSupplies())
             return true;
 
@@ -646,6 +655,9 @@ bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
         return true;
 
     if (SelectAvEmptyStablesObjective(objectiveLocation))
+        return true;
+
+    if (SelectAvRiderHideObjective(objectiveLocation))
         return true;
 
     if (AvQuesterNeedsArmorer())
@@ -1328,4 +1340,145 @@ bool BGTactics::HandleAvEmptyStablesAtStableMaster()
     }
 
     return releasedAnimal;
+}
+
+bool BGTactics::HasAvRiderHideToTurnIn()
+{
+    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_HIDE : BG_AV_QUEST_H_RIDER_HIDE;
+
+    uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_FROSTWOLF_HIDE_ITEM : AV_ALTERAC_RAM_HIDE_ITEM;
+
+    return bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE || (bot->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE && bot->HasItemCount(itemId, 1));
+}
+
+bool BGTactics::SelectAvRiderHideObjective(WorldLocation& objectiveLocation)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_HIDE : BG_AV_QUEST_H_RIDER_HIDE;
+
+    if (bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE && bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
+    {
+        return false;
+    }
+
+    if (HasAvRiderHideToTurnIn())
+    {
+        uint32 commanderEntry = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_RAM_RIDER_COMMANDER : AV_FROSTWOLF_WOLF_RIDER_COMMANDER;
+
+        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+        {
+            Creature* commander = ai->GetCreature(guid);
+            if (!commander)
+                continue;
+
+            if (commander->GetEntry() != commanderEntry)
+                continue;
+
+            objectiveLocation = WorldLocation(commander->GetMapId(), commander->GetPositionX(), commander->GetPositionY(), commander->GetPositionZ(), commander->GetOrientation());
+
+            return true;
+        }
+
+        char const* baseLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+
+        return sRandomPlayerbotMgr.GetNamedLocation(baseLocation, objectiveLocation);
+    }
+
+    uint32 animalEntry = bot->GetTeam() == ALLIANCE ? AV_FROSTWOLF_NPC : AV_ALTERAC_RAM_NPC;
+
+    Creature* closestAnimal = nullptr;
+    float closestDistance = FLT_MAX;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* creature = ai->GetCreature(guid);
+        if (!creature)
+            continue;
+
+        if (creature->GetEntry() != animalEntry)
+            continue;
+
+        if (creature->GetDeathState() != ALIVE)
+            continue;
+
+        float distance = bot->GetDistance(creature);
+
+        if (distance < closestDistance)
+        {
+            closestDistance = distance;
+            closestAnimal = creature;
+        }
+    }
+
+    if (closestAnimal)
+    {
+        objectiveLocation = WorldLocation(closestAnimal->GetMapId(), closestAnimal->GetPositionX(), closestAnimal->GetPositionY(), closestAnimal->GetPositionZ(), closestAnimal->GetOrientation());
+
+        return true;
+    }
+
+    char const* searchLocation = bot->GetTeam() == ALLIANCE ? "AV_FROSTWOLF_GRAVEYARD" : "AV_STORMPIKE_GRAVEYARD";
+
+    return sRandomPlayerbotMgr.GetNamedLocation(searchLocation, objectiveLocation);
+}
+
+bool BGTactics::TurnInAvRiderHide()
+{
+    if (!HasAvRiderHideToTurnIn())
+        return false;
+
+    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_HIDE : BG_AV_QUEST_H_RIDER_HIDE;
+
+    if (bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
+        return false;
+
+    uint32 commanderEntry = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_RAM_RIDER_COMMANDER : AV_FROSTWOLF_WOLF_RIDER_COMMANDER;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* commander = ai->GetCreature(guid);
+        if (!commander)
+            continue;
+
+        if (commander->GetEntry() != commanderEntry)
+            continue;
+
+        if (!bot->IsWithinDistInMap(commander, INTERACTION_DISTANCE))
+        {
+            continue;
+        }
+
+        if (bot->IsMounted())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+        ai->StopMoving();
+
+        Event turnInEvent("av rider hide turn in", commander->GetObjectGuid(), bot);
+
+        bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
+
+        if (!turnedIn)
+            return false;
+
+        Event acceptEvent("av rider hide reaccept", commander->GetObjectGuid(), bot);
+
+        ai->DoSpecificAction("accept all quests", acceptEvent, true);
+
+        ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+        ai::PositionEntry pos = posMap["bg objective"];
+
+        pos.Reset();
+        posMap["bg objective"] = pos;
+
+        return true;
+    }
+
+    return false;
 }
