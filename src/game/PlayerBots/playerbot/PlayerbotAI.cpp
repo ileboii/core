@@ -1488,26 +1488,32 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 }
 
 void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
-{
-    //if (packet.empty())
-    //    return;
+            {
+                // if (packet.empty())
+                //     return;
+                switch (packet.GetOpcode())
+                {
+                case SMSG_GROUP_INVITE:
+                    {
+                        botOutgoingPacketHandlers.AddPacket(packet);
+                        ResetAIInternalUpdateDelay();
+                        return;
+                    }
 
-	switch (packet.GetOpcode())
-	{
-	case SMSG_SPELL_FAILURE:
-	{
-		WorldPacket p(packet);
-		p.rpos(0);
-		ObjectGuid casterGuid;
-        p >> casterGuid.ReadAsPacked();
-		if (casterGuid != bot->GetObjectGuid())
-			return;
+                case SMSG_SPELL_FAILURE:
+                    {
+                        WorldPacket p(packet);
+                        p.rpos(0);
+                        ObjectGuid casterGuid;
+                        p >> casterGuid.ReadAsPacked();
+                        if (casterGuid != bot->GetObjectGuid())
+                            return;
 
-		uint32 spellId;
-		p >> spellId;
-		SpellInterrupted(spellId);
-		return;
-	}
+                        uint32 spellId;
+                        p >> spellId;
+                        SpellInterrupted(spellId);
+                        return;
+                    }
 	case SMSG_SPELL_DELAYED:
 	{
 		WorldPacket p(packet);
