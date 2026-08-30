@@ -5,6 +5,18 @@
 #include "BattleGroundMgr.h"
 #include "AcceptQuestAction.h"
 #include "TalkToQuestGiverAction.h"
+#include "UseItemAction.h"
+
+namespace
+{
+    class AvQuestItemUseAction : public ai::UseAction
+    {
+    public:
+        AvQuestItemUseAction(PlayerbotAI* botAI) : ai::UseAction(botAI, "av quest item use") {}
+
+        bool UseOnUnit(uint32 itemId, Unit* target) { return UseItem(nullptr, itemId, target); }
+    };
+}
 
 static constexpr uint32 AV_ARMOR_SCRAPS_ITEM = 17422;
 static constexpr uint32 AV_ARMOR_SCRAPS_REQUIRED = 20;
@@ -13,11 +25,20 @@ static constexpr uint32 AV_IRONDEEP_SUPPLIES_ITEM = 17522;
 static constexpr uint32 AV_COLDTOOTH_SUPPLIES_ITEM = 17542;
 static constexpr uint32 AV_MINE_SUPPLIES_REQUIRED = 10;
 
+static constexpr uint32 AV_ALTERAC_RAM_NPC = 10990;
+static constexpr uint32 AV_FROSTWOLF_NPC = 10981;
+
+static constexpr uint32 AV_STORMPIKE_TRAINING_COLLAR = 17689;
+static constexpr uint32 AV_FROSTWOLF_MUZZLE = 17626;
+
 static constexpr uint32 AV_ARMORER_ALLIANCE = 13257;
 static constexpr uint32 AV_ARMORER_HORDE = 13176;
 
 static constexpr uint32 AV_STORMPIKE_QUARTERMASTER = 12096;
 static constexpr uint32 AV_FROSTWOLF_QUARTERMASTER = 12097;
+
+static constexpr uint32 AV_STORMPIKE_STABLE_MASTER = 13617;
+static constexpr uint32 AV_FROSTWOLF_STABLE_MASTER = 13616;
 
 static Position const AV_ARMORER_POS_ALLIANCE = {647.61f, -61.1548f, 41.7405f, 4.24115f};
 
@@ -482,10 +503,16 @@ bool BGTactics::CheckFlagAv()
 
     if (IsAvQuester())
     {
+        if (HandleAvEmptyStablesAtStableMaster())
+            return true;
+
         if (TurnInAvMineSupplies())
             return true;
 
         if (LootAvMineSupplies())
+            return true;
+
+        if (TameAvStableAnimal())
             return true;
 
         return false;
@@ -616,6 +643,9 @@ bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
         return true;
 
     if (SelectAvMineSupplyObjective(objectiveLocation))
+        return true;
+
+    if (SelectAvEmptyStablesObjective(objectiveLocation))
         return true;
 
     if (AvQuesterNeedsArmorer())
@@ -1014,4 +1044,288 @@ bool BGTactics::TurnInAvMineSupplies()
     }
 
     return false;
+}
+
+bool BGTactics::TameAvStableAnimal()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_TAME : BG_AV_QUEST_H_RIDER_TAME;
+
+    if (bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE)
+        return false;
+
+    uint32 animalEntry = bot->GetTeam() == ALLIANCE ? AV_ALTERAC_RAM_NPC : AV_FROSTWOLF_NPC;
+
+    uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_TRAINING_COLLAR : AV_FROSTWOLF_MUZZLE;
+
+    if (!bot->HasItemCount(itemId, 1))
+        return false;
+
+    Creature* targetAnimal = nullptr;
+    float closestDistance = FLT_MAX;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* creature = ai->GetCreature(guid);
+        if (!creature)
+            continue;
+
+        if (creature->GetEntry() != animalEntry)
+            continue;
+
+        if (creature->GetDeathState() != ALIVE)
+            continue;
+
+        float distance = bot->GetDistance(creature);
+
+        if (distance < closestDistance)
+        {
+            closestDistance = distance;
+            targetAnimal = creature;
+        }
+    }
+
+    if (!targetAnimal)
+        return false;
+
+    if (!bot->IsWithinDistInMap(targetAnimal, 10.0f))
+        return false;
+
+    if (bot->IsMounted())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+    if (bot->IsInDisallowedMountForm())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+    ai->StopMoving();
+
+    AvQuestItemUseAction useAction(ai);
+
+    bool used = useAction.UseOnUnit(itemId, targetAnimal);
+
+    if (used)
+    {
+        ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+        ai::PositionEntry pos = posMap["bg objective"];
+
+        pos.Reset();
+        posMap["bg objective"] = pos;
+    }
+
+    return used;
+}
+
+bool BGTactics::SelectAvEmptyStablesObjective(WorldLocation& objectiveLocation)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_TAME : BG_AV_QUEST_H_RIDER_TAME;
+
+    if (bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE)
+        return false;
+
+    uint32 animalEntry = bot->GetTeam() == ALLIANCE ? AV_ALTERAC_RAM_NPC : AV_FROSTWOLF_NPC;
+
+    uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_TRAINING_COLLAR : AV_FROSTWOLF_MUZZLE;
+
+    if (bot->HasItemCount(itemId, 1))
+    {
+        Creature* closestAnimal = nullptr;
+        float closestDistance = FLT_MAX;
+
+        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+        {
+            Creature* creature = ai->GetCreature(guid);
+            if (!creature)
+                continue;
+
+            if (creature->GetEntry() != animalEntry)
+                continue;
+
+            if (creature->GetDeathState() != ALIVE)
+                continue;
+
+            float distance = bot->GetDistance(creature);
+
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestAnimal = creature;
+            }
+        }
+
+        if (closestAnimal)
+        {
+            objectiveLocation = WorldLocation(closestAnimal->GetMapId(), closestAnimal->GetPositionX(), closestAnimal->GetPositionY(), closestAnimal->GetPositionZ(), closestAnimal->GetOrientation());
+
+            return true;
+        }
+
+        char const* searchLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_GRAVEYARD" : "AV_FROSTWOLF_GRAVEYARD";
+
+        return sRandomPlayerbotMgr.GetNamedLocation(searchLocation, objectiveLocation);
+    }
+
+
+    uint32 stableMasterEntry = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_STABLE_MASTER : AV_FROSTWOLF_STABLE_MASTER;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* stableMaster = ai->GetCreature(guid);
+        if (!stableMaster)
+            continue;
+
+        if (stableMaster->GetEntry() != stableMasterEntry)
+            continue;
+
+        objectiveLocation = WorldLocation(stableMaster->GetMapId(), stableMaster->GetPositionX(), stableMaster->GetPositionY(), stableMaster->GetPositionZ(), stableMaster->GetOrientation());
+
+        return true;
+    }
+
+    char const* stableLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_GRAVEYARD";
+
+    return sRandomPlayerbotMgr.GetNamedLocation(stableLocation, objectiveLocation);
+}
+
+bool BGTactics::HandleAvEmptyStablesAtStableMaster()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_TAME : BG_AV_QUEST_H_RIDER_TAME;
+
+    QuestStatus status = bot->GetQuestStatus(questId);
+
+    if (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE)
+    {
+        return false;
+    }
+
+    uint32 stableMasterEntry = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_STABLE_MASTER : AV_FROSTWOLF_STABLE_MASTER;
+
+    Creature* stableMaster = nullptr;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* creature = ai->GetCreature(guid);
+        if (!creature)
+            continue;
+
+        if (creature->GetEntry() != stableMasterEntry)
+            continue;
+
+        stableMaster = creature;
+        break;
+    }
+
+    if (!stableMaster)
+        return false;
+
+    if (!bot->IsWithinDistInMap(stableMaster, INTERACTION_DISTANCE))
+    {
+        return false;
+    }
+
+    if (bot->IsMounted())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+    if (bot->IsInDisallowedMountForm())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+    ai->StopMoving();
+
+    bool releasedAnimal = false;
+
+    if (status == QUEST_STATUS_INCOMPLETE)
+    {
+        uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_TRAINING_COLLAR : AV_FROSTWOLF_MUZZLE;
+
+        if (bot->HasItemCount(itemId, 1))
+            return false;
+
+        WorldPacket hello;
+        hello << stableMaster->GetObjectGuid();
+
+        bot->GetSession()->HandleGossipHelloOpcode(MakeTypedPacket<WorldPackets::Npc::GossipHello>(hello));
+
+        if (!bot->PlayerTalkClass)
+            return false;
+
+        GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
+
+        int returnOption = -1;
+
+        for (uint32 i = 0; i < menu.MenuItemCount(); ++i)
+        {
+            GossipMenuItem const& item = menu.GetItem(i);
+
+            std::string const& text = item.m_gMessage;
+
+            bool allianceReturn = text.find("These things stink") != std::string::npos;
+
+            bool hordeReturn = text.find("take the animal") != std::string::npos;
+
+            if (allianceReturn || hordeReturn)
+            {
+                returnOption = (int)i;
+                break;
+            }
+        }
+
+        if (returnOption < 0)
+            return false;
+
+        WorldPacket select;
+        select << stableMaster->GetObjectGuid();
+
+#ifdef MANGOSBOT_ZERO
+        select << returnOption;
+#else
+        select << menu.GetMenuId() << returnOption;
+#endif
+
+        std::string code;
+        select << code;
+
+        bot->GetSession()->HandleGossipSelectOptionOpcode(MakeTypedPacket<WorldPackets::Npc::GossipSelectOption>(select));
+
+        bot->TalkedToCreature(stableMaster->GetEntry(), stableMaster->GetObjectGuid());
+
+        releasedAnimal = true;
+
+        status = bot->GetQuestStatus(questId);
+    }
+
+    if (status == QUEST_STATUS_COMPLETE)
+    {
+        Event turnInEvent("av empty stables turn in", stableMaster->GetObjectGuid(), bot);
+
+        bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
+
+        if (turnedIn)
+        {
+            Event acceptEvent("av empty stables reaccept", stableMaster->GetObjectGuid(), bot);
+
+            ai->DoSpecificAction("accept all quests", acceptEvent, true);
+
+            ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+            ai::PositionEntry pos = posMap["bg objective"];
+
+            pos.Reset();
+            posMap["bg objective"] = pos;
+
+            return true;
+        }
+    }
+
+    return releasedAnimal;
 }

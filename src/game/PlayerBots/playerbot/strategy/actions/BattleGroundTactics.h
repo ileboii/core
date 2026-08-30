@@ -89,6 +89,9 @@ private:
     bool SelectAvMineSupplyTurnInObjective(WorldLocation& objectiveLocation);
     bool TurnInAvMineSupplies();
     bool SelectAvMineSupplyObjective(WorldLocation& objectiveLocation);
+    bool TameAvStableAnimal();
+    bool SelectAvEmptyStablesObjective(WorldLocation& objectiveLocation);
+    bool HandleAvEmptyStablesAtStableMaster();
 };
 
 class ArenaTactics : public MovementAction
