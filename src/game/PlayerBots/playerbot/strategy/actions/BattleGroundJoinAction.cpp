@@ -487,37 +487,29 @@ bool BGJoinAction::shouldJoinBg(BattleGroundQueueTypeId queueTypeId, BattleGroun
     if (!isArena && bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
         return false;
 
-    bool needBots = sRandomPlayerbotMgr.NeedBots[queueTypeId][bracketId][isArena ? isRated : (bot->GetTeam() == HORDE ? 1 : 0)];
-
-    // add more bots if players are not invited or if 1st BG instance is full
-    if (needBots || (hasPlayers && BgCount > BracketSize && (BgCount % BracketSize) != 0))
+    // Never queue more than one normal battleground worth of players/bots.
+    if (!isArena)
     {
-        bool needAlly = HCount >= ACount;
-        bool needHorde = ACount >= HCount;
-        uint32 needMoreBots = 0;
-        if (BgCount > BracketSize)
-            needMoreBots = ((uint32(BgCount / BracketSize) + 1) * BracketSize) - (uint32(BgCount / BracketSize) * BracketSize) - (BgCount % BracketSize);
-        else
-            needMoreBots = BracketSize - BgCount;
+        if (BgCount >= BracketSize)
+            return false;
 
-        if ((bot->GetTeam() == ALLIANCE && needAlly) || (bot->GetTeam() == HORDE && needHorde))
+        if ((TeamId == 0 && ACount >= TeamSize) || (TeamId == 1 && HCount >= TeamSize))
         {
-            if (BgCount > BracketSize)
-                sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "%s %u, bracket %u needs more bots. Total in queue: %u, BraketSize: %u. Need %u bots more", isArena ? "Arena" : "BG", queueTypeId, bracketId, BgCount, BracketSize, needMoreBots);
-
-            return true;
+            return false;
         }
     }
 
-    // do not join if BG queue is full
-    if (BgCount >= BracketSize && (ACount >= TeamSize) && (HCount >= TeamSize))
-    {
-        return false;
-    }
+    bool needBots = sRandomPlayerbotMgr.NeedBots[queueTypeId][bracketId][isArena ? isRated : (bot->GetTeam() == HORDE ? 1 : 0)];
 
-    if (!isArena && ((ACount >= TeamSize && TeamId == 0) || (HCount >= TeamSize && TeamId == 1)))
+    if (needBots)
     {
-        return false;
+        bool needAlly = HCount >= ACount;
+        bool needHorde = ACount >= HCount;
+
+        if ((bot->GetTeam() == ALLIANCE && needAlly) || (bot->GetTeam() == HORDE && needHorde))
+        {
+            return true;
+        }
     }
 
     if (isArena && (((ACount >= TeamSize && HCount > 0) && TeamId == 0) || ((HCount >= TeamSize && ACount > 0) && TeamId == 1)))
@@ -680,6 +672,8 @@ bool BGJoinAction::JoinQueue(uint32 type)
         return false;
 
     uint32 queueSlot = bot->AddBattleGroundQueueId(queueTypeId);
+
+    sRandomPlayerbotMgr.BgBots[queueTypeId][bracketId][TeamId]++;
 
     bot->SetBattleGroundEntryPoint(bot, false);
 
