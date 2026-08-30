@@ -13,8 +13,11 @@ static constexpr uint32 AV_IRONDEEP_SUPPLIES_ITEM = 17522;
 static constexpr uint32 AV_COLDTOOTH_SUPPLIES_ITEM = 17542;
 static constexpr uint32 AV_MINE_SUPPLIES_REQUIRED = 10;
 
-static constexpr uint32 AV_ARMORER_ALLIANCE = 13257; // Murgot Deepforge
-static constexpr uint32 AV_ARMORER_HORDE = 13176; // Smith Regzar
+static constexpr uint32 AV_ARMORER_ALLIANCE = 13257;
+static constexpr uint32 AV_ARMORER_HORDE = 13176;
+
+static constexpr uint32 AV_STORMPIKE_QUARTERMASTER = 12096;
+static constexpr uint32 AV_FROSTWOLF_QUARTERMASTER = 12097;
 
 static Position const AV_ARMORER_POS_ALLIANCE = {647.61f, -61.1548f, 41.7405f, 4.24115f};
 
@@ -478,7 +481,15 @@ bool BGTactics::CheckFlagAv()
     }
 
     if (IsAvQuester())
+    {
+        if (TurnInAvMineSupplies())
+            return true;
+
+        if (LootAvMineSupplies())
+            return true;
+
         return false;
+    }
 
     BattleGroundTypeId bgType = bg->GetTypeID();
 #ifdef MANGOSBOT_TWO
@@ -601,10 +612,12 @@ bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
     if (!bg || !ai->IsAvQuester())
         return false;
 
-    /*
-     * No active Armor Scraps quest, or enough scraps to turn in:
-     * return to our armorer.
-     */
+    if (SelectAvMineSupplyTurnInObjective(objectiveLocation))
+        return true;
+
+    if (SelectAvMineSupplyObjective(objectiveLocation))
+        return true;
+
     if (AvQuesterNeedsArmorer())
     {
         Position const& armorerPos = bot->GetTeam() == ALLIANCE ? AV_ARMORER_POS_ALLIANCE : AV_ARMORER_POS_HORDE;
@@ -614,15 +627,6 @@ bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
         return true;
     }
 
-    /*
-     * Active Armor Scraps quest:
-     *
-     * Move toward enemy-controlled graveyards/base areas where ordinary
-     * hostile faction NPCs are available to farm.
-     *
-     * Quester flag interaction is disabled separately, so walking to
-     * these locations will NOT make questers capture them.
-     */
     std::vector<WorldLocation> farmLocations;
 
     auto addLocation = [&](char const* name)
@@ -918,4 +922,96 @@ bool BGTactics::SelectAvMineSupplyObjective(WorldLocation& objectiveLocation)
 
     objectiveLocation = needIrondeep ? irondeep : coldtooth;
     return true;
+}
+
+bool BGTactics::HasAvMineSuppliesToTurnIn()
+{
+    uint32 irondeepQuestId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_NEAR_MINE : BG_AV_QUEST_H_OTHER_MINE;
+
+    uint32 coldtoothQuestId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_OTHER_MINE : BG_AV_QUEST_H_NEAR_MINE;
+
+    bool irondeepReady = bot->GetQuestStatus(irondeepQuestId) == QUEST_STATUS_COMPLETE || (bot->GetQuestStatus(irondeepQuestId) == QUEST_STATUS_INCOMPLETE && bot->HasItemCount(AV_IRONDEEP_SUPPLIES_ITEM, AV_MINE_SUPPLIES_REQUIRED));
+
+    bool coldtoothReady = bot->GetQuestStatus(coldtoothQuestId) == QUEST_STATUS_COMPLETE || (bot->GetQuestStatus(coldtoothQuestId) == QUEST_STATUS_INCOMPLETE && bot->HasItemCount(AV_COLDTOOTH_SUPPLIES_ITEM, AV_MINE_SUPPLIES_REQUIRED));
+
+    return irondeepReady || coldtoothReady;
+}
+
+bool BGTactics::SelectAvMineSupplyTurnInObjective(WorldLocation& objectiveLocation)
+{
+    if (!HasAvMineSuppliesToTurnIn())
+        return false;
+
+    uint32 quartermasterEntry = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_QUARTERMASTER : AV_FROSTWOLF_QUARTERMASTER;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* quartermaster = ai->GetCreature(guid);
+        if (!quartermaster)
+            continue;
+
+        if (quartermaster->GetEntry() != quartermasterEntry)
+            continue;
+
+        objectiveLocation = WorldLocation(quartermaster->GetMapId(), quartermaster->GetPositionX(), quartermaster->GetPositionY(), quartermaster->GetPositionZ(), quartermaster->GetOrientation());
+
+        return true;
+    }
+
+    char const* baseLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+
+    return sRandomPlayerbotMgr.GetNamedLocation(baseLocation, objectiveLocation);
+}
+
+bool BGTactics::TurnInAvMineSupplies()
+{
+    if (!HasAvMineSuppliesToTurnIn())
+        return false;
+
+    uint32 quartermasterEntry = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_QUARTERMASTER : AV_FROSTWOLF_QUARTERMASTER;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* quartermaster = ai->GetCreature(guid);
+        if (!quartermaster)
+            continue;
+
+        if (quartermaster->GetEntry() != quartermasterEntry)
+            continue;
+
+        if (!bot->IsWithinDistInMap(quartermaster, INTERACTION_DISTANCE))
+        {
+            continue;
+        }
+
+        if (bot->IsMounted())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+        ai->StopMoving();
+
+        Event turnInEvent("av mine supplies turn in", quartermaster->GetObjectGuid(), bot);
+
+        bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
+
+        Event acceptEvent("av mine supplies reaccept", quartermaster->GetObjectGuid(), bot);
+
+        bool accepted = ai->DoSpecificAction("accept all quests", acceptEvent, true);
+
+        if (turnedIn || accepted)
+        {
+            ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+            ai::PositionEntry pos = posMap["bg objective"];
+
+            pos.Reset();
+            posMap["bg objective"] = pos;
+
+            return true;
+        }
+    }
+
+    return false;
 }

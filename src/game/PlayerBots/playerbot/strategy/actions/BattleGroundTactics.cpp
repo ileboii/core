@@ -2913,6 +2913,27 @@ if (getName() == "check objective")
         if (!bg)
             return false;
 
+        if (bg->GetTypeID() == BATTLEGROUND_AV && pos.isSet() && HasAvMineSuppliesToTurnIn())
+        {
+            float irondeepDx = pos.x - 881.273f;
+            float irondeepDy = pos.y - (-442.002f);
+
+            float coldtoothDx = pos.x - (-853.671f);
+            float coldtoothDy = pos.y - (-91.427f);
+
+            bool headingToIrondeep = (irondeepDx * irondeepDx + irondeepDy * irondeepDy) < (100.0f * 100.0f);
+
+            bool headingToColdtooth = (coldtoothDx * coldtoothDx + coldtoothDy * coldtoothDy) < (100.0f * 100.0f);
+
+            if (headingToIrondeep || headingToColdtooth)
+            {
+                pos.Reset();
+                posMap["bg objective"] = pos;
+
+                return selectObjective(true);
+            }
+        }
+
         if (bg->GetTypeID() == BATTLEGROUND_AV && pos.isSet())
         {
             WorldLocation waitingLocation;

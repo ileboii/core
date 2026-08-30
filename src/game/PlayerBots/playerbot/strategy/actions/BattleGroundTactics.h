@@ -85,6 +85,9 @@ private:
     bool IsAvQuesterArmorerObjective(ai::PositionEntry const& pos);
     bool HandleAvQuesterArmorer();
     bool LootAvMineSupplies();
+    bool HasAvMineSuppliesToTurnIn();
+    bool SelectAvMineSupplyTurnInObjective(WorldLocation& objectiveLocation);
+    bool TurnInAvMineSupplies();
     bool SelectAvMineSupplyObjective(WorldLocation& objectiveLocation);
 };
 
