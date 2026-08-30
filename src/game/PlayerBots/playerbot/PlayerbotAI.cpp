@@ -8575,3 +8575,17 @@ bool PlayerbotAI::HandleSpellClick(ObjectGuid guid)
 #endif
     return false;
 }
+
+bool PlayerbotAI::IsAvQuester() const
+{
+    if (!bot || !bot->InBattleGround())
+        return false;
+
+    if (bot->GetBattleGroundTypeId() != BATTLEGROUND_AV)
+        return false;
+
+    if (bot->GetLevel() < 51 || bot->GetLevel() > 59)
+        return false;
+
+    return (bot->GetGUIDLow() % 5) == 0;
+}

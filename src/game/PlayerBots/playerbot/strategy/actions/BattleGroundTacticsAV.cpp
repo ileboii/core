@@ -102,11 +102,17 @@ static std::tuple<uint32, uint32, std::string> AV_AllianceDefendObjectives[] =
 
 bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 {
+    if (IsAvQuester())
+        return SelectAvQuesterObjective(objectiveLocation);
+
     BattleGround* bg = bot->GetBattleGround();
     if (!bg)
     {
         return false;
     }
+
+    if (ai->IsAvQuester())
+        return SelectAvQuesterObjective(objectiveLocation);
 
     // End boss
 #ifndef MANGOSBOT_TWO  
@@ -263,11 +269,17 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 
 bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 {
+    if (IsAvQuester())
+        return SelectAvQuesterObjective(objectiveLocation);
+
     BattleGround* bg = bot->GetBattleGround();
     if (!bg)
     {
         return false;
     }
+
+    if (ai->IsAvQuester())
+        return SelectAvQuesterObjective(objectiveLocation);
 
     // End Boss
 #ifndef MANGOSBOT_TWO  
@@ -449,6 +461,9 @@ bool BGTactics::CheckFlagAv()
         return false;
     }
 
+    if (IsAvQuester())
+        return false;
+
     BattleGroundTypeId bgType = bg->GetTypeID();
 #ifdef MANGOSBOT_TWO
     if (bgType == BATTLEGROUND_RB)
@@ -550,4 +565,26 @@ for (auto closeGameObjectGuid : (*context->GetValue<std::list<ObjectGuid>>("clos
     }
 
     return false;
+}
+
+bool BGTactics::IsAvQuester()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    if (bot->GetLevel() < 51 || bot->GetLevel() > 59)
+        return false;
+
+    return (bot->GetGUIDLow() % 5) == 0;
+}
+
+bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
+{
+    if (!ai->IsAvQuester())
+        return false;
+
+    objectiveLocation = WorldLocation(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
+
+    return true;
 }

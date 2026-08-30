@@ -662,7 +662,10 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             combatEngine->addStrategy("arena");
         }
 #endif
-        combatEngine->addStrategies("boost", "racials", "default", "aoe", "dps assist", "pvp", NULL);
+        combatEngine->addStrategies("boost", "racials", "default", "aoe", "dps assist", NULL);
+
+        if (!facade->IsAvQuester())
+            combatEngine->addStrategy("pvp");
         combatEngine->removeStrategy("custom::say");
         combatEngine->removeStrategy("flee");
         combatEngine->removeStrategy("threat");
@@ -1109,7 +1112,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
 
             if (bgType == BATTLEGROUND_AV)
             {
-                nonCombatEngine->addStrategy("alterac");
+                nonCombatEngine->addStrategies("alterac", "loot", NULL);
             }
 
             if (bgType == BATTLEGROUND_AB)

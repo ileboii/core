@@ -149,7 +149,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
         // Add the targets of the members of the group
         Group* group = bot->GetGroup();
 
-        if (group && (!bot->InBattleGround() || bot->GetBattleGroundTypeId() == BATTLEGROUND_AV))
+        if (group && (!bot->InBattleGround() || (bot->GetBattleGroundTypeId() == BATTLEGROUND_AV && !ai->IsAvQuester())))
         {
             AddTargetsOf(group, targets, invalidTargets, getOne);
         }
@@ -351,8 +351,26 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
     Player* enemyPlayer = dynamic_cast<Player*>(target);
     if (enemyPlayer)
     {
-        // Don't consider enemy players if pvp strategy is not set
-        if (playerToCheckAgainst->GetPlayerbotAI() && !playerToCheckAgainst->GetPlayerbotAI()->HasStrategy("pvp", BotState::BOT_STATE_COMBAT))
+        PlayerbotAI* ownerAI = playerToCheckAgainst->GetPlayerbotAI();
+
+        if (ownerAI && ownerAI->IsAvQuester())
+        {
+            // AV questers only fight enemy players that are actually attacking them.
+            bool attackingQuester = false;
+
+            for (Unit* attacker : playerToCheckAgainst->GetAttackers())
+            {
+                if (attacker == target)
+                {
+                    attackingQuester = true;
+                    break;
+                }
+            }
+
+            if (!attackingQuester)
+                return false;
+        }
+        else if (ownerAI && !ownerAI->HasStrategy("pvp", BotState::BOT_STATE_COMBAT))
         {
             return false;
         }

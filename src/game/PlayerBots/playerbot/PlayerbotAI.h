@@ -649,6 +649,7 @@ public:
     bool IsInPve();
     bool IsInPvp();
     bool IsInRaid();
+    bool IsAvQuester() const;
 
     void SetMoveToTransport(bool flag = true) { isMovingToTransport = flag; }
     bool GetMoveToTransport() { return isMovingToTransport; }

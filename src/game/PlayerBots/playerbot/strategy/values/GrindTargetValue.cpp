@@ -9,6 +9,7 @@
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
 #include "FreeMoveValues.h"
 #include "Formulas.h"
+#include "BattleGroundAV.h"
 
 using namespace ai;
 
@@ -193,6 +194,27 @@ for (std::list<ObjectGuid>::iterator tIter = targets.begin(); tIter != targets.e
         Creature* creature = dynamic_cast<Creature*>(unit);
 
         bool isAlteracValley = bot->InBattleGround() && bot->GetBattleGroundTypeId() == BATTLEGROUND_AV;
+
+        if (isAlteracValley && ai->IsAvQuester())
+        {
+            uint32 firstQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS1 : BG_AV_QUEST_H_SCRAPS1;
+
+            uint32 repeatQuest = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_SCRAPS2 : BG_AV_QUEST_H_SCRAPS2;
+
+            bool collectingArmorScraps = bot->GetQuestStatus(firstQuest) == QUEST_STATUS_INCOMPLETE || bot->GetQuestStatus(repeatQuest) == QUEST_STATUS_INCOMPLETE;
+
+            // Don't proactively attack anything unless we're actively
+            // gathering Armor Scraps.
+            if (!collectingArmorScraps || bot->GetItemCount(17422) >= 20)
+                continue;
+
+            // For the first quester implementation, farm only ordinary
+            // hostile humanoid NPCs. Avoid captains, commanders and bosses.
+            if (!creature || creature->GetCreatureType() != CREATURE_TYPE_HUMANOID || creature->IsElite())
+            {
+                continue;
+            }
+        }
 
         if (creature && creature->GetCreatureInfo() && creature->GetCreatureInfo()->rank > CREATURE_ELITE_NORMAL && !isAlteracValley && !AI_VALUE(bool, "can fight elite") && !AI_VALUE2(bool, "trigger active", "in vehicle"))
         {

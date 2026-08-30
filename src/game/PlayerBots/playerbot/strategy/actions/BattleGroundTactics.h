@@ -59,6 +59,7 @@ public:
 private:
     bool SelectAvObjectiveAlliance(WorldLocation& objectiveLocation);
     bool SelectAvObjectiveHorde(WorldLocation& objectiveLocation);
+    bool SelectAvQuesterObjective(WorldLocation& objectiveLocation);
     bool moveToStart(bool force = false);
     bool selectObjective(bool reset = false);
     bool moveToObjective();
@@ -78,6 +79,7 @@ private:
     bool useBuff();
     uint32 getDefendersCount(Position point, float range, bool combat = true);
     bool IsLockedInsideKeep();
+    bool IsAvQuester();
 };
 
 class ArenaTactics : public MovementAction
