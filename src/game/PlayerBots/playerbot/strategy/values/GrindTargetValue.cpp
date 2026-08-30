@@ -90,11 +90,18 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
 
     std::unordered_map<uint32, bool> needForQuestCache;
 
-    for (std::list<ObjectGuid>::iterator tIter = targets.begin(); tIter != targets.end(); tIter++)
+for (std::list<ObjectGuid>::iterator tIter = targets.begin(); tIter != targets.end(); tIter++)
     {
         Unit* unit = ai->GetUnit(*tIter);
         if (!unit)
             continue;
+
+        // Exception for AV
+        // Remember to include non-hostiles for AV quests later!!!
+        if (bot->InBattleGround() && bot->GetBattleGroundTypeId() == BATTLEGROUND_AV && !sServerFacade.IsHostileTo(bot, unit))
+        {
+            continue;
+        }
 
 #ifdef MANGOSBOT_TWO 
         if (bot->GetMapId() == 609)
@@ -184,11 +191,14 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         }
 
         Creature* creature = dynamic_cast<Creature*>(unit);
-        if (creature && creature->GetCreatureInfo() && creature->GetCreatureInfo()->rank > CREATURE_ELITE_NORMAL && !AI_VALUE(bool, "can fight elite") &&
-            !AI_VALUE2(bool, "trigger active", "in vehicle"))
+
+        bool isAlteracValley = bot->InBattleGround() && bot->GetBattleGroundTypeId() == BATTLEGROUND_AV;
+
+        if (creature && creature->GetCreatureInfo() && creature->GetCreatureInfo()->rank > CREATURE_ELITE_NORMAL && !isAlteracValley && !AI_VALUE(bool, "can fight elite") && !AI_VALUE2(bool, "trigger active", "in vehicle"))
         {
             if (ai->HasStrategy("debug grind", BotState::BOT_STATE_NON_COMBAT))
                 ai->TellPlayer(GetMaster(), chat->formatWorldobject(unit) + " ignored (can not fight elites currently).");
+
             continue;
         }
 

@@ -97,9 +97,7 @@ void WarsongStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     InitNonCombatTriggers(triggers);
 }
 
-void AlteracStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
-{
-}
+void AlteracStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers) { triggers.push_back(new TriggerNode("no target", NextAction::array(0, new NextAction("attack anything", 5.0f), NULL))); }
 
 void AlteracStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
