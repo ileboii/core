@@ -78,6 +78,14 @@ static constexpr uint32 AV_HordeAirBeacons[3] = {AV_GUSE_BEACON, AV_JEZTOR_BEACO
 
 static constexpr uint32 AV_AirBeaconAssaults[3] = {BG_AV_AIR_ASSAULT_BEACON_SOLDIER, BG_AV_AIR_ASSAULT_BEACON_LIEUTENANT, BG_AV_AIR_ASSAULT_BEACON_COMMANDER};
 
+static constexpr uint32 AV_STORM_CRYSTAL_ITEM = 17423;
+static constexpr uint32 AV_STORMPIKE_SOLDIER_BLOOD_ITEM = 17306;
+
+static constexpr uint32 AV_ARCH_DRUID_RENFERAL = 13442;
+static constexpr uint32 AV_PRIMALIST_THURLOGA = 13236;
+
+static constexpr uint32 AV_WORLD_BOSS_BULK_TURNIN = 5;
+
 static Position const AV_ARMORER_POS_ALLIANCE = {647.61f, -61.1548f, 41.7405f, 4.24115f};
 
 static Position const AV_ARMORER_POS_HORDE = {-1251.5f, -316.327f, 62.6565f, 5.02655f};
@@ -556,6 +564,9 @@ bool BGTactics::CheckFlagAv()
     {
         return false;
     }
+
+    if (TurnInAvWorldBossResources())
+        return true;
 
     if (IsAvQuester())
     {
@@ -2075,4 +2086,125 @@ bool BGTactics::PlantAvAirBeacon()
     posMap["bg objective"] = pos;
 
     return true;
+}
+
+bool BGTactics::ShouldReturnAvWorldBossResources()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    BattleGroundAV* av = static_cast<BattleGroundAV*>(bg);
+
+    uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_STORM_CRYSTAL_ITEM : AV_STORMPIKE_SOLDIER_BLOOD_ITEM;
+
+    uint32 itemCount = bot->GetItemCount(itemId);
+
+    if (!itemCount)
+        return false;
+
+    uint32 teamIdx = BattleGroundAV::GetAVTeamIndexByTeamId(bot->GetTeam());
+
+    if (av->isWorldBossChallengeInvocationReady(teamIdx))
+        return false;
+
+    uint32 current = av->getChallengeInvocationCounter(teamIdx, BG_AV_BLOOD_WORLDBOSS_ASSAULT);
+
+    uint32 goal = av->getChallengeInvocationGoals(teamIdx, BG_AV_BLOOD_WORLDBOSS_ASSAULT);
+
+    uint32 remaining = current < goal ? goal - current : 0;
+
+    if (ai->IsAvQuester())
+        return true;
+
+    if (itemCount >= AV_WORLD_BOSS_BULK_TURNIN)
+        return true;
+
+    if (remaining && itemCount >= remaining)
+        return true;
+
+    return false;
+}
+
+bool BGTactics::SelectAvWorldBossTurnInObjective(WorldLocation& objectiveLocation)
+{
+    if (!ShouldReturnAvWorldBossResources())
+        return false;
+
+    uint32 questGiverEntry = bot->GetTeam() == ALLIANCE ? AV_ARCH_DRUID_RENFERAL : AV_PRIMALIST_THURLOGA;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* questGiver = ai->GetCreature(guid);
+        if (!questGiver)
+            continue;
+
+        if (questGiver->GetEntry() != questGiverEntry)
+            continue;
+
+        objectiveLocation = WorldLocation(questGiver->GetMapId(), questGiver->GetPositionX(), questGiver->GetPositionY(), questGiver->GetPositionZ(), questGiver->GetOrientation());
+
+        return true;
+    }
+
+    char const* baseLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+
+    return sRandomPlayerbotMgr.GetNamedLocation(baseLocation, objectiveLocation);
+}
+
+bool BGTactics::TurnInAvWorldBossResources()
+{
+    if (!ShouldReturnAvWorldBossResources())
+        return false;
+
+    uint32 questGiverEntry = bot->GetTeam() == ALLIANCE ? AV_ARCH_DRUID_RENFERAL : AV_PRIMALIST_THURLOGA;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    {
+        Creature* questGiver = ai->GetCreature(guid);
+        if (!questGiver)
+            continue;
+
+        if (questGiver->GetEntry() != questGiverEntry)
+            continue;
+
+        if (!bot->IsWithinDistInMap(questGiver, INTERACTION_DISTANCE))
+        {
+            continue;
+        }
+
+        if (bot->IsMounted())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+        ai->StopMoving();
+
+        Event acceptEvent("av world boss resource accept", questGiver->GetObjectGuid(), bot);
+
+        bool accepted = ai->DoSpecificAction("accept all quests", acceptEvent, true);
+
+        Event turnInEvent("av world boss resource turn in", questGiver->GetObjectGuid(), bot);
+
+        bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
+
+        Event reacceptEvent("av world boss resource reaccept", questGiver->GetObjectGuid(), bot);
+
+        ai->DoSpecificAction("accept all quests", reacceptEvent, true);
+
+        if (!accepted && !turnedIn)
+            continue;
+
+        ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+        ai::PositionEntry pos = posMap["bg objective"];
+
+        pos.Reset();
+        posMap["bg objective"] = pos;
+
+        return true;
+    }
+
+    return false;
 }

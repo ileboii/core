@@ -100,6 +100,9 @@ private:
     bool SelectAvAirBeaconObjective(WorldLocation& objectiveLocation);
     bool HandleAvAirBeaconAtCommander();
     bool PlantAvAirBeacon();
+    bool ShouldReturnAvWorldBossResources();
+    bool SelectAvWorldBossTurnInObjective(WorldLocation& objectiveLocation);
+    bool TurnInAvWorldBossResources();
 };
 
 class ArenaTactics : public MovementAction

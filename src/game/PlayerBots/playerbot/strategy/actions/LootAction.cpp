@@ -10,9 +10,18 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
+#include "BattleGround.h"
+#include "Corpse.h"
+#include "ObjectAccessor.h"
+#include "Spell.h"
 
 
 using namespace ai;
+
+static constexpr uint32 AV_REMOVE_INSIGNIA_SPELL = 22027;
+
+static constexpr uint32 AV_STORM_CRYSTAL_ITEM = 17423;
+static constexpr uint32 AV_STORMPIKE_SOLDIER_BLOOD_ITEM = 17306;
 
 bool LootAction::Execute(Event& event)
 {
@@ -66,7 +75,69 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
 {
     if (lootObject.IsEmpty())
         return false;
+    if (lootObject.guid.IsCorpse())
+    {
+        BattleGround* bg = bot->GetBattleGround();
 
+        if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+            return true;
+
+        Corpse* corpse = bot->GetMap()->GetCorpse(lootObject.guid);
+
+        if (!corpse)
+            return true;
+
+        if (corpse->GetType() != CORPSE_RESURRECTABLE_PVP)
+            return true;
+
+        Player* owner = ObjectAccessor::FindPlayer(corpse->GetOwnerGuid());
+
+        if (!owner)
+            return true;
+
+        if (owner->GetTeam() == bot->GetTeam())
+            return true;
+
+        if (owner->IsAlive())
+            return true;
+
+        if (sServerFacade.GetDistance2d(bot, corpse) > INTERACTION_DISTANCE)
+        {
+            return false;
+        }
+
+        if (bot->IsMounted())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+        ai->StopMoving();
+
+        SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(AV_REMOVE_INSIGNIA_SPELL);
+
+        if (!spellInfo)
+            return true;
+
+        Spell* spell = new Spell(bot, spellInfo, false);
+
+        SpellCastTargets targets;
+
+        targets.setCorpseTarget(corpse);
+
+        targets.m_targetMask |= TARGET_FLAG_CORPSE_ENEMY;
+
+        SpellCastResult result = spell->prepare(targets);
+
+        if (result != SPELL_CAST_OK)
+            return false;
+
+        ai->WaitForSpellCast(spell);
+
+        SetDuration(sPlayerbotAIConfig.lootDelay);
+
+        return true;
+    }
     Creature* creature = ai->GetCreature(lootObject.guid);
     if (creature && sServerFacade.GetDistance2d(bot, creature) > INTERACTION_DISTANCE)
         return false;
@@ -274,14 +345,24 @@ bot->SetLootGuid(guid);
 
     Loot* loot = nullptr;
 
-    if (guid.IsCreature())
-    {
-        if (Creature* creature = ai->GetCreature(guid))
-            loot = &creature->loot;
-    }
+if (guid.IsCreature())
+{
+    if (Creature* creature = ai->GetCreature(guid))
+        loot = &creature->loot;
+}
+else if (guid.IsCorpse())
+{
+    BattleGround* bg = bot->GetBattleGround();
 
-    if (!loot)
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
         return false;
+
+    if (Corpse* corpse = bot->GetMap()->GetCorpse(guid))
+        loot = &corpse->loot;
+}
+
+if (!loot)
+    return false;
 
     if (gold > 0)
     {
@@ -382,6 +463,21 @@ bool StoreLootAction::IsLootAllowed(ItemQualifier& itemQualifier, PlayerbotAI *a
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemQualifier.GetId());
     if (!proto)
         return false;
+
+    Player* bot = ai->GetBot();
+
+    if (bot->InBattleGround() && bot->GetBattleGroundTypeId() == BATTLEGROUND_AV)
+    {
+        if (bot->GetTeam() == ALLIANCE && itemQualifier.GetId() == AV_STORM_CRYSTAL_ITEM)
+        {
+            return true;
+        }
+
+        if (bot->GetTeam() == HORDE && itemQualifier.GetId() == AV_STORMPIKE_SOLDIER_BLOOD_ITEM)
+        {
+            return true;
+        }
+    }
 
     std::set<uint32>& lootItems = AI_VALUE(std::set<uint32>&, "always loot list");
     if (lootItems.find(itemQualifier.GetId()) != lootItems.end())

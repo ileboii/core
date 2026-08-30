@@ -1,6 +1,9 @@
 
 #include "playerbot/playerbot.h"
 #include "AddLootAction.h"
+#include "BattleGround.h"
+#include "Corpse.h"
+#include "ObjectAccessor.h"
 
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -49,6 +52,36 @@ bool AddAllLootAction::Execute(Event& event)
         std::list<ObjectGuid> corpses = context->GetValue<std::list<ObjectGuid>>("nearest corpses")->Get();
         for (std::list<ObjectGuid>::iterator i = corpses.begin(); i != corpses.end(); i++)
             added |= AddLoot(requester, *i);
+
+        BattleGround* bg = bot->GetBattleGround();
+
+        if (bg && bg->GetTypeID() == BATTLEGROUND_AV)
+        {
+            for (auto const& bgPlayer : bg->GetPlayers())
+            {
+                Player* victim = ObjectAccessor::FindPlayer(bgPlayer.first);
+                if (!victim)
+                    continue;
+
+                if (victim->GetTeam() == bot->GetTeam())
+                    continue;
+
+                if (victim->IsAlive())
+                    continue;
+
+                Corpse* corpse = victim->GetCorpse();
+                if (!corpse)
+                    continue;
+
+                if (corpse->GetType() != CORPSE_RESURRECTABLE_PVP)
+                    continue;
+
+                if (corpse->GetMapId() != bot->GetMapId())
+                    continue;
+
+                added |= AddLoot(bot, corpse->GetObjectGuid());
+            }
+        }
     }
 
     return added;
@@ -171,8 +204,9 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
     }
 
     uint8 usedBagSpacePercent = AI_VALUE(uint8, "bag space");
+    bool isAvPlayerCorpse = guid.IsCorpse() && bot->GetBattleGround() && bot->GetBattleGround()->GetTypeID() == BATTLEGROUND_AV;
 
-    if (usedBagSpacePercent > 99 && !ai->CanLootSomethingFromWO(wo))
+    if (!isAvPlayerCorpse && usedBagSpacePercent > 99 && !ai->CanLootSomethingFromWO(wo))
     {
         if (ai->HasQuestItemsInWOLootList(wo))
         {

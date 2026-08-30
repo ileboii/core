@@ -3,6 +3,9 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
+#include "Corpse.h"
+#include "ObjectAccessor.h"
+#include "BattleGround.h"
 
 using namespace ai;
 
@@ -59,6 +62,34 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
     this->guid = ObjectGuid();
 
     PlayerbotAI* ai = bot->GetPlayerbotAI();
+    // Player corpses are valid loot objects ONLY in Alterac Valley.
+    if (guid.IsCorpse())
+    {
+        BattleGround* bg = bot->GetBattleGround();
+
+        if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+            return;
+
+        Corpse* corpse = bot->GetMap()->GetCorpse(guid);
+        if (!corpse)
+            return;
+
+        if (corpse->GetType() != CORPSE_RESURRECTABLE_PVP)
+            return;
+
+        Player* owner = ObjectAccessor::FindPlayer(corpse->GetOwnerGuid());
+        if (!owner)
+            return;
+
+        if (owner->GetTeam() == bot->GetTeam())
+            return;
+
+        if (owner->IsAlive())
+            return;
+
+        this->guid = guid;
+        return;
+    }
     Creature* creature = ai->GetCreature(guid);
     if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
     {
@@ -199,7 +230,26 @@ WorldObject* LootObject::GetWorldObject(Player* bot)
     Refresh(bot, guid);
 
     PlayerbotAI* ai = bot->GetPlayerbotAI();
+    if (guid.IsCorpse())
+    {
+        BattleGround* bg = bot->GetBattleGround();
 
+        if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+            return nullptr;
+
+        Corpse* corpse = bot->GetMap()->GetCorpse(guid);
+        if (!corpse)
+            return nullptr;
+
+        if (corpse->GetType() != CORPSE_RESURRECTABLE_PVP)
+            return nullptr;
+
+        Player* owner = ObjectAccessor::FindPlayer(corpse->GetOwnerGuid());
+        if (!owner || owner->GetTeam() == bot->GetTeam())
+            return nullptr;
+
+        return corpse;
+    }
     Creature *creature = ai->GetCreature(guid);
     if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
         return creature;
@@ -225,7 +275,32 @@ bool LootObject::IsLootPossible(Player* bot)
         return false;
 
     PlayerbotAI* ai = bot->GetPlayerbotAI();
+    if (guid.IsCorpse())
+    {
+        BattleGround* bg = bot->GetBattleGround();
 
+        if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+            return false;
+
+        Corpse* corpse = bot->GetMap()->GetCorpse(guid);
+        if (!corpse)
+            return false;
+
+        if (corpse->GetType() != CORPSE_RESURRECTABLE_PVP)
+            return false;
+
+        Player* owner = ObjectAccessor::FindPlayer(corpse->GetOwnerGuid());
+        if (!owner)
+            return false;
+
+        if (owner->GetTeam() == bot->GetTeam())
+            return false;
+
+        if (owner->IsAlive())
+            return false;
+
+        return true;
+    }
     if (reqItem && !bot->HasItemCount(reqItem, 1))
         return false;
 
