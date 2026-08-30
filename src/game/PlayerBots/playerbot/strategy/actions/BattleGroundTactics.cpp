@@ -3513,13 +3513,16 @@ ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get()
 
                     bool isEnemyOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED);
 
-                    if (!isNeutral && !isEnemyOccupied)
-                        continue;
+                    bool isEnemyContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED);
 
-                    GameObject* pGO = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(objective.first, BG_AB_NODE_STATUS_NEUTRAL));
-
-                    if (!pGO)
-                        continue;
+                    if (isEnemyOccupied || isEnemyContested)
+                    {
+                        enemyObjectives.insert(objective.first);
+                    }
+                    else if (isNeutral)
+                    {
+                        neutralObjectives.insert(objective.first);
+                    }
                 }
 
                 if (!enemyObjectives.empty())
@@ -3542,6 +3545,17 @@ ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get()
                         continue;
 
                     uniqueObjectives.insert(objective.first);
+                }
+            }
+
+            if (defender && uniqueObjectives.empty())
+            {
+                for (const auto& objective : AB_AttackObjectives)
+                {
+                    if (bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_NEUTRAL))
+                    {
+                        uniqueObjectives.insert(objective.first);
+                    }
                 }
             }
 
@@ -4714,9 +4728,31 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
     if (!pClosestPath)
         return false;
 
+    ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
+
+    if (!pos.isSet())
+        return false;
+
+    BattleBotWaypoint& firstPoint = (*pClosestPath)[0];
+    BattleBotWaypoint& lastPoint = (*pClosestPath)[pClosestPath->size() - 1];
+
+    float firstDx = firstPoint.x - pos.x;
+    float firstDy = firstPoint.y - pos.y;
+    float firstDistSq = firstDx * firstDx + firstDy * firstDy;
+
+    float lastDx = lastPoint.x - pos.x;
+    float lastDy = lastPoint.y - pos.y;
+    float lastDistSq = lastDx * lastDx + lastDy * lastDy;
+
+    bool reverse = firstDistSq < lastDistSq;
+
+    if (reverse && std::find(vPaths_NoReverseAllowed.begin(), vPaths_NoReverseAllowed.end(), pClosestPath) != vPaths_NoReverseAllowed.end())
+    {
+        return false;
+    }
+
     BattleBotPath* currentPath = pClosestPath;
-    bool reverse = false;
-    uint32 currentPoint = closestPoint - 1;
+    uint32 currentPoint = reverse ? closestPoint + 1 : closestPoint - 1;
 
     return moveToObjectiveWp(currentPath, currentPoint, reverse);
 }
@@ -4801,6 +4837,21 @@ std::vector<uint32>::const_iterator f = find(vFlagIds.begin(), vFlagIds.end(), g
 
         if (!sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY)
             continue;
+
+        if (bgType == BATTLEGROUND_AB)
+        {
+            uint8 node = sBattleGroundMgr.GetGameObjectEventIndex(go->GetGUIDLow()).event1;
+
+            if (node >= BG_AB_NODES_MAX)
+                continue;
+
+            bool isFriendlyContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(node, BG_AB_NODE_STATUS_HORDE_CONTESTED) : bg->IsActiveEvent(node, BG_AB_NODE_STATUS_ALLY_CONTESTED);
+
+            bool isFriendlyOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(node, BG_AB_NODE_STATUS_HORDE_OCCUPIED) : bg->IsActiveEvent(node, BG_AB_NODE_STATUS_ALLY_OCCUPIED);
+
+            if (isFriendlyContested || isFriendlyOccupied)
+                continue;
+        }
 
         if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE) && bgType != BATTLEGROUND_WS)
             continue;
