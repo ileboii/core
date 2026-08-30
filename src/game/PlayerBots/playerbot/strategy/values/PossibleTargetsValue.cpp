@@ -81,11 +81,10 @@ bool PossibleTargetsValue::IsFriendly(Unit* target, Player* player)
 
 bool PossibleTargetsValue::IsAttackable(Unit* target, Player* player)
 {
-    const bool inVehicle = player->GetPlayerbotAI() && player->GetPlayerbotAI()->IsInVehicle();
-    return !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_ATTACKABLE_1) &&
-           !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE) &&
-           (inVehicle || !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE)) &&
-           !target->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION);
+    if (!target || !player)
+        return false;
+
+    return target->IsTargetableBy(player) && !target->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION);
 }
 
 bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
