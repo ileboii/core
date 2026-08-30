@@ -103,6 +103,10 @@ void AlteracStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
         "very often",
+        NextAction::array(0, new NextAction("bg check flag", ACTION_INTERRUPT), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "very often",
         NextAction::array(0, new NextAction("bg banner", ACTION_NORMAL), NULL)));
 }
 

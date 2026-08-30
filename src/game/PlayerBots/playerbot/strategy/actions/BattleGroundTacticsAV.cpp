@@ -460,7 +460,7 @@ bool BGTactics::CheckFlagAv()
         return false;
     }
 
-    for (auto closeGameObjectGuid : (*context->GetValue<std::list<ObjectGuid>>("closest game objects static los")).Get())
+for (auto closeGameObjectGuid : (*context->GetValue<std::list<ObjectGuid>>("closest game objects static los")).Get())
     {
         GameObject* go = ai->GetGameObject(closeGameObjectGuid);
         if (!go)
@@ -479,13 +479,51 @@ bool BGTactics::CheckFlagAv()
 
         BattleGroundAVTeamIndex botTeam = BattleGroundAV::GetAVTeamIndexByTeamId(bot->GetTeam());
 
+        // Do not try to capture our own banner.
         if (flagTeam == botTeam)
             continue;
 
-        if (!sServerFacade.isSpawned(go)  || go->GetGoState() != GO_STATE_READY)
+        if (!sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY)
             continue;
 
         if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))
+            continue;
+
+        /*
+         * Only one nearby playerbot should capture this banner.
+         *
+         * Every eligible bot sees the same nearby bots and the lowest GUID
+         * wins. Everyone else keeps fighting.
+         */
+        uint32 capturerGuid = bot->GetGUIDLow();
+
+        for (auto closePlayerGuid : (*context->GetValue<std::list<ObjectGuid>>("closest friendly players")).Get())
+        {
+            Unit* friendly = ai->GetUnit(closePlayerGuid);
+            if (!friendly || !friendly->IsPlayer())
+                continue;
+
+            Player* friendlyPlayer = (Player*)friendly;
+
+            if (!friendlyPlayer->IsAlive())
+                continue;
+
+            // Only playerbots participate in the election.
+            PlayerbotAI* friendlyAI = friendlyPlayer->GetPlayerbotAI();
+            if (!friendlyAI || friendlyAI->IsRealPlayer())
+                continue;
+
+            // Only bots close enough to actually capture THIS banner count.
+            if (!friendlyPlayer->IsWithinDistInMap(go, INTERACTION_DISTANCE))
+                continue;
+
+            if (friendlyPlayer->GetGUIDLow() < capturerGuid)
+                capturerGuid = friendlyPlayer->GetGUIDLow();
+        }
+
+        // Another nearby bot was elected to capture it.
+        // Keep fighting instead.
+        if (capturerGuid != bot->GetGUIDLow())
             continue;
 
         if (bot->IsMounted())
@@ -494,7 +532,7 @@ bool BGTactics::CheckFlagAv()
         if (bot->IsInDisallowedMountForm())
             bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
 
-        // cast banner spell
+        // Capture banner.
         ai->StopMoving();
 
         SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(SPELL_CAPTURE_BANNER);
@@ -505,10 +543,6 @@ bool BGTactics::CheckFlagAv()
         spell->m_targets.setGOTarget(go);
         spell->prepare(spell->m_targets);
         ai->WaitForSpellCast(spell);
-
-        //WorldPacket data(CMSG_GAMEOBJ_USE);
-        //data << go->GetObjectGuid();
-        //bot->GetSession()->HandleGameObjectUseOpcode(data);
 
         resetObjective();
 
