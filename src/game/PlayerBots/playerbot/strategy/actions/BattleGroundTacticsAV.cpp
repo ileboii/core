@@ -2,6 +2,7 @@
 #include "BattleGround.h"
 #include "BattleGroundAV.h"
 #include "BattleGroundTactics.h"
+#include "BattleGroundMgr.h"
 
 static std::tuple<uint32, uint32, std::string> AV_HordeAttackObjectives[] =
 {
@@ -469,10 +470,19 @@ bool BGTactics::CheckFlagAv()
         if (f == FlagEntries.end())
             continue;
 
-        if (!sServerFacade.isSpawned(go)  || go->GetGoState() != GO_STATE_READY)
+        auto eventIndex = sBattleGroundMgr.GetGameObjectEventIndex(go->GetGUIDLow());
+
+        if (eventIndex.event1 >= BG_AV_NODES_MAX)
             continue;
 
-        if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))
+        BattleGroundAVTeamIndex flagTeam = BattleGroundAVTeamIndex(eventIndex.event2 / BG_AV_MAX_STATES);
+
+        BattleGroundAVTeamIndex botTeam = BattleGroundAV::GetAVTeamIndexByTeamId(bot->GetTeam());
+
+        if (flagTeam == botTeam)
+            continue;
+
+        if (!sServerFacade.isSpawned(go)  || go->GetGoState() != GO_STATE_READY)
             continue;
 
         if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))
@@ -493,7 +503,7 @@ bool BGTactics::CheckFlagAv()
 
         Spell* spell = new Spell(bot, spellInfo, false);
         spell->m_targets.setGOTarget(go);
-        /* SpellStart not in vmangos */ spell->prepare(spell->m_targets);
+        spell->prepare(spell->m_targets);
         ai->WaitForSpellCast(spell);
 
         //WorldPacket data(CMSG_GAMEOBJ_USE);

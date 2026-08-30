@@ -2913,6 +2913,28 @@ if (getName() == "check objective")
         if (!bg)
             return false;
 
+        if (bg->GetTypeID() == BATTLEGROUND_AV && pos.isSet())
+        {
+            WorldLocation waitingLocation;
+
+            char const* waitingName = bot->GetTeam() == ALLIANCE ? "AV_ICEBLOOD_GARRISON_WAITING_ALLIANCE" : "AV_STONEHEART_OUTPOST_WAITING_HORDE";
+
+            if (sRandomPlayerbotMgr.GetNamedLocation(waitingName, waitingLocation))
+            {
+                float dx = pos.x - waitingLocation.x;
+                float dy = pos.y - waitingLocation.y;
+                float dz = pos.z - waitingLocation.z;
+
+                if ((dx * dx + dy * dy + dz * dz) < 4.0f)
+                {
+                    pos.Reset();
+                    posMap["bg objective"] = pos;
+
+                    return selectObjective(true);
+                }
+            }
+        }
+
         /*
          * WSG:
          *

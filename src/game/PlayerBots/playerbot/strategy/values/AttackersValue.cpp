@@ -148,7 +148,8 @@ std::list<ObjectGuid> AttackersValue::Calculate()
     {
         // Add the targets of the members of the group
         Group* group = bot->GetGroup();
-        if (group && !bot->InBattleGround())
+
+        if (group && (!bot->InBattleGround() || bot->GetBattleGroundTypeId() == BATTLEGROUND_AV))
         {
             AddTargetsOf(group, targets, invalidTargets, getOne);
         }
