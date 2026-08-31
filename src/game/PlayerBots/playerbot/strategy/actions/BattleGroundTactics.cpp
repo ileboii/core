@@ -3205,9 +3205,20 @@ ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get()
             bool hasObjective = false;
             WorldLocation objectiveLocation;
 
-            if (ai->IsAvQuester())
+            if (SelectAvWorldBossTurnInObjective(objectiveLocation))
             {
-                hasObjective = SelectAvMineSupplyObjective(objectiveLocation);
+                hasObjective = true;
+            }
+            else if (IsAvQuester())
+            {
+                hasObjective = SelectAvQuesterObjective(objectiveLocation);
+
+                if (!hasObjective)
+                {
+                    char const* baseLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+
+                    hasObjective = sRandomPlayerbotMgr.GetNamedLocation(baseLocation, objectiveLocation);
+                }
             }
             else
             {
@@ -3223,18 +3234,14 @@ ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get()
                 }
             }
 
-            if (hasObjective)
-            {
-                if (!pos.isSet())
-                {
-                    pos.Set(objectiveLocation.x, objectiveLocation.y, objectiveLocation.z, objectiveLocation.mapId);
-                }
+            if (!hasObjective)
+                break;
 
-                posMap["bg objective"] = pos;
-                return true;
-            }
+            pos.Set(objectiveLocation.x, objectiveLocation.y, objectiveLocation.z, bot->GetMapId());
 
-            break;
+            posMap["bg objective"] = pos;
+
+            return true;
         }
     case BATTLEGROUND_WS:
         {

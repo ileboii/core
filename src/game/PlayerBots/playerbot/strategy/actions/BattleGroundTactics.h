@@ -103,6 +103,9 @@ private:
     bool ShouldReturnAvWorldBossResources();
     bool SelectAvWorldBossTurnInObjective(WorldLocation& objectiveLocation);
     bool TurnInAvWorldBossResources();
+    bool NeedsAvInitialQuests();
+    bool SelectAvInitialQuestObjective(WorldLocation& objectiveLocation);
+    bool AcceptAvInitialQuests();
 };
 
 class ArenaTactics : public MovementAction
