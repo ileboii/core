@@ -5,6 +5,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "BattleGroundAV.h"
 
 bool DpsAssistAction::isUseful()
 {
@@ -15,10 +16,22 @@ bool DpsAssistAction::isUseful()
     return true;
 }
 
-bool AttackAnythingAction::isUseful() 
+bool AttackAnythingAction::isUseful()
 {
-    if (!ai->AllowActivity(GRIND_ACTIVITY)) //Bot not allowed to be active
+    if (!ai->AllowActivity(GRIND_ACTIVITY)) // Bot not allowed to be active
         return false;
+
+    if (ai->IsAvQuester())
+    {
+        uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_TAME : BG_AV_QUEST_H_RIDER_TAME;
+
+        uint32 tameItem = bot->GetTeam() == ALLIANCE ? 17689 : 17626;
+
+        if (bot->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE && !bot->HasItemCount(tameItem, 1))
+        {
+            return false;
+        }
+    }
 
     if (!AI_VALUE(bool, "can move around"))
         return false;
@@ -31,10 +44,10 @@ bool AttackAnythingAction::isUseful()
     if (ai->ContainsStrategy(STRATEGY_TYPE_HEAL) && !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT))
         return false;
 
-    if(!target->IsPlayer() && (bot->IsWithinDist(target, target->GetMeleeReach()*1.5f) && bot->HasInArc(target, M_PI_F*0.5f)) && target->IsHostileTo(bot) && target->GetLevel() < bot->GetLevel() + 3.0) //Attack before being attacked.
+    if (!target->IsPlayer() && (bot->IsWithinDist(target, target->GetMeleeReach() * 1.5f) && bot->HasInArc(target, M_PI_F * 0.5f)) && target->IsHostileTo(bot) && target->GetLevel() < bot->GetLevel() + 3.0)
         return true;
 
-    if (AI_VALUE(bool, "travel target traveling") && CanFreeMoveValue::CanFreeMoveTo(ai, *AI_VALUE(TravelTarget*,"travel target")->GetPosition())) //Bot is traveling
+    if (AI_VALUE(bool, "travel target traveling") && CanFreeMoveValue::CanFreeMoveTo(ai, *AI_VALUE(TravelTarget*, "travel target")->GetPosition()))
         return false;
 
     return true;

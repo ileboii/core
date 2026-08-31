@@ -11,6 +11,26 @@ using namespace ai;
 
 #define MAX_LOOT_OBJECT_COUNT 10
 
+static bool IsAvCaptureBanner(uint32 entry)
+{
+    switch (entry)
+    {
+    case 178925:
+    case 178940:
+    case 178943:
+    case 178932:
+    case 178365:
+    case 179286:
+    case 179310:
+    case 179308:
+    case 180418:
+        return true;
+
+    default:
+        return false;
+    }
+}
+
 LootTarget::LootTarget(ObjectGuid guid) : guid(guid), asOfTime(time(0))
 {
 }
@@ -127,6 +147,14 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
     GameObject* go = ai->GetGameObject(guid);
     if (go && sServerFacade.isSpawned(go) && !go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE))
     {
+        if (BattleGround* bg = bot->GetBattleGround())
+        {
+            if (bg->GetTypeID() == BATTLEGROUND_AV && IsAvCaptureBanner(go->GetEntry()))
+            {
+                return;
+            }
+        }
+
         bool isQuestItemOnly = false;
 
 #ifdef MANGOSBOT_TWO

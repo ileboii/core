@@ -980,7 +980,9 @@ void Map::UpdatePlayers()
             }
         }
 
-        bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SELF_ITEMS) || plr->HasScheduledEvent();
+        bool const needsBgQueueUpdate = sRandomPlayerbotMgr.ShouldForceBgQueueUpdate(plr);
+
+        bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SELF_ITEMS) || plr->HasScheduledEvent() || needsBgQueueUpdate;
 
         bool const scheduledInactiveUpdate = (plr->GetGUIDLow() % updateCycle) == updateSlot;
 

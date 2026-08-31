@@ -144,6 +144,7 @@ public:
         std::map<Team, std::vector<uint32>> LfgDungeons;
         void CheckBgQueue();
         void CheckLfgQueue();
+        bool ShouldForceBgQueueUpdate(Player* bot);
         void CheckPlayers();
         void SaveCurTime();
         void SyncEventTimers();

@@ -318,8 +318,11 @@ bool ShouldLootObject::Calculate()
 
 		GameObject* go = static_cast<GameObject*>(object);
 
-		if (go->GetGoType() != GAMEOBJECT_TYPE_GOOBER)
-			return true;
+                                if (go->GetGoType() == GAMEOBJECT_TYPE_TRAP)
+                                    return false;
+
+                                if (go->GetGoType() != GAMEOBJECT_TYPE_GOOBER)
+                                    return true;
 
 		uint32 spellId = go->GetSpellId();
 

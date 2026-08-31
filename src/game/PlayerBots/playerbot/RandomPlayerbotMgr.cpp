@@ -1225,6 +1225,97 @@ if (!bmParentFaction) continue;
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, " ");
 }
 
+bool RandomPlayerbotMgr::ShouldForceBgQueueUpdate(Player* bot)
+{
+    if (!bot || !bot->IsInWorld())
+        return false;
+
+    if (bot->isRealPlayer() || !bot->GetPlayerbotAI())
+        return false;
+
+    if (bot->InBattleGroundQueue())
+        return true;
+
+    if (bot->InBattleGround())
+        return false;
+
+    if (!sPlayerbotAIConfig.randomBotJoinBG)
+        return false;
+
+    if (!IsFreeBot(bot))
+        return false;
+
+    if (bot->GetLevel() < 10)
+        return false;
+
+    if (bot->GetPlayerbotAI()->HasActivePlayerMaster())
+        return false;
+
+    if (bot->IsInCombat())
+        return false;
+
+    if (!bot->CanJoinToBattleground())
+        return false;
+
+    if (!bot->HasFreeBattleGroundQueueId())
+        return false;
+
+    if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
+    {
+        return false;
+    }
+
+    uint32 teamId = bot->GetTeam() == HORDE ? 1 : 0;
+
+    for (int j = BATTLEGROUND_QUEUE_AV; j < MAX_BATTLEGROUND_QUEUE_TYPES; ++j)
+    {
+        BattleGroundQueueTypeId queueTypeId = BattleGroundQueueTypeId(j);
+
+        BattleGroundTypeId bgTypeId = sServerFacade.BgTemplateId(queueTypeId);
+
+        BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgTypeId);
+
+        if (!bg)
+            continue;
+
+        if (!bot->GetBGAccessByLevel(bgTypeId))
+            continue;
+
+        BattleGroundBracketId bracketId = Player::GetBattleGroundBracketIdFromLevel(bgTypeId, bot->GetLevel());
+
+        if (!NeedBots[queueTypeId][bracketId][teamId])
+            continue;
+
+        uint32 allianceCount = BgPlayers[queueTypeId][bracketId][0] + BgBots[queueTypeId][bracketId][0];
+
+        uint32 hordeCount = BgPlayers[queueTypeId][bracketId][1] + BgBots[queueTypeId][bracketId][1];
+
+        uint32 totalCount = allianceCount + hordeCount;
+
+        uint32 maxTotal = bg->GetMaxPlayers();
+        uint32 maxPerTeam = bg->GetMaxPlayersPerTeam();
+
+        if (totalCount >= maxTotal)
+            continue;
+
+        if (teamId == 0 && allianceCount >= maxPerTeam)
+            continue;
+
+        if (teamId == 1 && hordeCount >= maxPerTeam)
+            continue;
+
+        bool needAlliance = hordeCount >= allianceCount;
+        bool needHorde = allianceCount >= hordeCount;
+
+        if ((teamId == 0 && needAlliance) || (teamId == 1 && needHorde))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void RandomPlayerbotMgr::CheckBgQueue()
 {
     if (!BgCheckTimer)

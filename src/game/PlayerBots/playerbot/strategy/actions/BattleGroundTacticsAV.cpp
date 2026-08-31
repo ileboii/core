@@ -6,6 +6,7 @@
 #include "AcceptQuestAction.h"
 #include "TalkToQuestGiverAction.h"
 #include "UseItemAction.h"
+#include <algorithm>
 
 namespace
 {
@@ -206,6 +207,30 @@ static std::tuple<uint32, uint32, std::string> AV_AllianceDefendObjectives[] =
     { BG_AV_NODE_STONEHEART_BUNKER, BG_AV_NODE_STATUS_HORDE_CONTESTED, "AV_STONEHEART_BUNKER" },
 #endif
 };
+
+static std::vector<WorldPosition> BuildAvCreatureSpawnList(uint32 entry)
+{
+    std::vector<WorldPosition> spawns;
+
+    // Any valid position on map 30 works here.
+    // Radius 0 means no distance restriction; entry filters the creature type.
+    WorldPosition avMap(30, 1.0f, 1.0f, 1.0f);
+
+    for (CreatureDataPair const* data : avMap.getCreaturesNear(0.0f, entry))
+    {
+        if (!data)
+            continue;
+
+        WorldPosition spawn(data);
+
+        if (!spawn.isValid())
+            continue;
+
+        spawns.push_back(spawn);
+    }
+
+    return spawns;
+}
 
 bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 {
@@ -1068,29 +1093,7 @@ bool BGTactics::TameAvStableAnimal()
     if (!bot->HasItemCount(itemId, 1))
         return false;
 
-    Creature* targetAnimal = nullptr;
-    float closestDistance = FLT_MAX;
-
-    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
-    {
-        Creature* creature = ai->GetCreature(guid);
-        if (!creature)
-            continue;
-
-        if (creature->GetEntry() != animalEntry)
-            continue;
-
-        if (creature->GetDeathState() != ALIVE)
-            continue;
-
-        float distance = bot->GetDistance(creature);
-
-        if (distance < closestDistance)
-        {
-            closestDistance = distance;
-            targetAnimal = creature;
-        }
-    }
+    Creature* targetAnimal = bot->FindNearestCreature(animalEntry, 15.0f, true);
 
     if (!targetAnimal)
         return false;
@@ -1112,6 +1115,8 @@ bool BGTactics::TameAvStableAnimal()
 
     if (used)
     {
+        SetDuration(useAction.GetDuration());
+
         ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
 
         ai::PositionEntry pos = posMap["bg objective"];
@@ -1140,28 +1145,13 @@ bool BGTactics::SelectAvEmptyStablesObjective(WorldLocation& objectiveLocation)
 
     if (bot->HasItemCount(itemId, 1))
     {
-        Creature* closestAnimal = nullptr;
-        float closestDistance = FLT_MAX;
+        Creature* closestAnimal = bot->FindNearestCreature(animalEntry, 30.0f, true);
 
-        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+        if (closestAnimal)
         {
-            Creature* creature = ai->GetCreature(guid);
-            if (!creature)
-                continue;
+            objectiveLocation = WorldLocation(closestAnimal->GetMapId(), closestAnimal->GetPositionX(), closestAnimal->GetPositionY(), closestAnimal->GetPositionZ(), closestAnimal->GetOrientation());
 
-            if (creature->GetEntry() != animalEntry)
-                continue;
-
-            if (creature->GetDeathState() != ALIVE)
-                continue;
-
-            float distance = bot->GetDistance(creature);
-
-            if (distance < closestDistance)
-            {
-                closestDistance = distance;
-                closestAnimal = creature;
-            }
+            return true;
         }
 
         if (closestAnimal)
@@ -1171,9 +1161,49 @@ bool BGTactics::SelectAvEmptyStablesObjective(WorldLocation& objectiveLocation)
             return true;
         }
 
-        char const* searchLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_GRAVEYARD" : "AV_FROSTWOLF_GRAVEYARD";
+        static const std::vector<WorldPosition> ramSpawns = BuildAvCreatureSpawnList(AV_ALTERAC_RAM_NPC);
 
-        return sRandomPlayerbotMgr.GetNamedLocation(searchLocation, objectiveLocation);
+        static const std::vector<WorldPosition> wolfSpawns = BuildAvCreatureSpawnList(AV_FROSTWOLF_NPC);
+
+        const std::vector<WorldPosition>& animalSpawns = bot->GetTeam() == ALLIANCE ? ramSpawns : wolfSpawns;
+
+        if (animalSpawns.empty())
+            return false;
+
+        struct SpawnCandidate
+        {
+            WorldPosition const* spawn;
+            float distance;
+        };
+
+        std::vector<SpawnCandidate> candidates;
+
+        for (WorldPosition const& spawn : animalSpawns)
+        {
+            if (spawn.getMapId() != bot->GetMapId())
+                continue;
+
+            float distance = bot->GetDistance(spawn.getX(), spawn.getY(), spawn.getZ());
+
+            if (distance < 20.0f)
+                continue;
+
+            candidates.push_back({&spawn, distance});
+        }
+
+        if (candidates.empty())
+            return false;
+
+        std::sort(candidates.begin(), candidates.end(), [](SpawnCandidate const& left, SpawnCandidate const& right) { return left.distance < right.distance; });
+
+        size_t poolSize = std::min<size_t>(3, candidates.size());
+        size_t selected = bot->GetGUIDLow() % poolSize;
+
+        WorldPosition const& spawn = *candidates[selected].spawn;
+
+        objectiveLocation = WorldLocation(spawn.getMapId(), spawn.getX(), spawn.getY(), spawn.getZ(), spawn.getO());
+
+        return true;
     }
 
 
@@ -1238,6 +1268,14 @@ bool BGTactics::HandleAvEmptyStablesAtStableMaster()
         return false;
     }
 
+    if (status == QUEST_STATUS_INCOMPLETE)
+    {
+        uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_TRAINING_COLLAR : AV_FROSTWOLF_MUZZLE;
+
+        if (bot->HasItemCount(itemId, 1))
+            return false;
+    }
+
     if (bot->IsMounted())
         bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
@@ -1250,11 +1288,6 @@ bool BGTactics::HandleAvEmptyStablesAtStableMaster()
 
     if (status == QUEST_STATUS_INCOMPLETE)
     {
-        uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_TRAINING_COLLAR : AV_FROSTWOLF_MUZZLE;
-
-        if (bot->HasItemCount(itemId, 1))
-            return false;
-
         WorldPacket hello;
         hello << stableMaster->GetObjectGuid();
 
@@ -1285,7 +1318,19 @@ bool BGTactics::HandleAvEmptyStablesAtStableMaster()
         }
 
         if (returnOption < 0)
-            return false;
+        {
+            ai->DropQuest(questId);
+
+            Event acceptEvent("av empty stables recover", stableMaster->GetObjectGuid(), bot);
+            ai->DoSpecificAction("accept all quests", acceptEvent, true);
+
+            ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+            ai::PositionEntry pos = posMap["bg objective"];
+            pos.Reset();
+            posMap["bg objective"] = pos;
+
+            return true;
+        }
 
         WorldPacket select;
         select << stableMaster->GetObjectGuid();
