@@ -2861,7 +2861,9 @@ bool BGTactics::Execute(Event& event)
         else
             return true;
 
-        // bot with flag should only move to objective
+        if (bgType == BATTLEGROUND_AV && ai->IsAvQuester())
+            return false;
+
 #ifdef MANGOSBOT_ZERO
         if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG))
 #else
@@ -3212,13 +3214,6 @@ ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get()
             else if (IsAvQuester())
             {
                 hasObjective = SelectAvQuesterObjective(objectiveLocation);
-
-                if (!hasObjective)
-                {
-                    char const* baseLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
-
-                    hasObjective = sRandomPlayerbotMgr.GetNamedLocation(baseLocation, objectiveLocation);
-                }
             }
             else
             {
