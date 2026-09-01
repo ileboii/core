@@ -473,18 +473,30 @@ void AuctionHouseBot::ParseLootConfig(char const* fieldname, std::vector<int32>&
 void AuctionHouseBot::FillUintVectorFromQuery(char const* query, std::vector<uint32>& lootTemplates)
 {
     lootTemplates.clear();
+
+    uint32 start = WorldTimer::getMSTime();
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "AHBot: Starting query: %s", query);
+
     if (auto queryResult = WorldDatabase.PQuery("%s", query))
     {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "AHBot: Query finished in %u ms, %u rows", WorldTimer::getMSTimeDiff(start, WorldTimer::getMSTime()), queryResult->GetRowCount());
+
         BarGoLink bar(queryResult->GetRowCount());
+
         do
         {
             bar.step();
+
             Field* fields = queryResult->Fetch();
             uint32 entry = fields[0].GetUInt32();
+
             if (!entry)
                 continue;
-            lootTemplates.push_back(fields[0].GetUInt32());
-        } while (queryResult->NextRow());
+
+            lootTemplates.push_back(entry);
+        }
+        while (queryResult->NextRow());
     }
 }
 
