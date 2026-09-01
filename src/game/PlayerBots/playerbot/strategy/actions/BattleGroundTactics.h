@@ -106,6 +106,7 @@ private:
     bool NeedsAvInitialQuests();
     bool SelectAvInitialQuestObjective(WorldLocation& objectiveLocation);
     bool AcceptAvInitialQuests();
+    bool IsAvWingCommanderRescuer();
 };
 
 class ArenaTactics : public MovementAction

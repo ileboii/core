@@ -2195,6 +2195,25 @@ std::vector<BattleBotPath*> const vPaths_AV =
     &vPath_AV_Irontooth_Mine_Entrance_to_Irontooth_Mine_Boss,
 };
 
+static bool IsAvQuesterForbiddenPath(BattleBotPath const* path)
+{
+    return
+        // Horde tower capture branches.
+        path == &vPath_AV_Horde_Base_First_Crossroads_to_East_Frostwolf_Tower_Flag || path == &vPath_AV_Horde_Base_First_Crossroads_to_West_Frostwolf_Tower_Flag ||
+
+        // Horde base combat objectives.
+        path == &vPath_AV_Horde_Base_Second_Crossroads_to_Horde_Base_Entrance_DrekThar || path == &vPath_AV_Horde_Base_Second_Crossroads_to_Horde_Base_DrekThar1 || path == &vPath_AV_Horde_Base_Second_Crossroads_to_Horde_Base_DrekThar2 || path == &vPath_AV_Horde_Base_Second_Crossroads_to_Horde_Base_Graveyard_Flag ||
+
+        // Captain / bunker / tower combat branches.
+        path == &vPath_AV_Iceblood_Garrison_to_Captain_Galvangar || path == &vPath_AV_Stonehearth_Outpost_to_Captain_Balinda_Stonehearth || path == &vPath_AV_Stonehearth_Bunker_First_Crossroad_to_Stonehearth_Bunker_Flag || path == &vPath_AV_Icewing_Bunker_Crossroad_to_Icewing_Bunker_Flag || path == &vPath_AV_Iceblood_Tower_to_Iceblood_Tower_Flag ||
+
+        // Alliance capture branches.
+        path == &vPath_AV_Stormpike_Crossroad_to_Stormpike_Flag || path == &vPath_AV_Alliance_Base_Bunker_First_Crossroad_to_Alliance_Base_North_Bunker || path == &vPath_AV_Alliance_Base_Bunker_Second_Crossroad_to_Alliance_Base_South_Bunker || path == &vPath_AV_Alliance_Base_Bunker_Third_Crossroad_to_Alliance_Base_Flag ||
+
+        // Alliance boss branch.
+        path == &vPath_AV_Alliance_Base_Bunker_Third_Crossroad_to_Alliance_Base_Vanndar_Stormpike;
+}
+
 #ifndef MANGOSBOT_ZERO
 std::vector<BattleBotPath*> const vPaths_EY =
 {
@@ -4523,24 +4542,51 @@ bool BGTactics::moveToObjective()
         bgType = bg->GetTypeID();
 #endif
 
-    ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
+    ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+    ai::PositionEntry pos = posMap["bg objective"];
 
     if (bgType == BATTLEGROUND_AV && ai->IsAvQuester())
     {
-        if (pos.isSet())
+        WorldLocation desiredObjective;
+
+        bool hasDesiredObjective = SelectAvWorldBossTurnInObjective(desiredObjective);
+
+        if (!hasDesiredObjective)
+            hasDesiredObjective = SelectAvQuesterObjective(desiredObjective);
+
+        if (!hasDesiredObjective)
         {
-            bool needsArmorer = AvQuesterNeedsArmorer();
-            bool goingToArmorer = IsAvQuesterArmorerObjective(pos);
-
-            if (needsArmorer != goingToArmorer)
+            if (pos.isSet())
             {
-                return resetObjective();
+                pos.Reset();
+                posMap["bg objective"] = pos;
             }
 
-            if (goingToArmorer && HandleAvQuesterArmorer())
-            {
-                return true;
-            }
+            return false;
+        }
+
+        bool objectiveChanged = !pos.isSet();
+
+        if (!objectiveChanged)
+        {
+            float dx = pos.x - desiredObjective.x;
+            float dy = pos.y - desiredObjective.y;
+            float dz = pos.z - desiredObjective.z;
+
+            objectiveChanged = (dx * dx + dy * dy + dz * dz) > 100.0f;
+        }
+
+        if (objectiveChanged)
+        {
+            pos.Set(desiredObjective.x, desiredObjective.y, desiredObjective.z, bot->GetMapId());
+
+            posMap["bg objective"] = pos;
+        }
+
+        if (IsAvQuesterArmorerObjective(pos) && HandleAvQuesterArmorer())
+        {
+            return true;
         }
     }
 
@@ -4679,6 +4725,11 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
     for (const auto& pPath : vPaths)
     {
+        if (bgType == BATTLEGROUND_AV && ai->IsAvQuester() && IsAvQuesterForbiddenPath(pPath))
+        {
+            continue;
+        }
+
         // skip mine paths of own faction
         if (!allowOwnMinePath && bot->GetTeam() == ALLIANCE && std::find(vPaths_AllyMine.begin(), vPaths_AllyMine.end(), pPath) != vPaths_AllyMine.end())
         {

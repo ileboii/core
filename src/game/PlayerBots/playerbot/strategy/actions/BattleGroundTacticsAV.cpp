@@ -232,10 +232,58 @@ static std::vector<WorldPosition> BuildAvCreatureSpawnList(uint32 entry)
     return spawns;
 }
 
+struct AvInitialQuestInfo
+{
+    uint32 questId;
+    uint32 questGiverEntry;
+};
+
+static bool CanTakeAvInitialQuest(Player* bot, uint32 questId)
+{
+    if (bot->GetQuestStatus(questId) != QUEST_STATUS_NONE)
+        return false;
+
+    Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+    if (!quest)
+        return false;
+
+    if (!bot->CanTakeQuest(quest, false))
+        return false;
+
+    if (!bot->SatisfyQuestLog(false))
+        return false;
+
+    if (!bot->CanAddQuest(quest, false))
+        return false;
+
+    return true;
+}
+
+static bool AvQuestGiverOffersQuest(Player* bot, Creature* questGiver, uint32 questId)
+{
+    if (!bot || !questGiver)
+        return false;
+
+    bot->PrepareQuestMenu(questGiver->GetObjectGuid());
+
+    if (!bot->PlayerTalkClass)
+        return false;
+
+    QuestMenu& menu = bot->PlayerTalkClass->GetQuestMenu();
+
+    for (uint32 i = 0; i < menu.MenuItemCount(); ++i)
+    {
+        if (menu.GetItem(i).m_qId == questId)
+            return true;
+    }
+
+    return false;
+}
+
 bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 {
-    if (IsAvQuester())
-        return SelectAvQuesterObjective(objectiveLocation);
+    if (IsAvQuester() || ai->IsAvQuester())
+        return false;
 
     BattleGround* bg = bot->GetBattleGround();
     if (!bg)
@@ -245,6 +293,11 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 
     if (ai->IsAvQuester())
         return SelectAvQuesterObjective(objectiveLocation);
+
+    if (IsAvWingCommanderRescuer() && SelectAvWingCommanderObjective(objectiveLocation))
+    {
+        return true;
+    }
 
     // End boss
 #ifndef MANGOSBOT_TWO  
@@ -401,8 +454,8 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 
 bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 {
-    if (IsAvQuester())
-        return SelectAvQuesterObjective(objectiveLocation);
+    if (IsAvQuester() || ai->IsAvQuester())
+        return false;
 
     BattleGround* bg = bot->GetBattleGround();
     if (!bg)
@@ -412,6 +465,11 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 
     if (ai->IsAvQuester())
         return SelectAvQuesterObjective(objectiveLocation);
+
+    if (IsAvWingCommanderRescuer() && SelectAvWingCommanderObjective(objectiveLocation))
+    {
+        return true;
+    }
 
     // End Boss
 #ifndef MANGOSBOT_TWO  
@@ -596,6 +654,12 @@ bool BGTactics::CheckFlagAv()
     if (TurnInAvWorldBossResources())
         return true;
 
+    if (IsAvWingCommanderRescuer())
+    {
+        if (HandleAvWingCommander())
+            return true;
+    }
+
     if (IsAvQuester())
     {
         if (AcceptAvInitialQuests())
@@ -767,9 +831,6 @@ bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
     if (SelectAvEmptyStablesObjective(objectiveLocation))
         return true;
 
-    if (SelectAvRiderHideObjective(objectiveLocation))
-        return true;
-
     if (AvQuesterNeedsArmorer())
     {
         Position const& armorerPos = bot->GetTeam() == ALLIANCE ? AV_ARMORER_POS_ALLIANCE : AV_ARMORER_POS_HORDE;
@@ -778,6 +839,11 @@ bool BGTactics::SelectAvQuesterObjective(WorldLocation& objectiveLocation)
 
         return true;
     }
+
+    if (SelectAvRiderHideObjective(objectiveLocation))
+        return true;
+
+    return false;
 }
 
 bool BGTactics::AvQuesterNeedsArmorer()
@@ -1381,11 +1447,9 @@ bool BGTactics::HandleAvEmptyStablesAtStableMaster()
 
 bool BGTactics::HasAvRiderHideToTurnIn()
 {
-    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_HIDE : BG_AV_QUEST_H_RIDER_HIDE;
-
     uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_FROSTWOLF_HIDE_ITEM : AV_ALTERAC_RAM_HIDE_ITEM;
 
-    return bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE || (bot->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE && bot->HasItemCount(itemId, 1));
+    return bot->HasItemCount(itemId, 1);
 }
 
 bool BGTactics::SelectAvRiderHideObjective(WorldLocation& objectiveLocation)
@@ -1394,72 +1458,87 @@ bool BGTactics::SelectAvRiderHideObjective(WorldLocation& objectiveLocation)
     if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
         return false;
 
-    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_HIDE : BG_AV_QUEST_H_RIDER_HIDE;
+    uint32 itemId = bot->GetTeam() == ALLIANCE ? AV_FROSTWOLF_HIDE_ITEM : AV_ALTERAC_RAM_HIDE_ITEM;
 
-    if (bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE && bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
-    {
-        return false;
-    }
-
-    if (HasAvRiderHideToTurnIn())
+    if (bot->HasItemCount(itemId, 1))
     {
         uint32 commanderEntry = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_RAM_RIDER_COMMANDER : AV_FROSTWOLF_WOLF_RIDER_COMMANDER;
 
-        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+        if (Creature* commander = bot->FindNearestCreature(commanderEntry, 60.0f, true))
         {
-            Creature* commander = ai->GetCreature(guid);
-            if (!commander)
-                continue;
-
-            if (commander->GetEntry() != commanderEntry)
-                continue;
-
             objectiveLocation = WorldLocation(commander->GetMapId(), commander->GetPositionX(), commander->GetPositionY(), commander->GetPositionZ(), commander->GetOrientation());
 
             return true;
         }
 
-        char const* baseLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+        if (auto const* dataPair = sRandomPlayerbotMgr.GetCreatureDataByEntry(commanderEntry))
+        {
+            auto const& data = dataPair->second;
 
-        return sRandomPlayerbotMgr.GetNamedLocation(baseLocation, objectiveLocation);
+            if (data.position.mapId == bot->GetMapId())
+            {
+                objectiveLocation = WorldLocation(bot->GetMapId(), data.position.x, data.position.y, data.position.z, data.position.o);
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     uint32 animalEntry = bot->GetTeam() == ALLIANCE ? AV_FROSTWOLF_NPC : AV_ALTERAC_RAM_NPC;
 
-    Creature* closestAnimal = nullptr;
-    float closestDistance = FLT_MAX;
-
-    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    if (Creature* animal = bot->FindNearestCreature(animalEntry, 40.0f, true))
     {
-        Creature* creature = ai->GetCreature(guid);
-        if (!creature)
-            continue;
-
-        if (creature->GetEntry() != animalEntry)
-            continue;
-
-        if (creature->GetDeathState() != ALIVE)
-            continue;
-
-        float distance = bot->GetDistance(creature);
-
-        if (distance < closestDistance)
-        {
-            closestDistance = distance;
-            closestAnimal = creature;
-        }
-    }
-
-    if (closestAnimal)
-    {
-        objectiveLocation = WorldLocation(closestAnimal->GetMapId(), closestAnimal->GetPositionX(), closestAnimal->GetPositionY(), closestAnimal->GetPositionZ(), closestAnimal->GetOrientation());
+        objectiveLocation = WorldLocation(animal->GetMapId(), animal->GetPositionX(), animal->GetPositionY(), animal->GetPositionZ(), animal->GetOrientation());
 
         return true;
     }
 
-    char const* searchLocation = bot->GetTeam() == ALLIANCE ? "AV_FROSTWOLF_GRAVEYARD" : "AV_STORMPIKE_GRAVEYARD";
+    static const std::vector<WorldPosition> ramSpawns = BuildAvCreatureSpawnList(AV_ALTERAC_RAM_NPC);
 
-    return sRandomPlayerbotMgr.GetNamedLocation(searchLocation, objectiveLocation);
+    static const std::vector<WorldPosition> wolfSpawns = BuildAvCreatureSpawnList(AV_FROSTWOLF_NPC);
+
+    const std::vector<WorldPosition>& animalSpawns = bot->GetTeam() == ALLIANCE ? wolfSpawns : ramSpawns;
+
+    if (animalSpawns.empty())
+        return false;
+
+    struct SpawnCandidate
+    {
+        WorldPosition const* spawn;
+        float distance;
+    };
+
+    std::vector<SpawnCandidate> candidates;
+
+    for (WorldPosition const& spawn : animalSpawns)
+    {
+        if (spawn.getMapId() != bot->GetMapId())
+            continue;
+
+        float distance = bot->GetDistance(spawn.getX(), spawn.getY(), spawn.getZ());
+
+        if (distance < 20.0f)
+            continue;
+
+        candidates.push_back({&spawn, distance});
+    }
+
+    if (candidates.empty())
+        return false;
+
+    std::sort(candidates.begin(), candidates.end(), [](SpawnCandidate const& left, SpawnCandidate const& right) { return left.distance < right.distance; });
+
+    size_t poolSize = std::min<size_t>(3, candidates.size());
+
+    size_t selected = bot->GetGUIDLow() % poolSize;
+
+    WorldPosition const& spawn = *candidates[selected].spawn;
+
+    objectiveLocation = WorldLocation(spawn.getMapId(), spawn.getX(), spawn.getY(), spawn.getZ(), spawn.getO());
+
+    return true;
 }
 
 bool BGTactics::TurnInAvRiderHide()
@@ -1467,57 +1546,41 @@ bool BGTactics::TurnInAvRiderHide()
     if (!HasAvRiderHideToTurnIn())
         return false;
 
-    uint32 questId = bot->GetTeam() == ALLIANCE ? BG_AV_QUEST_A_RIDER_HIDE : BG_AV_QUEST_H_RIDER_HIDE;
-
-    if (bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
-        return false;
-
     uint32 commanderEntry = bot->GetTeam() == ALLIANCE ? AV_STORMPIKE_RAM_RIDER_COMMANDER : AV_FROSTWOLF_WOLF_RIDER_COMMANDER;
 
-    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    Creature* commander = bot->FindNearestCreature(commanderEntry, 30.0f, true);
+
+    if (!commander)
+        return false;
+
+    if (!bot->IsWithinDistInMap(commander, INTERACTION_DISTANCE))
     {
-        Creature* commander = ai->GetCreature(guid);
-        if (!commander)
-            continue;
-
-        if (commander->GetEntry() != commanderEntry)
-            continue;
-
-        if (!bot->IsWithinDistInMap(commander, INTERACTION_DISTANCE))
-        {
-            continue;
-        }
-
-        if (bot->IsMounted())
-            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
-
-        if (bot->IsInDisallowedMountForm())
-            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
-
-        ai->StopMoving();
-
-        Event turnInEvent("av rider hide turn in", commander->GetObjectGuid(), bot);
-
-        bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
-
-        if (!turnedIn)
-            return false;
-
-        Event acceptEvent("av rider hide reaccept", commander->GetObjectGuid(), bot);
-
-        ai->DoSpecificAction("accept all quests", acceptEvent, true);
-
-        ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
-
-        ai::PositionEntry pos = posMap["bg objective"];
-
-        pos.Reset();
-        posMap["bg objective"] = pos;
-
-        return true;
+        return false;
     }
 
-    return false;
+    if (bot->IsMounted())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+    if (bot->IsInDisallowedMountForm())
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+    ai->StopMoving();
+
+    Event turnInEvent("av rider hide turn in", commander->GetObjectGuid(), bot);
+
+    bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
+
+    if (!turnedIn)
+        return false;
+
+    ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+    ai::PositionEntry pos = posMap["bg objective"];
+
+    pos.Reset();
+    posMap["bg objective"] = pos;
+
+    return true;
 }
 
 bool BGTactics::SelectAvWingCommanderObjective(WorldLocation& objectiveLocation)
@@ -1527,6 +1590,66 @@ bool BGTactics::SelectAvWingCommanderObjective(WorldLocation& objectiveLocation)
         return false;
 
     AvWingCommanderInfo const* commanders = bot->GetTeam() == ALLIANCE ? AV_AllianceWingCommanders : AV_HordeWingCommanders;
+
+    if (IsAvWingCommanderRescuer())
+    {
+        uint32 rescueIndex = bot->GetGUIDLow() % 3;
+
+        AvWingCommanderInfo const& target = commanders[rescueIndex];
+
+        char const* homeLocationName = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
+
+        WorldLocation homeLocation;
+        bool hasHomeLocation = sRandomPlayerbotMgr.GetNamedLocation(homeLocationName, homeLocation);
+
+        if (Creature* commander = bot->FindNearestCreature(target.entry, VISIBILITY_DISTANCE_LARGE, true))
+        {
+            if (hasHomeLocation)
+            {
+                float dx = commander->GetPositionX() - homeLocation.x;
+
+                float dy = commander->GetPositionY() - homeLocation.y;
+
+                if ((dx * dx + dy * dy) < (VISIBILITY_DISTANCE_LARGE * VISIBILITY_DISTANCE_LARGE))
+                {
+                    return false;
+                }
+            }
+
+            objectiveLocation = WorldLocation(commander->GetMapId(), commander->GetPositionX(), commander->GetPositionY(), commander->GetPositionZ(), commander->GetOrientation());
+
+            return true;
+        }
+
+        WorldLocation rescueLocation;
+
+        if (!sRandomPlayerbotMgr.GetNamedLocation(target.rescueLocation, rescueLocation))
+        {
+            return false;
+        }
+
+        float dx = bot->GetPositionX() - rescueLocation.x;
+        float dy = bot->GetPositionY() - rescueLocation.y;
+
+        float distanceSq = dx * dx + dy * dy;
+
+        if (distanceSq < (VISIBILITY_DISTANCE_LARGE * VISIBILITY_DISTANCE_LARGE))
+        {
+            return false;
+        }
+
+        constexpr float AV_WING_COMMANDER_RESCUE_RANGE = 250.0f;
+
+        if (distanceSq > AV_WING_COMMANDER_RESCUE_RANGE * AV_WING_COMMANDER_RESCUE_RANGE)
+        {
+            return false;
+        }
+
+        objectiveLocation = rescueLocation;
+        return true;
+    }
+    if (!IsAvQuester() && !ai->IsAvQuester())
+        return false;
 
     char const* homeLocation = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
 
@@ -1613,12 +1736,20 @@ bool BGTactics::HandleAvWingCommander()
     if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
         return false;
 
+    bool quester = IsAvQuester() || ai->IsAvQuester();
+    bool rescuer = IsAvWingCommanderRescuer();
+
+    if (!quester && !rescuer)
+        return false;
+
     AvWingCommanderInfo const* commanders = bot->GetTeam() == ALLIANCE ? AV_AllianceWingCommanders : AV_HordeWingCommanders;
 
     char const* homeLocationName = bot->GetTeam() == ALLIANCE ? "AV_STORMPIKE_AID_STATION" : "AV_FROSTWOLF_RELIEF_HUT";
 
     WorldLocation homeLocation;
     bool hasHomeLocation = sRandomPlayerbotMgr.GetNamedLocation(homeLocationName, homeLocation);
+
+    uint32 assignedCommanderIndex = bot->GetGUIDLow() % 3;
 
     for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
     {
@@ -1627,12 +1758,14 @@ bool BGTactics::HandleAvWingCommander()
             continue;
 
         AvWingCommanderInfo const* info = nullptr;
+        uint32 commanderIndex = 0;
 
         for (uint32 i = 0; i < 3; ++i)
         {
             if (commanders[i].entry == commander->GetEntry())
             {
                 info = &commanders[i];
+                commanderIndex = i;
                 break;
             }
         }
@@ -1640,61 +1773,15 @@ bool BGTactics::HandleAvWingCommander()
         if (!info)
             continue;
 
+        if (rescuer && !quester && commanderIndex != assignedCommanderIndex)
+        {
+            continue;
+        }
+
         if (!bot->IsWithinDistInMap(commander, INTERACTION_DISTANCE))
         {
             continue;
         }
-
-        if (bot->IsMounted())
-            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
-
-        if (bot->IsInDisallowedMountForm())
-            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
-
-        ai->StopMoving();
-
-        QuestStatus status = bot->GetQuestStatus(info->questId);
-
-        if (status == QUEST_STATUS_COMPLETE)
-        {
-            Event turnInEvent("av wing commander turn in", commander->GetObjectGuid(), bot);
-
-            bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
-
-            if (!turnedIn)
-                continue;
-
-            Event acceptEvent("av wing commander reaccept", commander->GetObjectGuid(), bot);
-
-            ai->DoSpecificAction("accept all quests", acceptEvent, true);
-
-            ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
-
-            ai::PositionEntry pos = posMap["bg objective"];
-
-            pos.Reset();
-            posMap["bg objective"] = pos;
-
-            return true;
-        }
-
-        if (status == QUEST_STATUS_INCOMPLETE)
-            continue;
-
-        Event acceptEvent("av wing commander accept", commander->GetObjectGuid(), bot);
-
-        if (ai->DoSpecificAction("accept all quests", acceptEvent, true))
-        {
-            ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
-
-            ai::PositionEntry pos = posMap["bg objective"];
-
-            pos.Reset();
-            posMap["bg objective"] = pos;
-
-            return true;
-        }
-
 
         bool commanderNearHome = false;
 
@@ -1707,8 +1794,71 @@ bool BGTactics::HandleAvWingCommander()
             commanderNearHome = (dx * dx + dy * dy) < (VISIBILITY_DISTANCE_LARGE * VISIBILITY_DISTANCE_LARGE);
         }
 
+        if (quester && commanderNearHome)
+        {
+            QuestStatus status = bot->GetQuestStatus(info->questId);
+
+            if (status == QUEST_STATUS_INCOMPLETE)
+                continue;
+
+            if (bot->IsMounted())
+                bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+            if (bot->IsInDisallowedMountForm())
+                bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+            ai->StopMoving();
+
+            if (status == QUEST_STATUS_COMPLETE)
+            {
+                Event turnInEvent("av wing commander turn in", commander->GetObjectGuid(), bot);
+
+                bool turnedIn = ai->DoSpecificAction("talk to quest giver", turnInEvent, true);
+
+                if (!turnedIn)
+                    continue;
+
+                Event acceptEvent("av wing commander reaccept", commander->GetObjectGuid(), bot);
+
+                ai->DoSpecificAction("accept all quests", acceptEvent, true);
+
+                ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+                ai::PositionEntry pos = posMap["bg objective"];
+
+                pos.Reset();
+                posMap["bg objective"] = pos;
+
+                return true;
+            }
+
+            Event acceptEvent("av wing commander accept", commander->GetObjectGuid(), bot);
+
+            if (ai->DoSpecificAction("accept all quests", acceptEvent, true))
+            {
+                ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+
+                ai::PositionEntry pos = posMap["bg objective"];
+
+                pos.Reset();
+                posMap["bg objective"] = pos;
+
+                return true;
+            }
+
+            continue;
+        }
+
         if (commanderNearHome)
             continue;
+
+        if (bot->IsMounted())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+        ai->StopMoving();
 
         WorldPacket hello;
         hello << commander->GetObjectGuid();
@@ -2190,9 +2340,6 @@ bool BGTactics::NeedsAvInitialQuests()
 
         if (bot->GetQuestStatus(BG_AV_QUEST_A_RIDER_TAME) == QUEST_STATUS_NONE)
             return true;
-
-        if (bot->GetQuestStatus(BG_AV_QUEST_A_RIDER_HIDE) == QUEST_STATUS_NONE)
-            return true;
     }
     else
     {
@@ -2209,9 +2356,6 @@ bool BGTactics::NeedsAvInitialQuests()
 
         if (bot->GetQuestStatus(BG_AV_QUEST_H_RIDER_TAME) == QUEST_STATUS_NONE)
             return true;
-
-        if (bot->GetQuestStatus(BG_AV_QUEST_H_RIDER_HIDE) == QUEST_STATUS_NONE)
-            return true;
     }
 
     return false;
@@ -2219,10 +2363,10 @@ bool BGTactics::NeedsAvInitialQuests()
 
 bool BGTactics::SelectAvInitialQuestObjective(WorldLocation& objectiveLocation)
 {
-    if (!NeedsAvInitialQuests())
+    if (!IsAvQuester())
         return false;
 
-    uint32 questGiverEntry = 0;
+    std::vector<AvInitialQuestInfo> quests;
 
     if (bot->GetTeam() == ALLIANCE)
     {
@@ -2230,20 +2374,14 @@ bool BGTactics::SelectAvInitialQuestObjective(WorldLocation& objectiveLocation)
 
         if (!hasArmorScrapsQuest)
         {
-            questGiverEntry = AV_MURGOT_DEEPFORGE;
+            quests.push_back({BG_AV_QUEST_A_SCRAPS1, AV_MURGOT_DEEPFORGE});
         }
-        else if (bot->GetQuestStatus(BG_AV_QUEST_A_NEAR_MINE) == QUEST_STATUS_NONE || bot->GetQuestStatus(BG_AV_QUEST_A_OTHER_MINE) == QUEST_STATUS_NONE)
-        {
-            questGiverEntry = AV_STORMPIKE_QUARTERMASTER;
-        }
-        else if (bot->GetQuestStatus(BG_AV_QUEST_A_RIDER_TAME) == QUEST_STATUS_NONE)
-        {
-            questGiverEntry = AV_STORMPIKE_STABLE_MASTER;
-        }
-        else if (bot->GetQuestStatus(BG_AV_QUEST_A_RIDER_HIDE) == QUEST_STATUS_NONE)
-        {
-            questGiverEntry = AV_STORMPIKE_RAM_RIDER_COMMANDER;
-        }
+
+        quests.push_back({BG_AV_QUEST_A_NEAR_MINE, AV_STORMPIKE_QUARTERMASTER});
+
+        quests.push_back({BG_AV_QUEST_A_OTHER_MINE, AV_STORMPIKE_QUARTERMASTER});
+
+        quests.push_back({BG_AV_QUEST_A_RIDER_TAME, AV_STORMPIKE_STABLE_MASTER});
     }
     else
     {
@@ -2251,60 +2389,52 @@ bool BGTactics::SelectAvInitialQuestObjective(WorldLocation& objectiveLocation)
 
         if (!hasArmorScrapsQuest)
         {
-            questGiverEntry = AV_SMITH_REGZAR;
+            quests.push_back({BG_AV_QUEST_H_SCRAPS1, AV_SMITH_REGZAR});
         }
-        else if (bot->GetQuestStatus(BG_AV_QUEST_H_NEAR_MINE) == QUEST_STATUS_NONE || bot->GetQuestStatus(BG_AV_QUEST_H_OTHER_MINE) == QUEST_STATUS_NONE)
-        {
-            questGiverEntry = AV_FROSTWOLF_QUARTERMASTER;
-        }
-        else if (bot->GetQuestStatus(BG_AV_QUEST_H_RIDER_TAME) == QUEST_STATUS_NONE)
-        {
-            questGiverEntry = AV_FROSTWOLF_STABLE_MASTER;
-        }
-        else if (bot->GetQuestStatus(BG_AV_QUEST_H_RIDER_HIDE) == QUEST_STATUS_NONE)
-        {
-            questGiverEntry = AV_FROSTWOLF_WOLF_RIDER_COMMANDER;
-        }
+
+        quests.push_back({BG_AV_QUEST_H_NEAR_MINE, AV_FROSTWOLF_QUARTERMASTER});
+
+        quests.push_back({BG_AV_QUEST_H_OTHER_MINE, AV_FROSTWOLF_QUARTERMASTER});
+
+        quests.push_back({BG_AV_QUEST_H_RIDER_TAME, AV_FROSTWOLF_STABLE_MASTER});
     }
 
-    if (!questGiverEntry)
-        return false;
-
-    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+    for (AvInitialQuestInfo const& info : quests)
     {
-        Creature* creature = ai->GetCreature(guid);
-
-        if (!creature)
+        if (!CanTakeAvInitialQuest(bot, info.questId))
             continue;
 
-        if (creature->GetEntry() != questGiverEntry)
-            continue;
+        Creature* questGiver = bot->FindNearestCreature(info.questGiverEntry, 80.0f, true);
 
-        objectiveLocation = WorldLocation(creature->GetMapId(), creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(), creature->GetOrientation());
-
-        return true;
-    }
-    if (auto const* dataPair = sRandomPlayerbotMgr.GetCreatureDataByEntry(questGiverEntry))
-    {
-        auto const& data = dataPair->second;
-
-        if (data.position.mapId == bot->GetMapId())
+        if (questGiver)
         {
+            if (bot->IsWithinDistInMap(questGiver, INTERACTION_DISTANCE + 3.0f))
+            {
+                if (!AvQuestGiverOffersQuest(bot, questGiver, info.questId))
+                {
+                    continue;
+                }
+            }
+
+            objectiveLocation = WorldLocation(questGiver->GetMapId(), questGiver->GetPositionX(), questGiver->GetPositionY(), questGiver->GetPositionZ(), questGiver->GetOrientation());
+
+            return true;
+        }
+
+        if (auto const* dataPair = sRandomPlayerbotMgr.GetCreatureDataByEntry(info.questGiverEntry))
+        {
+            auto const& data = dataPair->second;
+
+            if (data.position.mapId != bot->GetMapId())
+                continue;
+
             objectiveLocation = WorldLocation(bot->GetMapId(), data.position.x, data.position.y, data.position.z, data.position.o);
 
             return true;
         }
     }
-    if (bot->GetTeam() == ALLIANCE)
-    {
-        objectiveLocation = WorldLocation(bot->GetMapId(), 629.777f, -99.9175f, 40.6453f, 0.0f);
-    }
-    else
-    {
-        objectiveLocation = WorldLocation(bot->GetMapId(), -1320.18f, -289.806f, 90.4719f, 0.0f);
-    }
 
-    return true;
+    return false;
 }
 
 bool BGTactics::AcceptAvInitialQuests()
@@ -2312,42 +2442,47 @@ bool BGTactics::AcceptAvInitialQuests()
     if (!IsAvQuester())
         return false;
 
-    uint32 allowedEntries[4];
+    std::vector<AvInitialQuestInfo> quests;
 
     if (bot->GetTeam() == ALLIANCE)
     {
-        allowedEntries[0] = AV_MURGOT_DEEPFORGE;
-        allowedEntries[1] = AV_STORMPIKE_QUARTERMASTER;
-        allowedEntries[2] = AV_STORMPIKE_STABLE_MASTER;
-        allowedEntries[3] = AV_STORMPIKE_RAM_RIDER_COMMANDER;
+        bool hasArmorScrapsQuest = bot->GetQuestStatus(BG_AV_QUEST_A_SCRAPS1) != QUEST_STATUS_NONE || bot->GetQuestStatus(BG_AV_QUEST_A_SCRAPS2) != QUEST_STATUS_NONE;
+
+        if (!hasArmorScrapsQuest)
+        {
+            quests.push_back({BG_AV_QUEST_A_SCRAPS1, AV_MURGOT_DEEPFORGE});
+        }
+
+        quests.push_back({BG_AV_QUEST_A_NEAR_MINE, AV_STORMPIKE_QUARTERMASTER});
+
+        quests.push_back({BG_AV_QUEST_A_OTHER_MINE, AV_STORMPIKE_QUARTERMASTER});
+
+        quests.push_back({BG_AV_QUEST_A_RIDER_TAME, AV_STORMPIKE_STABLE_MASTER});
     }
     else
     {
-        allowedEntries[0] = AV_SMITH_REGZAR;
-        allowedEntries[1] = AV_FROSTWOLF_QUARTERMASTER;
-        allowedEntries[2] = AV_FROSTWOLF_STABLE_MASTER;
-        allowedEntries[3] = AV_FROSTWOLF_WOLF_RIDER_COMMANDER;
-    }
+        bool hasArmorScrapsQuest = bot->GetQuestStatus(BG_AV_QUEST_H_SCRAPS1) != QUEST_STATUS_NONE || bot->GetQuestStatus(BG_AV_QUEST_H_SCRAPS2) != QUEST_STATUS_NONE;
 
-    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
-    {
-        Creature* questGiver = ai->GetCreature(guid);
-
-        if (!questGiver)
-            continue;
-
-        bool allowed = false;
-
-        for (uint32 entry : allowedEntries)
+        if (!hasArmorScrapsQuest)
         {
-            if (questGiver->GetEntry() == entry)
-            {
-                allowed = true;
-                break;
-            }
+            quests.push_back({BG_AV_QUEST_H_SCRAPS1, AV_SMITH_REGZAR});
         }
 
-        if (!allowed)
+        quests.push_back({BG_AV_QUEST_H_NEAR_MINE, AV_FROSTWOLF_QUARTERMASTER});
+
+        quests.push_back({BG_AV_QUEST_H_OTHER_MINE, AV_FROSTWOLF_QUARTERMASTER});
+
+        quests.push_back({BG_AV_QUEST_H_RIDER_TAME, AV_FROSTWOLF_STABLE_MASTER});
+    }
+
+    for (AvInitialQuestInfo const& info : quests)
+    {
+        if (!CanTakeAvInitialQuest(bot, info.questId))
+            continue;
+
+        Creature* questGiver = bot->FindNearestCreature(info.questGiverEntry, 30.0f, true);
+
+        if (!questGiver)
             continue;
 
         if (!bot->IsWithinDistInMap(questGiver, INTERACTION_DISTANCE))
@@ -2355,12 +2490,27 @@ bool BGTactics::AcceptAvInitialQuests()
             continue;
         }
 
-        Event acceptEvent("av initial quest pickup", questGiver->GetObjectGuid(), bot);
-
-        bool accepted = ai->DoSpecificAction("accept all quests", acceptEvent, true);
-
-        if (!accepted)
+        if (!AvQuestGiverOffersQuest(bot, questGiver, info.questId))
+        {
             continue;
+        }
+
+        WorldPacket packet(CMSG_QUESTGIVER_ACCEPT_QUEST);
+
+        uint32 unk1 = 0;
+
+        packet << questGiver->GetObjectGuid() << info.questId << unk1;
+
+        packet.rpos(0);
+
+        bot->GetSession()->HandleQuestgiverAcceptQuestOpcode(MakeTypedPacket<WorldPackets::Quest::QuestgiverAcceptQuest>(packet));
+
+        QuestStatus newStatus = bot->GetQuestStatus(info.questId);
+
+        if (newStatus == QUEST_STATUS_NONE || newStatus == QUEST_STATUS_AVAILABLE)
+        {
+            continue;
+        }
 
         ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
 
@@ -2373,4 +2523,18 @@ bool BGTactics::AcceptAvInitialQuests()
     }
 
     return false;
+}
+
+bool BGTactics::IsAvWingCommanderRescuer()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return false;
+
+    if (IsAvQuester() || ai->IsAvQuester())
+        return false;
+
+    uint32 role = context->GetValue<uint32>("bg role")->Get();
+
+    return role == 9;
 }
