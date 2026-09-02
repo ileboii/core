@@ -61,23 +61,6 @@ INSTANTIATE_SINGLETON_1(ObjectMgr);
 
 #include "utf8cpp/utf8.h"
 
-namespace
-{
-    uint32 GetStaticSpawnContinentInstanceId(uint32 mapId, float x, float y, float z)
-    {
-        uint32 zoneId = 0;
-
-        if (sWorld.getConfig(CONFIG_BOOL_CONTINENTS_ZONE_SHARDING) && (mapId == MAP_EASTERN_KINGDOMS || mapId == MAP_KALIMDOR))
-        {
-            uint32 areaId = 0;
-
-            sTerrainMgr.GetZoneAndAreaId(zoneId, areaId, mapId, x, y, z);
-        }
-
-        return sMapMgr.GetContinentInstanceId(mapId, x, y, nullptr, zoneId);
-    }
-}
-
 bool normalizePlayerName(std::string& name, size_t max_len)
 {
     if (name.empty())
@@ -2463,7 +2446,7 @@ void ObjectMgr::LoadCreatures(bool reload)
         data.movement_type      = fields[16].GetUInt8();
         data.spawn_flags        = spawnFlags;
         data.visibility_mod     = fields[21].GetFloat();
-        data.instanciatedContinentInstanceId = GetStaticSpawnContinentInstanceId(data.position.mapId, data.position.x, data.position.y, data.position.z);
+        data.instanciatedContinentInstanceId = sMapMgr.GetContinentInstanceId(data.position.mapId, data.position.x, data.position.y);
         int16 gameEvent         = fields[17].GetInt16();
         int16 GuidPoolId        = fields[18].GetInt16();
         int16 EntryPoolId       = fields[19].GetInt16();
@@ -2617,7 +2600,7 @@ void ObjectMgr::LoadGameobjects(bool reload)
         data.spawntimesecsmax = fields[12].GetInt32();
         data.spawn_flags      = fields[18].GetUInt32();
         data.visibility_mod   = fields[19].GetFloat();
-        data.instanciatedContinentInstanceId = GetStaticSpawnContinentInstanceId(data.position.mapId, data.position.x, data.position.y, data.position.z);
+        data.instanciatedContinentInstanceId = sMapMgr.GetContinentInstanceId(data.position.mapId, data.position.x, data.position.y);
 
         MapEntry const* mapEntry = sMapStorage.LookupEntry<MapEntry>(data.position.mapId);
         if (!mapEntry)
