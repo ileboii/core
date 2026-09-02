@@ -496,6 +496,7 @@ bool PlayerbotAIConfig::Initialize()
     disableBotOptimizations = config.GetBoolDefault("AiPlayerbot.DisableBotOptimizations", false);
     disableActivityPriorities = config.GetBoolDefault("AiPlayerbot.DisableActivityPriorities", false);
     forceActiveWhenNearPlayer = config.GetBoolDefault("AiPlayerbot.ForceActiveWhenNearPlayer", false);
+    forceFullPlayerUpdates = config.GetBoolDefault("AiPlayerbot.ForceFullPlayerUpdates", false);
     limitCombatActivity = config.GetBoolDefault("AiPlayerbot.LimitCombatActivity", false);
     remoteBotUpdateDivider = std::max<uint32>(1, config.GetIntDefault("AiPlayerbot.RemoteBotUpdateDivider", 1));
     guildOrderAlwaysActive = config.GetBoolDefault("AiPlayerbot.GuildOrderAlwaysActive", true);

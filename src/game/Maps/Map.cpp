@@ -791,27 +791,34 @@ inline void Map::UpdateActiveCellsAsynch(uint32 now, uint32 diff)
 {
     resetMarkedCells();
 
-    // Mark all cells that need update
     for (m_mapRefIter = m_mapRefManager.begin(); m_mapRefIter != m_mapRefManager.end(); ++m_mapRefIter)
     {
         Player* plr = m_mapRefIter->getSource();
+
         if (!sPlayerbotAIConfig.disableBotOptimizations && !plr->isRealPlayer())
             continue;
+
         MarkCellsAroundObject(plr);
     }
 
     for (m_activeNonPlayersIter = m_activeNonPlayers.begin(); m_activeNonPlayersIter != m_activeNonPlayers.end(); ++m_activeNonPlayersIter)
+    {
         MarkCellsAroundObject(*m_activeNonPlayersIter);
+    }
 
     const int nthreads = m_cellThreads->size();
-    for (int step = 0; step < 2; step++)
+
+    for (int step = 0; step < 2; ++step)
     {
         for (int i = 0; i < nthreads; ++i)
-            m_cellThreads << [this, diff, now, i, nthreads, step](){
-                UpdateActiveCellsCallback(diff, now, i, nthreads+1, step);
-            };
+        {
+            m_cellThreads << [this, diff, now, i, nthreads, step]() { UpdateActiveCellsCallback(diff, now, i, nthreads + 1, step); };
+        }
+
         std::future<void> job = m_cellThreads->processWorkload();
-        UpdateActiveCellsCallback(diff, now, nthreads, nthreads+1, step);
+
+        UpdateActiveCellsCallback(diff, now, nthreads, nthreads + 1, step);
+
         if (job.valid())
             job.wait();
     }
@@ -820,30 +827,25 @@ inline void Map::UpdateActiveCellsAsynch(uint32 now, uint32 diff)
 inline void Map::UpdateActiveCellsSynch(uint32 now, uint32 diff)
 {
     resetMarkedCells();
-    // the player iterator is stored in the map object
-    // to make sure calls to Map::Remove don't invalidate it
+
     for (m_mapRefIter = m_mapRefManager.begin(); m_mapRefIter != m_mapRefManager.end(); ++m_mapRefIter)
     {
         Player* plr = m_mapRefIter->getSource();
+
         if (!sPlayerbotAIConfig.disableBotOptimizations && !plr->isRealPlayer())
         {
-            // Only ensure the grid is loaded for bots, skip full cell updates
-            // so mobs around inactive bots don't get updated and can't aggro.
             EnsureGridLoaded(plr->GetCurrentCell());
             continue;
         }
+
         UpdateCellsAroundObject(now, diff, plr);
     }
 
-    // non-player active objects
     for (m_activeNonPlayersIter = m_activeNonPlayers.begin(); m_activeNonPlayersIter != m_activeNonPlayers.end();)
     {
-        // skip not in world
         WorldObject* obj = *m_activeNonPlayersIter;
-
-        // step before processing, in this case if Map::Remove remove next object we correctly
-        // step to next-next, and if we step to end() then newly added objects can wait next update.
         ++m_activeNonPlayersIter;
+
         UpdateCellsAroundObject(now, diff, obj);
     }
 }
@@ -997,7 +999,7 @@ void Map::UpdatePlayers()
             }
         }
 
-        if (sPlayerbotAIConfig.disableBotOptimizations && !plr->isRealPlayer())
+        if (sPlayerbotAIConfig.forceFullPlayerUpdates && !plr->isRealPlayer())
         {
             PlayerbotAI* botAI = plr->GetPlayerbotAI();
 

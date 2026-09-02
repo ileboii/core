@@ -47,36 +47,37 @@ bool QueryItemUsageAction::Execute(Event& event)
 
         ai->TellPlayer(requester, QueryItem(itemQualifier, count, GetCount(itemQualifier)), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
-        if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        if (event.getSource() == "item push result" && sPlayerbotAIConfig.hasLog("bot_events.csv"))
         {
-            if (event.getSource() == "item push result")
+            QuestStatusMap& questMap = bot->GetQuestStatusMap();
+
+            for (QuestStatusMap::const_iterator i = questMap.begin(); i != questMap.end(); ++i)
             {
+                const Quest* questTemplate = sObjectMgr.GetQuestTemplate(i->first);
 
-                QuestStatusMap& questMap = bot->GetQuestStatusMap();
-                for (QuestStatusMap::const_iterator i = questMap.begin(); i != questMap.end(); i++)
+                if (!questTemplate)
+                    continue;
+
+                uint32 questId = questTemplate->GetQuestId();
+                QuestStatus status = bot->GetQuestStatus(questId);
+
+                if (status == QUEST_STATUS_INCOMPLETE || (status == QUEST_STATUS_COMPLETE && !bot->GetQuestRewardStatus(questId)))
                 {
-                    const Quest* questTemplate = sObjectMgr.GetQuestTemplate(i->first);
-                    if (!questTemplate)
-                        continue;
+                    QuestStatusData const& questStatus = i->second;
 
-                    uint32 questId = questTemplate->GetQuestId();
-                    QuestStatus status = bot->GetQuestStatus(questId);
-                    if (status == QUEST_STATUS_INCOMPLETE || (status == QUEST_STATUS_COMPLETE && !bot->GetQuestRewardStatus(questId)))
+                    for (int objective = 0; objective < QUEST_OBJECTIVES_COUNT; ++objective)
                     {
-                        QuestStatusData const& questStatus = i->second;
-                        for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
-                        {
-                            if (questTemplate->ReqItemId[i] != itemId)
-                                continue;
+                        if (questTemplate->ReqItemId[objective] != itemId)
+                            continue;
 
-                            int required = questTemplate->ReqItemCount[i];
-                            int available = questStatus.m_itemcount[i];
+                        int required = questTemplate->ReqItemCount[objective];
 
-                            if (!required)
-                                continue;
+                        int available = questStatus.m_itemcount[objective];
 
-                            sPlayerbotAIConfig.logEvent(ai, "QueryItemUsageAction", questTemplate->GetTitle(), std::to_string((float)available / (float)required));
-                        }
+                        if (!required)
+                            continue;
+
+                        sPlayerbotAIConfig.logEvent(ai, "QueryItemUsageAction", questTemplate->GetTitle(), std::to_string((float)available / (float)required));
                     }
                 }
             }

@@ -4,6 +4,7 @@
 #include "Talentspec.h"
 #include "SharedDefines.h"
 #include "SystemConfig.h"
+#include <shared_mutex>
 
 class Player;
 class PlayerbotMgr;
@@ -237,6 +238,7 @@ public:
     bool disableBotOptimizations;
     bool disableActivityPriorities;
     bool forceActiveWhenNearPlayer;
+    bool forceFullPlayerUpdates;
     bool limitCombatActivity;
     uint32 remoteBotUpdateDivider;
     bool guildOrderAlwaysActive;
@@ -414,7 +416,7 @@ public:
 
     std::string GetTimestampStr();
 
-    bool hasLog(std::string fileName) { return std::find(allowedLogFiles.begin(), allowedLogFiles.end(), fileName) != allowedLogFiles.end(); };
+    bool hasLog(std::string fileName) { return std::find(allowedLogFiles.begin(), allowedLogFiles.end(), fileName) != allowedLogFiles.end(); }
     bool openLog(std::string fileName, char const* mode = "a", bool haslog = false);
     bool isLogOpen(std::string fileName) { auto it = logFiles.find(fileName); return it != logFiles.end() && it->second.second;}
     void log(std::string fileName, const char* str, ...);
