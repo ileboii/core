@@ -752,6 +752,7 @@ class Map : public GridRefManager<NGridType>
         uint32 m_lastPlayersUpdate;
         uint32 m_inactivePlayersSkippedUpdates = 0;
         uint32 m_lastCellsUpdate;
+        uint32 m_remoteBotUpdateSlot = 0;
 
         // Elevators are not loaded normally.
         void LoadElevatorTransports();

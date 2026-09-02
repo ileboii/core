@@ -62,6 +62,9 @@ AiPlayerbot.RandomBotAccountCount = 200
 # (0-1), default 0
 # AiPlayerbot.DisableBotOptimizations = 0
 
+# Divider how often bots get updated compared to real players if not with real player. The higher the value, the slower the bot is. Default is 1.
+# AiPlayerbot.RemoteBotUpdateDivider = 1
+
 # Disable bot activity priorities, to make all bots ACTUALLY active without player in the zones or server (unless AiPlayerbot.DisableBotOptimizations = 0)
 # This setting is added for the sake of having all bots always active regardless of anything
 # With this enabled, if you get lags - then you need to reduce amount of online bots, rather than relying on optimizations

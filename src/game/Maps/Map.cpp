@@ -58,6 +58,7 @@
 #include "Geometry.h"
 #include "PlayerBots/playerbot/PlayerbotAIConfig.h"
 #include "RandomPlayerbotMgr.h"
+#include "PlayerBots/playerbot/PlayerbotAI.h"
 
 Map::~Map()
 {
@@ -936,74 +937,116 @@ void Map::UpdatePlayers()
 
     bool const updateInactivePlayers = !IsContinent();
 
+    uint32 const remoteDivider = std::max<uint32>(1, sPlayerbotAIConfig.remoteBotUpdateDivider);
+
+    uint32 const remoteSlot = m_remoteBotUpdateSlot;
+
+    if (++m_remoteBotUpdateSlot >= remoteDivider)
+        m_remoteBotUpdateSlot = 0;
+
+    struct RealPlayerPosition
+    {
+        float x;
+        float y;
+    };
+
+    std::vector<RealPlayerPosition> realPlayerPositions;
+
+    if (sPlayerbotAIConfig.forceActiveWhenNearPlayer || remoteDivider > 1)
+    {
+        for (auto itr = m_mapRefManager.begin(); itr != m_mapRefManager.end(); ++itr)
+        {
+            Player* player = itr->getSource();
+
+            if (!player || !player->IsInWorld() || !player->isRealPlayer())
+            {
+                continue;
+            }
+            if (player->IsGameMaster() && player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM))
+            {
+                continue;
+            }
+
+            realPlayerPositions.push_back({player->GetPositionX(), player->GetPositionY()});
+        }
+    }
+
     for (m_mapRefIter = m_mapRefManager.begin(); m_mapRefIter != m_mapRefManager.end(); ++m_mapRefIter)
     {
         Player* plr = m_mapRefIter->getSource();
-
         if (!plr || !plr->IsInWorld())
             continue;
 
-        bool const scheduledInactiveUpdate = updateCycle == 1 || (plr->GetGUIDLow() % updateCycle) == updateSlot;
+        bool realPlayerNearby = false;
 
-        if (!updateInactivePlayers && !scheduledInactiveUpdate)
+        if (!plr->isRealPlayer() && !realPlayerPositions.empty())
         {
+            float const range = sPlayerbotAIConfig.reactDistance;
+            float const sqRange = range * range;
+
+            for (RealPlayerPosition const& pos : realPlayerPositions)
+            {
+                float const dx = plr->GetPositionX() - pos.x;
+                float const dy = plr->GetPositionY() - pos.y;
+
+                if ((dx * dx + dy * dy) < sqRange)
+                {
+                    realPlayerNearby = true;
+                    break;
+                }
+            }
+        }
+
+        if (sPlayerbotAIConfig.disableBotOptimizations && !plr->isRealPlayer())
+        {
+            PlayerbotAI* botAI = plr->GetPlayerbotAI();
+
+            bool const hasRealPlayerMaster = botAI && botAI->HasRealPlayerMaster();
+
             bool const needsBgQueueUpdate = sRandomPlayerbotMgr.ShouldForceBgQueueUpdate(plr);
 
-            bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SELF_ITEMS) || plr->HasScheduledEvent() || needsBgQueueUpdate;
+            bool const fullRateRequired = hasRealPlayerMaster || realPlayerNearby || plr->HasScheduledEvent() || plr->HasPendingItemUpdates() || needsBgQueueUpdate;
 
-            bool const playerHasPendingItemUpdates = plr->HasPendingItemUpdates();
+            bool const throttleRemoteBot = IsContinent() && remoteDivider > 1 && !fullRateRequired;
 
-            bool playerNearby = false;
-
-            if (!playerIsActive && !playerHasPendingItemUpdates && sPlayerbotAIConfig.forceActiveWhenNearPlayer && !plr->isRealPlayer())
+            if (throttleRemoteBot)
             {
-                float range = sPlayerbotAIConfig.reactDistance;
-                float sqRange = range * range;
+                bool const scheduledRemoteUpdate = (plr->GetGUIDLow() % remoteDivider) == remoteSlot;
 
-                uint32 const botMapId = plr->GetMapId();
-                uint32 const botInstanceId = plr->GetInstanceId();
-
-                std::shared_lock<std::shared_mutex> lock(sRandomPlayerbotMgr.GetPlayersMutex());
-
-                for (auto const& i : sRandomPlayerbotMgr.GetPlayers())
+                if (!scheduledRemoteUpdate)
                 {
-                    Player* player = i.second;
-
-                    if (!player || !player->IsInWorld())
-                        continue;
-
-                    if (player->IsGameMaster() && player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM))
-                    {
-                        continue;
-                    }
-
-                    if (player->GetMapId() != botMapId || player->GetInstanceId() != botInstanceId)
-                    {
-                        continue;
-                    }
-
-                    float dx = plr->GetPositionX() - player->GetPositionX();
-
-                    float dy = plr->GetPositionY() - player->GetPositionY();
-
-                    if ((dx * dx + dy * dy) < sqRange)
-                    {
-                        playerNearby = true;
-                        break;
-                    }
+                    plr->AddSkippedUpdateTime(diff);
+                    continue;
                 }
             }
 
-            if (!playerNearby && !playerIsActive && !playerHasPendingItemUpdates)
-            {
-                plr->AddSkippedUpdateTime(diff);
-                continue;
-            }
+            WorldObject::UpdateHelper helper(plr);
+
+            helper.UpdateRealTime(now, diff + plr->GetSkippedUpdateTime());
+
+            plr->ResetSkippedUpdateTime();
+
+            continue;
+        }
+
+        bool const playerNearby = sPlayerbotAIConfig.forceActiveWhenNearPlayer && realPlayerNearby;
+
+        bool const needsBgQueueUpdate = sRandomPlayerbotMgr.ShouldForceBgQueueUpdate(plr);
+
+        bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SELF_ITEMS) || plr->HasScheduledEvent() || needsBgQueueUpdate;
+
+        bool const scheduledInactiveUpdate = (plr->GetGUIDLow() % updateCycle) == updateSlot;
+
+        bool const playerHasPendingItemUpdates = plr->HasPendingItemUpdates();
+
+        if (!updateInactivePlayers && !playerNearby && !playerIsActive && !scheduledInactiveUpdate && !playerHasPendingItemUpdates)
+        {
+            plr->AddSkippedUpdateTime(diff);
+            continue;
         }
 
         WorldObject::UpdateHelper helper(plr);
         helper.UpdateRealTime(now, diff + plr->GetSkippedUpdateTime());
-
         plr->ResetSkippedUpdateTime();
     }
 
