@@ -1073,14 +1073,22 @@ void Map::Update(uint32 t_diff)
     if (!Instanceable())
     {
         additionnalWaitTime = WorldTimer::getMSTime();
+
         sMapMgr.MarkContinentUpdateFinished();
-        while (!sMapMgr.waitContinentUpdateFinishedUntil(start + std::chrono::milliseconds(sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE))))
+
+        if (sWorld.getConfig(CONFIG_UINT32_MAPUPDATE_CONTINENT_UPDATE_THREADS) == 0)
         {
-            start = std::chrono::high_resolution_clock::now();
-            UpdateSessionsMovementAndSpellsIfNeeded();
-            UpdatePlayers();
-            ++additionnalUpdateCounts;
+            while (!sMapMgr.waitContinentUpdateFinishedUntil(start + std::chrono::milliseconds(sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE))))
+            {
+                start = std::chrono::high_resolution_clock::now();
+
+                UpdateSessionsMovementAndSpellsIfNeeded();
+                UpdatePlayers();
+
+                ++additionnalUpdateCounts;
+            }
         }
+
         additionnalWaitTime = WorldTimer::getMSTimeDiffToNow(additionnalWaitTime);
     }
     // Don't unload grids if it's battleground, since we may have manually added GOs,creatures, those doesn't load from DB at grid re-load !

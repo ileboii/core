@@ -34,6 +34,7 @@
 #include "BattleGround.h"
 #include "ThreadPool.h"
 #include "IO/Multithreading/CreateThread.h"
+#include <unordered_map>
 
 typedef MaNGOS::ClassLevelLockable<MapManager, std::recursive_mutex> MapManagerLock;
 INSTANTIATE_SINGLETON_2(MapManager, MapManagerLock);
@@ -307,8 +308,8 @@ void MapManager::Update(uint32 diff)
 
     int continentsIdx = 0;
     uint32 now = WorldTimer::getMSTime();
-
     uint32 inactiveTimeLimit = sWorld.getConfig(CONFIG_UINT32_EMPTY_MAPS_UPDATE_TIME);
+
     std::vector<std::function<void()>> continentsUpdaters;
     std::vector<std::function<void()>> instancesUpdaters;
 
@@ -320,95 +321,146 @@ void MapManager::Update(uint32 diff)
 
         iter->second->UpdateSync(mapsDiff);
         iter->second->MarkNotUpdated();
+
         if (iter->second->Instanceable())
         {
             if (m_threads->status() == ThreadPool::Status::READY)
-                instancesUpdaters.emplace_back([iter,mapsDiff](){
-                    iter->second->DoUpdate(mapsDiff);
-                });
+            {
+                instancesUpdaters.emplace_back([iter, mapsDiff]() { iter->second->DoUpdate(mapsDiff); });
+            }
             else
+            {
                 iter->second->DoUpdate(mapsDiff);
+            }
         }
-        else // One threat per continent part
+        else
         {
-            continentsUpdaters.emplace_back([iter,mapsDiff](){
-                Map *m = iter->second;
-                if (!m->IsUpdateFinished() || !sMapMgr.IsContinentUpdateFinished())
-                    m->DoUpdate(mapsDiff);
-            });
-            continentsIdx++;
+            // Each continent shard is an independent task.
+            continentsUpdaters.emplace_back(
+                [iter, mapsDiff]()
+                {
+                    Map* m = iter->second;
+
+                    if (!m->IsUpdateFinished() || !sMapMgr.IsContinentUpdateFinished())
+                        m->DoUpdate(mapsDiff);
+                });
+
+            ++continentsIdx;
         }
     }
 
+    // Instance creation helper thread.
     std::vector<std::function<void()>> instanceCreators;
-    instanceCreators.emplace_back([this]() {CreateNewInstancesForPlayers();});
-    std::future<void> instances = m_instanceCreationThreads->processWorkload(std::move(instanceCreators),
-        ThreadPool::Callable());
+
+    instanceCreators.emplace_back([this]() { CreateNewInstancesForPlayers(); });
+
+    std::future<void> instances = m_instanceCreationThreads->processWorkload(std::move(instanceCreators), ThreadPool::Callable());
+
+    // ------------------------------------------------------------
+    // Continent shard worker pool
+    // ------------------------------------------------------------
 
     i_maxContinentThread = continentsIdx;
     i_continentUpdateFinished.store(0);
 
-    if (!m_continentThreads || m_continentThreads->size() < continentsUpdaters.size())
+    uint32 const configuredContinentThreads = sWorld.getConfig(CONFIG_UINT32_MAPUPDATE_CONTINENT_UPDATE_THREADS);
+
+    std::future<void> continents;
+
+    if (!continentsUpdaters.empty())
     {
-        m_continentThreads.reset(new ThreadPool("MapContinent", continentsUpdaters.size()));
-        m_continentThreads->start<>();
+        size_t desiredThreadCount;
+
+        if (configuredContinentThreads > 0)
+        {
+            desiredThreadCount = configuredContinentThreads;
+        }
+        else
+        {
+            desiredThreadCount = continentsUpdaters.size();
+        }
+
+        if (!m_continentThreads || m_continentThreads->size() != desiredThreadCount)
+        {
+            m_continentThreads.reset(new ThreadPool("MapContinent", static_cast<int>(desiredThreadCount)));
+
+            m_continentThreads->start<>();
+        }
+
+        continents = m_continentThreads->processWorkload(std::move(continentsUpdaters), ThreadPool::Callable());
     }
-    std::future<void> continents = m_continentThreads->processWorkload(std::move(continentsUpdaters),
-                                                                       ThreadPool::Callable());
+
+    // ------------------------------------------------------------
+    // Continue processing instanced maps while continent maps run.
+    // ------------------------------------------------------------
 
     std::chrono::high_resolution_clock::time_point start;
-    do {
+
+    do
+    {
         start = std::chrono::high_resolution_clock::now();
-        std::future<void> f = m_threads->processWorkload(instancesUpdaters,
-                                                         ThreadPool::Callable());
+
+        std::future<void> f = m_threads->processWorkload(instancesUpdaters, ThreadPool::Callable());
 
         if (f.valid())
             f.wait();
         else
             break;
-    }while(!sMapMgr.waitContinentUpdateFinishedUntil(start + std::chrono::milliseconds(sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE))));
+    }
+    while (!sMapMgr.waitContinentUpdateFinishedUntil(start + std::chrono::milliseconds(sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE))));
 
+    // ThreadPool workload completion is the final synchronization point.
     if (continents.valid())
         continents.wait();
 
+    // Safe to move players between continent shards now.
     SwitchPlayersInstances();
+
     asyncMapUpdating = false;
 
     if (instances.valid())
         instances.wait();
 
-    // Execute far teleports after all map updates have finished
+    // Execute far teleports after all map updates have finished.
     ExecuteDelayedPlayerTeleports();
 
     MapMapType::iterator crashedMapsIter = i_maps.begin();
+
     while (crashedMapsIter != i_maps.end())
     {
         if (crashedMapsIter->second->IsCrashed())
         {
             sZoneScriptMgr.OnMapCrashed(crashedMapsIter->second);
             crashedMapsIter->second->CrashUnload();
+
             crashedMapsIter = i_maps.erase(crashedMapsIter);
         }
         else
+        {
             ++crashedMapsIter;
+        }
     }
 
-    //remove all maps which can be unloaded
+    // Remove all maps which can be unloaded.
     MapMapType::iterator iter = i_maps.begin();
+
     while (iter != i_maps.end())
     {
         Map* pMap = iter->second;
-        //check if map can be unloaded
+
         if (pMap->CanUnload((uint32)i_timer.GetCurrent()))
         {
             sZoneScriptMgr.OnMapCrashed(pMap);
             pMap->UnloadAll(true);
+
             delete pMap;
 
             iter = i_maps.erase(iter);
         }
         else
+        {
             ++iter;
+        }
     }
 
     i_timer.SetCurrent(0);
@@ -641,6 +693,61 @@ bool IsNorthTo(float x, float y, float const* limits, int count /* last case is 
     return insideCount % 2 == 1;
 }
 
+namespace
+{
+    static constexpr uint16 ZONE_SHARD_FIRST_INSTANCE = 21;
+
+    struct ContinentZoneShardTable
+    {
+        std::unordered_map<uint32, uint16> shardByZone[2];
+
+        ContinentZoneShardTable()
+        {
+            for (uint32 mapId = MAP_EASTERN_KINGDOMS; mapId <= MAP_KALIMDOR; ++mapId)
+            {
+                uint16 nextShard = ZONE_SHARD_FIRST_INSTANCE;
+
+                for (auto itr = sAreaStorage.begin<AreaEntry>(); itr < sAreaStorage.end<AreaEntry>(); ++itr)
+                {
+                    if (!itr->Id || itr->MapId != mapId || !itr->IsZone())
+                    {
+                        continue;
+                    }
+
+                    if (nextShard >= RESERVED_INSTANCES_LAST)
+                        break;
+
+                    shardByZone[mapId][itr->Id] = nextShard++;
+                }
+            }
+        }
+    };
+
+    uint16 GetZoneShardInstanceId(uint32 mapId, uint32 zoneId)
+    {
+        if (mapId > MAP_KALIMDOR || !zoneId)
+            return 0;
+
+        AreaEntry const* areaEntry = AreaEntry::GetById(zoneId);
+
+        if (!areaEntry || areaEntry->MapId != mapId)
+            return 0;
+
+        if (areaEntry->ZoneId)
+            zoneId = areaEntry->ZoneId;
+
+        static ContinentZoneShardTable const tables;
+
+        auto const& zoneMap = tables.shardByZone[mapId];
+        auto itr = zoneMap.find(zoneId);
+
+        if (itr == zoneMap.end())
+            return 0;
+
+        return itr->second;
+    }
+}
+
 uint32 MapManager::GetContinentInstanceId(uint32 mapId, float x, float y, bool* transitionArea, uint32 zoneId)
 {
     if (transitionArea)
@@ -648,6 +755,19 @@ uint32 MapManager::GetContinentInstanceId(uint32 mapId, float x, float y, bool* 
 
     if (!sWorld.getConfig(CONFIG_BOOL_CONTINENTS_INSTANCIATE))
         return 0;
+
+    if (sWorld.getConfig(CONFIG_BOOL_CONTINENTS_ZONE_SHARDING) && zoneId)
+    {
+        uint16 zoneShard = GetZoneShardInstanceId(mapId, zoneId);
+
+        if (zoneShard)
+        {
+            if (transitionArea)
+                *transitionArea = true;
+
+            return zoneShard;
+        }
+    }
 
     // Y = horizontal axis on wow ...
     switch (mapId)
