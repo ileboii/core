@@ -17,6 +17,7 @@
 #include "Chat.h"
 #include "Group.h"
 #include <unordered_map>
+#include <mutex>
 
 class Player;
 class PlayerbotMgr;
@@ -683,6 +684,8 @@ public:
 private:
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
+    void ProcessBotOutgoingPackets();
+    void HandleBotOutgoingPacketInternal(const WorldPacket& packet);
 
 protected:
 	Player* bot;
@@ -697,6 +700,9 @@ protected:
     ChatHelper chatHelper;
     std::queue<ChatCommandHolder> chatCommands;
     std::queue<ChatQueuedReply> chatReplies;
+    std::mutex m_chatQueuesMutex;
+    std::queue<WorldPacket> m_pendingBotOutgoingPackets;
+    std::mutex m_pendingBotOutgoingPacketsMutex;
     PacketHandlingHelper botOutgoingPacketHandlers;
     PacketHandlingHelper masterIncomingPacketHandlers;
     PacketHandlingHelper masterOutgoingPacketHandlers;

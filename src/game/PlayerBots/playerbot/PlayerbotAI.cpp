@@ -260,7 +260,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     AiObjectContext* context = aiObjectContext;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
-    
+
+    ProcessBotOutgoingPackets();
 
     // Validate master pointer to prevent dangling reference after master logs out
     if (master && master != bot)
@@ -1060,33 +1061,45 @@ void PlayerbotAI::OnResurrected()
 void PlayerbotAI::HandleCommands()
 {
     ExternalEventHelper helper(aiObjectContext);
-    std::list<ChatCommandHolder> delayed;
-    while (!chatCommands.empty())
+
+    std::queue<ChatCommandHolder> pendingCommands;
+
     {
-        ChatCommandHolder holder = chatCommands.front();
+        std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
+        pendingCommands.swap(chatCommands);
+    }
+
+    std::list<ChatCommandHolder> delayed;
+
+    while (!pendingCommands.empty())
+    {
+        ChatCommandHolder holder = pendingCommands.front();
+        pendingCommands.pop();
+
         time_t checkTime = holder.GetTime();
+
         if (checkTime && time(0) < checkTime)
         {
             delayed.push_back(holder);
-            chatCommands.pop();
             continue;
         }
 
         std::string command = holder.GetCommand();
         Player* owner = holder.GetOwner();
+
         if (!helper.ParseChatCommand(command, owner) && holder.GetType() == CHAT_MSG_WHISPER)
         {
-            //ostringstream out; out << "Unknown command " << command;
-            //TellPlayer(out);
-            //helper.ParseChatCommand("help");
         }
-
-        chatCommands.pop();
     }
 
-    for (std::list<ChatCommandHolder>::iterator i = delayed.begin(); i != delayed.end(); ++i)
+    if (!delayed.empty())
     {
-        chatCommands.push(*i);
+        std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
+
+        for (std::list<ChatCommandHolder>::iterator i = delayed.begin(); i != delayed.end(); ++i)
+        {
+            chatCommands.push(*i);
+        }
     }
 }
 
@@ -1101,19 +1114,39 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     ExternalEventHelper helper(aiObjectContext);
 
     // chat replies
-    std::list<ChatQueuedReply> delayedResponses;
-    while (!chatReplies.empty())
+    std::queue<ChatQueuedReply> pendingReplies;
+
     {
-        ChatQueuedReply holder = chatReplies.front();
+        std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
+        pendingReplies.swap(chatReplies);
+    }
+
+    std::list<ChatQueuedReply> delayedResponses;
+
+    while (!pendingReplies.empty())
+    {
+        ChatQueuedReply holder = pendingReplies.front();
+        pendingReplies.pop();
+
         time_t checkTime = holder.m_time;
+
         if (checkTime && time(0) < checkTime)
         {
             delayedResponses.push_back(holder);
-            chatReplies.pop();
             continue;
         }
+
         ChatReplyAction::ChatReplyDo(bot, holder.m_type, holder.m_guid1, holder.m_guid2, holder.m_msg, holder.m_chanName, holder.m_name);
-        chatReplies.pop();
+    }
+
+    if (!delayedResponses.empty())
+    {
+        std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
+
+        for (std::list<ChatQueuedReply>::iterator i = delayedResponses.begin(); i != delayedResponses.end(); ++i)
+        {
+            chatReplies.push(*i);
+        }
     }
 
     for (std::list<ChatQueuedReply>::iterator i = delayedResponses.begin(); i != delayedResponses.end(); ++i)
@@ -1487,10 +1520,32 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     }
 }
 
+void PlayerbotAI::ProcessBotOutgoingPackets()
+{
+    std::queue<WorldPacket> packets;
+
+    {
+        std::lock_guard<std::mutex> lock(m_pendingBotOutgoingPacketsMutex);
+        packets.swap(m_pendingBotOutgoingPackets);
+    }
+    while (!packets.empty())
+    {
+        HandleBotOutgoingPacketInternal(packets.front());
+        packets.pop();
+    }
+}
+
 void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
-            {
-                // if (packet.empty())
-                //     return;
+{
+    if (packet.empty())
+        return;
+
+    std::lock_guard<std::mutex> lock(m_pendingBotOutgoingPacketsMutex);
+    m_pendingBotOutgoingPackets.push(packet);
+}
+
+void PlayerbotAI::HandleBotOutgoingPacketInternal(const WorldPacket& packet)
+{
                 switch (packet.GetOpcode())
                 {
                 case SMSG_GROUP_INVITE:
@@ -8402,7 +8457,10 @@ bool PlayerbotAI::HasPlayerRelation()
 
 void PlayerbotAI::QueueChatResponse(uint32 msgType, ObjectGuid guid1, ObjectGuid guid2, std::string message, std::string chanName, std::string name, bool noDelay)
 {
-    chatReplies.push(ChatQueuedReply(msgType, guid1.GetCounter(), guid2.GetCounter(), message, chanName, name, time(0) + (noDelay ? 0 : urand(inCombat ? 15 : 10, inCombat ? 30 : 20))));
+    ChatQueuedReply reply(msgType, guid1.GetCounter(), guid2.GetCounter(), message, chanName, name, time(0) + (noDelay ? 0 : urand(inCombat ? 15 : 10, inCombat ? 30 : 20)));
+
+    std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
+    chatReplies.push(reply);
 }
 
 bool PlayerbotAI::PlayAttackEmote(float chanceMultiplier)
