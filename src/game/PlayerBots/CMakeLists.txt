@@ -148,7 +148,9 @@ endif()
 add_library(${LIBRARY_NAME} STATIC ${LIBRARY_SRCS})
 
 if(MSVC)
-  target_compile_options(${LIBRARY_NAME} PRIVATE /FS /bigobj)
+  # /MP is added explicitly here so Multi-Processor compilation stays enabled
+  # for this project after CMake regenerates the .vcxproj (it kept reverting).
+  target_compile_options(${LIBRARY_NAME} PRIVATE /MP /FS /bigobj)
 endif()
 
 target_link_libraries(${LIBRARY_NAME}
