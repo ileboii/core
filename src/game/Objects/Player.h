@@ -45,6 +45,7 @@
 #include <vector>
 #include <functional>
 #include <shared_mutex>
+#include <mutex>
 
 struct Mail;
 struct ItemPrototype;
@@ -2502,15 +2503,17 @@ class Player final: public Unit
     public:
         PlayerbotAI* GetPlayerbotAI() const { return m_playerbotAI; }
         void SetPlayerbotAI(PlayerbotAI* ai) { m_playerbotAI = ai; }
+        std::recursive_mutex& GetPlayerbotAIMutex() { return m_playerbotAIMutex; }
         PlayerbotMgr* GetPlayerbotMgr() const { return m_playerbotMgr; }
         void SetPlayerbotMgr(PlayerbotMgr* mgr) { m_playerbotMgr = mgr; }
         bool isRealPlayer() const { return m_playerbotAI == nullptr; }
-        // True if this player is a random playerbot that is currently not
-        // allowed to perform activity (used to keep mobs from aggroing idle bots).
         bool IsInactivePlayerbot() const;
+
     private:
         PlayerbotAI* m_playerbotAI = nullptr;
         PlayerbotMgr* m_playerbotMgr = nullptr;
+
+        mutable std::recursive_mutex m_playerbotAIMutex;
 };
 
 inline Player* Object::ToPlayer()

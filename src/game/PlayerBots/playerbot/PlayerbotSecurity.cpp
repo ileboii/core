@@ -16,6 +16,12 @@ PlayerbotSecurity::PlayerbotSecurity(Player* const bot) : bot(bot), account(0)
 
 PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* reason, bool ignoreGroup)
 {
+    if (!bot || !from || !from->GetSession())
+        return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_DENY_ALL;
+
+    PlayerbotAI* botAI = bot->GetPlayerbotAI();
+    if (!botAI)
+        return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_DENY_ALL;
 
     // Allow everything if request is from gm account
     if (from->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
@@ -41,7 +47,7 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
             }
         }
 
-        if (bot->GetPlayerbotAI()->IsOpposing(from))
+        if (botAI->IsOpposing(from))
         {
             if (sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP))
                 return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL;
@@ -60,8 +66,8 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
 
         if (sPlayerbotAIConfig.gearscorecheck)
         {
-            uint32 botGS = bot->GetPlayerbotAI()->GetEquipGearScore(bot, false, false);
-            uint32 fromGS = bot->GetPlayerbotAI()->GetEquipGearScore(from, false, false);
+            uint32 botGS = botAI->GetEquipGearScore(bot, false, false);
+            uint32 fromGS = botAI->GetEquipGearScore(from, false, false);
             if (botGS && bot->GetLevel() > 15 && botGS > fromGS && (100 * (botGS - fromGS) / botGS) >= 12 * sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL) / from->GetLevel())
             {
                 if (reason) *reason = DenyReason::PLAYERBOT_DENY_GEARSCORE;

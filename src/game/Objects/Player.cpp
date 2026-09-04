@@ -1365,8 +1365,13 @@ void Player::Update(uint32 update_diff, uint32 p_time)
     }
 
     // Playerbot AI updates
-    if (m_playerbotAI)
-        m_playerbotAI->UpdateAI(update_diff);
+    {
+        std::lock_guard<std::recursive_mutex> aiLock(m_playerbotAIMutex);
+
+        if (m_playerbotAI)
+            m_playerbotAI->UpdateAI(update_diff);
+    }
+
     if (m_playerbotMgr)
         m_playerbotMgr->UpdateAI(update_diff);
 }

@@ -346,40 +346,45 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid)
 void PlayerbotHolder::DisablePlayerBot(uint32 guid, bool logOutPlayer)
 {
     Player* bot = GetPlayerBot(guid);
-    if (bot)
+    if (!bot)
+        return;
+
+    std::lock_guard<std::recursive_mutex> aiLock(bot->GetPlayerbotAIMutex());
+
+    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    if (!ai)
+        return;
+
+    if (logOutPlayer && ai->IsRealPlayer() && bot->GetGroup() && sPlayerbotAIConfig.IsFreeAltBot(guid))
     {
-        if (logOutPlayer && bot->GetPlayerbotAI()->IsRealPlayer() && bot->GetGroup() && sPlayerbotAIConfig.IsFreeAltBot(guid))
-            // SetOffline not in vmangos //Prevent groupkick
-        bot->GetPlayerbotAI()->TellPlayer(bot->GetPlayerbotAI()->GetMaster(), BOT_TEXT("goodbye"));
-        bot->GetPlayerbotAI()->StopMoving();
-        MotionMaster& mm = *bot->GetMotionMaster();
-        mm.Clear();
+        // SetOffline not in vmangos // Prevent groupkick
+    }
 
-        if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
+    ai->TellPlayer(ai->GetMaster(), BOT_TEXT("goodbye"));
+    ai->StopMoving();
+
+    MotionMaster& mm = *bot->GetMotionMaster();
+    mm.Clear();
+
+    if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
+    {
+        Group* group = bot->GetGroup();
+        if (group && !bot->InBattleGround() && !bot->InBattleGroundQueue() && ai->HasActivePlayerMaster())
         {
-           Group* group = bot->GetGroup();
-           if (group && !bot->InBattleGround() && !bot->InBattleGroundQueue() && bot->GetPlayerbotAI()->HasActivePlayerMaster())
-           {
-              sPlayerbotDbStore.Save(bot->GetPlayerbotAI());
-           }
-        }
-
-        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Bot %s logged out", bot->GetName());
-        bot->SaveToDB();
-
-        WorldSession* botWorldSessionPtr = bot->GetSession();
-        playerBots[guid] = nullptr;    // deletes bot player ptr inside this WorldSession PlayerBotMap
-
-        if (bot->GetPlayerbotAI())
-        {
-            // Detach the PlayerbotAI from the player so Player::Update stops
-            // driving bot behavior. In vmangos there is no RemovePlayerbotAI()
-            // helper, so we delete and null the AI pointer directly.
-            PlayerbotAI* ai = bot->GetPlayerbotAI();
-            bot->SetPlayerbotAI(nullptr);
-            delete ai;
+            sPlayerbotDbStore.Save(ai);
         }
     }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Bot %s logged out", bot->GetName());
+
+    bot->SaveToDB();
+
+    playerBots[guid] = nullptr;
+
+    // Player::Update cannot currently be executing this AI because
+    // both paths hold m_playerbotAIMutex.
+    bot->SetPlayerbotAI(nullptr);
+    delete ai;
 }
 
 Player* PlayerbotHolder::GetPlayerBot(uint32 playerGuid) const
