@@ -988,7 +988,9 @@ void Map::UpdatePlayers()
 
         bool const playerHasPendingItemUpdates = plr->HasPendingItemUpdates();
 
-        if (!updateInactivePlayers && !playerNearby && !playerIsActive && !scheduledInactiveUpdate && !playerHasPendingItemUpdates)
+        bool const forceFullBotUpdate = sPlayerbotAIConfig.disableBotOptimizations && !plr->isRealPlayer();
+
+        if (!updateInactivePlayers && !forceFullBotUpdate && !playerNearby && !playerIsActive && !scheduledInactiveUpdate && !playerHasPendingItemUpdates)
         {
             plr->AddSkippedUpdateTime(diff);
             continue;
