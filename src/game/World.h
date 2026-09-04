@@ -1003,8 +1003,14 @@ class World
 
         static uint32 m_currentMSTime;
         static TimePoint m_currentTime;
-        static uint32 m_currentDiff;
 
+        // Short-term 10 second server diff.
+        static uint32 m_currentDiff;
+        static uint64 m_currentDiffAccumulator;
+        static uint32 m_currentDiffSampleCount;
+        static uint32 m_currentDiffTimer;
+
+        // Long-term 60 second server diff.
         static uint32 m_averageDiff;
         static uint64 m_diffAccumulator;
         static uint32 m_diffSampleCount;

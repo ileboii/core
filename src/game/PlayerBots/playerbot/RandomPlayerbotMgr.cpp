@@ -704,12 +704,13 @@ void RandomPlayerbotMgr::ScaleBotActivity()
 {
     float previousActivityPercentage = getActivityPercentage();
 
-    //if (activityPercentage >= 100.0f || activityPercentage <= 0.0f) pid.reset(); //Stop integer buildup during max/min activity
+    uint32 wantedDiff = sRandomPlayerbotMgr.GetPlayers().empty() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer;
 
-    //    % increase/decrease                   wanted diff                                         , avg diff
-    float activityPercentageMod = pid.calculate(sRandomPlayerbotMgr.GetPlayers().empty() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer, sWorld.GetAverageDiff());
+    uint32 currentDiff = sWorld.GetCurrentDiff();
 
-    float activityPercentage = activityPercentageMod;
+    float activityPercentageMod = pid.calculate(wantedDiff, currentDiff);
+
+    float activityPercentage = activityPercentageMod + 50.0f;
 
     //Cap the percentage between 0 and 100.
     activityPercentage = std::max(0.0f, std::min(100.0f, activityPercentage));
@@ -4454,8 +4455,8 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleDiff(std::string param)
     if (param.empty())
     {
         std::stringstream ss;
-        ss << "Avg diff: " << sWorld.GetAverageDiff() << "\n";
-        ss << "Max diff: " << sWorld.GetCurrentDiff() << "\n";
+        ss << "Avg diff (10 sec): " << sWorld.GetCurrentDiff() << "\n";
+        ss << "Avg diff (60 sec): " << sWorld.GetAverageDiff() << "\n";
         ss << "char db ping: " << sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") << "\n";
         ss << "Sessions online: " << sWorld.GetActiveSessionCount() << "\n";
         ss << "Bots online: " << sRandomPlayerbotMgr.botCount << " (active: " << sRandomPlayerbotMgr.activeBots << ")";
