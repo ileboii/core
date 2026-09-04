@@ -357,7 +357,7 @@ class Map : public GridRefManager<NGridType>
         inline void UpdateActiveCellsCallback(uint32 diff, uint32 now, uint32 threadId, uint32 totalThreads, uint32 step);
         inline void UpdateCells(uint32 diff);
         void UpdateSync(uint32 const);
-        void UpdatePlayers();
+        void UpdatePlayers(bool updateBots = true);
         void DoUpdate(uint32 maxDiff);
         virtual void Update(uint32);
         void UpdateSessionsMovementAndSpellsIfNeeded();

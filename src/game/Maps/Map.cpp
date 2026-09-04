@@ -916,7 +916,7 @@ void Map::UpdateSessionsMovementAndSpellsIfNeeded()
     m_lastMvtSpellsUpdate = WorldTimer::getMSTime();
 }
 
-void Map::UpdatePlayers()
+void Map::UpdatePlayers(bool updateBots)
 {
     uint32 now = WorldTimer::getMSTime();
     uint32 diff = WorldTimer::getMSTimeDiff(m_lastPlayersUpdate, now);
@@ -927,12 +927,14 @@ void Map::UpdatePlayers()
     m_currentTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
 
     uint32 const skipUpdates = sWorld.getConfig(CONFIG_UINT32_INACTIVE_PLAYERS_SKIP_UPDATES);
-
     uint32 const updateCycle = skipUpdates + 1;
     uint32 const updateSlot = m_inactivePlayersSkippedUpdates;
 
-    if (++m_inactivePlayersSkippedUpdates >= updateCycle)
-        m_inactivePlayersSkippedUpdates = 0;
+    if (updateBots)
+    {
+        if (++m_inactivePlayersSkippedUpdates >= updateCycle)
+            m_inactivePlayersSkippedUpdates = 0;
+    }
 
     bool const updateInactivePlayers = !IsContinent();
     for (m_mapRefIter = m_mapRefManager.begin(); m_mapRefIter != m_mapRefManager.end(); ++m_mapRefIter)
@@ -940,6 +942,10 @@ void Map::UpdatePlayers()
         Player* plr = m_mapRefIter->getSource();
         if (!plr || !plr->IsInWorld())
             continue;
+
+        if (!updateBots && !plr->isRealPlayer())
+            continue;
+
         bool playerNearby = false;
 
         if (sPlayerbotAIConfig.forceActiveWhenNearPlayer && !plr->isRealPlayer())
@@ -1058,14 +1064,12 @@ void Map::Update(uint32 t_diff)
     uint32 visibilityUpdateTime = WorldTimer::getMSTimeDiffToNow(updateMapTime) - objectsUpdateTime - activeCellsUpdateTime - playersUpdateTime - sessionsUpdateTime;
 
     UpdateSessionsMovementAndSpellsIfNeeded();
-    UpdatePlayers();
+    UpdatePlayers(!IsContinent());
     uint32 playersUpdateTime2 = WorldTimer::getMSTimeDiffToNow(updateMapTime) - objectsUpdateTime - activeCellsUpdateTime - playersUpdateTime - sessionsUpdateTime - visibilityUpdateTime;
 
     RemoveCorpses();
     RemoveOldBones(t_diff);
 
-    RemoveCorpses();
-    RemoveOldBones(t_diff);
     updateMapTime = WorldTimer::getMSTimeDiffToNow(updateMapTime);
 
     if (IsContinent())
@@ -1155,8 +1159,11 @@ void Map::Update(uint32 t_diff)
         while (!sMapMgr.waitContinentUpdateFinishedUntil(start + std::chrono::milliseconds(sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE))))
         {
             start = std::chrono::high_resolution_clock::now();
+
             UpdateSessionsMovementAndSpellsIfNeeded();
-            UpdatePlayers();
+
+            UpdatePlayers(false);
+
             ++additionnalUpdateCounts;
         }
         additionnalWaitTime = WorldTimer::getMSTimeDiffToNow(additionnalWaitTime);
