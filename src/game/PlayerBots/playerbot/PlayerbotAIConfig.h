@@ -243,6 +243,11 @@ public:
     uint32 diffWithPlayer;
     uint32 diffEmpty;
     float maxActivityRatePerTick;
+
+    bool continentInstancedActivityScaling;
+    uint32 continentInstancedTargetMsWithPlayer;
+    uint32 continentInstancedTargetMsEmpty;
+
     uint32 minEnchantingBotLevel;
     uint32 randombotStartingLevel;
     bool randomBotSayWithoutMaster;

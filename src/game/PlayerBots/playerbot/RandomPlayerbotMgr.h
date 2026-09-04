@@ -160,7 +160,11 @@ public:
         std::map<Team, std::map<BattleGroundTypeId, std::list<uint32> > > getBattleMastersCache() { return BattleMastersCache; }
 
         float getActivityMod() { return activityMod; }
+
         float getActivityPercentage() { return activityMod * 100.0f; }
+
+        float getActivityPercentage(Player* bot);
+
         void setActivityPercentage(float percentage) { activityMod = percentage / 100.0f; }
 
         void PrintTeleportCache();
@@ -182,6 +186,7 @@ public:
         //pid values are set in constructor
         botPID pid = botPID(1, 50, -50, 0, 0, 0);
         float activityMod = 0.25;
+        time_t continentInstancedActivityTimer = 0;
         std::map<std::string, uint32> databaseDelay;
         uint32 GetEventValue(uint32 bot, std::string event);
         std::string GetEventData(uint32 bot, std::string event);

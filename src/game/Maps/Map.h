@@ -438,6 +438,10 @@ class Map : public GridRefManager<NGridType>
 
         uint32 GetAverageUpdateTimeSamples10s() const { return m_averageUpdateTimeSamples10s.load(); }
 
+        float GetBotActivityPercentage() const { return m_botActivityPercentage.load(std::memory_order_relaxed); }
+
+        void SetBotActivityPercentage(float percentage) { m_botActivityPercentage.store(percentage, std::memory_order_relaxed); }
+
         virtual bool CanEnter(Player* /*player*/) { return true; }
         char const* GetMapName() const;
 
@@ -798,6 +802,8 @@ class Map : public GridRefManager<NGridType>
 
         std::atomic<uint64> m_averageUpdateTimeUs10s{0};
         std::atomic<uint32> m_averageUpdateTimeSamples10s{0};
+        std::atomic<float> m_botActivityPercentage{-1.0f};
+
 
         // Elevators are not loaded normally.
         void LoadElevatorTransports();

@@ -1020,6 +1020,14 @@ AiPlayerbot.PerfMonEnabled = 0
 # AiPlayerbot.DiffWithPlayer = 100
 # AiPlayerbot.DiffEmpty = 200
 
+# Enable independent activity scaling for each instanced continent partition. Requires 'Continents.Instanciate = 1' to work properly.
+# When enabled, bots on instanced Eastern Kingdoms / Kalimdor maps use the measured workload of their own maps instead of the global diff.
+AiPlayerbot.ContinentInstancedActivityScaling = 0
+
+# Desired average workload in milliseconds for instanced maps.
+AiPlayerbot.ContinentInstancedTargetMsWithPlayer = 40
+AiPlayerbot.ContinentInstancedTargetMsEmpty = 40
+
 # Maximum percentage change in bot activity per update tick. Lower values make activity scaling more gradual.
 # Set to 0 to disable rate limiting.
 # AiPlayerbot.MaxActivityRatePerTick = 0

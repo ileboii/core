@@ -700,6 +700,33 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     // AsyncPQuery ping not compatible with vmangos
 }
 
+float RandomPlayerbotMgr::getActivityPercentage(Player* bot)
+{
+    if (!sPlayerbotAIConfig.continentInstancedActivityScaling)
+        return getActivityPercentage();
+
+    if (!bot || !bot->IsInWorld())
+        return getActivityPercentage();
+
+    Map* map = bot->GetMap();
+
+    if (!map)
+        return getActivityPercentage();
+
+    if (!map->IsContinent() || map->GetInstanceId() == 0)
+        return getActivityPercentage();
+
+    if (!map->GetAverageUpdateTimeSamples10s())
+        return getActivityPercentage();
+
+    float const localActivity = map->GetBotActivityPercentage();
+
+    if (localActivity < 0.0f)
+        return getActivityPercentage();
+
+    return localActivity;
+}
+
 void RandomPlayerbotMgr::ScaleBotActivity()
 {
     float previousActivityPercentage = getActivityPercentage();
@@ -725,6 +752,57 @@ void RandomPlayerbotMgr::ScaleBotActivity()
     }
 
     setActivityPercentage(activityPercentage);
+
+    if (sPlayerbotAIConfig.continentInstancedActivityScaling)
+    {
+        time_t const now = time(nullptr);
+
+        if (!continentInstancedActivityTimer || now >= continentInstancedActivityTimer + 10)
+        {
+            continentInstancedActivityTimer = now;
+
+            for (auto const& mapPair : sMapMgr.Maps())
+            {
+                Map* map = mapPair.second;
+
+                if (!map || !map->IsContinent() || map->GetInstanceId() == 0)
+                {
+                    continue;
+                }
+
+                if (!map->GetAverageUpdateTimeSamples10s())
+                    continue;
+
+                uint32 const wantedMs = map->HaveRealPlayers() ? sPlayerbotAIConfig.continentInstancedTargetMsWithPlayer : sPlayerbotAIConfig.continentInstancedTargetMsEmpty;
+
+                float const currentMs = static_cast<float>(map->GetAverageUpdateTimeMs10s());
+
+                float previousActivity = map->GetBotActivityPercentage();
+
+                if (previousActivity < 0.0f)
+                    previousActivity = getActivityPercentage();
+
+                float const errorMs = static_cast<float>(wantedMs) - currentMs;
+
+                float activityDelta = errorMs * 0.5f;
+
+                activityDelta = std::max(-10.0f, std::min(10.0f, activityDelta));
+
+                float const configuredMaxDelta = sPlayerbotAIConfig.maxActivityRatePerTick;
+
+                if (configuredMaxDelta > 0.0f)
+                {
+                    activityDelta = std::max(-configuredMaxDelta, std::min(configuredMaxDelta, activityDelta));
+                }
+
+                float newActivity = previousActivity + activityDelta;
+
+                newActivity = std::max(0.0f, std::min(100.0f, newActivity));
+
+                map->SetBotActivityPercentage(newActivity);
+            }
+        }
+    }
 
     if (sPlayerbotAIConfig.hasLog("activity_pid.csv"))
     {
@@ -4507,6 +4585,9 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleCpu(std::string param)
         uint32 activeBots = 0;
         uint32 realPlayers = 0;
 
+        float activityPercentage = -1.0f;
+        uint32 targetMs = 0;
+
         double averageUpdateMs = 0.0;
         uint32 updateSamples = 0;
 
@@ -4539,6 +4620,10 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleCpu(std::string param)
         stats.averageUpdateMs = map->GetAverageUpdateTimeMs10s();
 
         stats.updateSamples = map->GetAverageUpdateTimeSamples10s();
+
+        stats.activityPercentage = map->GetBotActivityPercentage();
+
+        stats.targetMs = map->HaveRealPlayers() ? sPlayerbotAIConfig.continentInstancedTargetMsWithPlayer : sPlayerbotAIConfig.continentInstancedTargetMsEmpty;
 
         stats.sessionsMs = map->GetAverageSessionsUpdateTimeMs10s();
 
@@ -4708,6 +4793,20 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleCpu(std::string param)
             if (stats.updateSamples)
             {
                 ss << " | Work avg: " << std::fixed << std::setprecision(2) << stats.averageUpdateMs << " ms (" << stats.updateSamples << " samples)";
+
+                if (sPlayerbotAIConfig.continentInstancedActivityScaling)
+                {
+                    if (stats.activityPercentage >= 0.0f)
+                    {
+                        ss << " | Activity: " << std::fixed << std::setprecision(1) << stats.activityPercentage << "%"
+                           << " | Target: " << stats.targetMs << " ms";
+                    }
+                    else
+                    {
+                        ss << " | Activity: global/warming"
+                           << " | Target: " << stats.targetMs << " ms";
+                    }
+                }
             }
             else
             {

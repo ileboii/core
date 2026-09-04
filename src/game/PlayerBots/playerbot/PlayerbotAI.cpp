@@ -6128,7 +6128,7 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
 
     std::pair<uint8, uint8> priorityBracket = GetPriorityBracket(type);
 
-    float activityPercentage = sRandomPlayerbotMgr.getActivityPercentage(); //Activity between 0 and 100.
+    float activityPercentage = sRandomPlayerbotMgr.getActivityPercentage(bot); // Activity between 0 and 100.
 
     if (!priorityBracket.second) //No scaling
         return true;
