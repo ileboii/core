@@ -57,6 +57,7 @@
 #include "CreatureGroups.h"
 #include "Geometry.h"
 #include "PlayerBots/playerbot/PlayerbotAIConfig.h"
+#include "PlayerBots/playerbot/PlayerbotAI.h"
 #include "RandomPlayerbotMgr.h"
 
 Map::~Map()
@@ -988,7 +989,17 @@ void Map::UpdatePlayers(bool updateBots)
 
         bool const needsBgQueueUpdate = sRandomPlayerbotMgr.ShouldForceBgQueueUpdate(plr);
 
-        bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SELF_ITEMS) || plr->HasScheduledEvent() || needsBgQueueUpdate;
+        bool botActivityActive = false;
+
+        if (!plr->isRealPlayer())
+        {
+            if (PlayerbotAI* botAI = plr->GetPlayerbotAI())
+            {
+                botActivityActive = botAI->IsActivityAllowedCached(ALL_ACTIVITY);
+            }
+        }
+
+        bool const playerIsActive = plr->IsInCombat() || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SPELLS) || plr->GetSession()->HasRecentPacket(PACKET_PROCESS_SELF_ITEMS) || plr->HasScheduledEvent() || needsBgQueueUpdate || botActivityActive;
 
         bool const scheduledInactiveUpdate = (plr->GetGUIDLow() % updateCycle) == updateSlot;
 
