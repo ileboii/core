@@ -53,6 +53,7 @@
 #include "SocialMgr.h"
 
 using namespace Spells;
+using ExecuteLogInfo = WorldPackets::Spell::SpellLogExecute::ExecuteLogInfo;
 
 pEffect SpellEffects[TOTAL_SPELL_EFFECTS] =
 {
@@ -1722,6 +1723,8 @@ void Spell::EffectPowerDrain(SpellEffectIndex effIdx)
 
         info.powerDrain.multiplier = manaMultiplier;
     }
+
+    AddExecuteLogInfo(effIdx, info);
 }
 
 void Spell::EffectSendEvent(SpellEffectIndex effIdx)
@@ -2084,8 +2087,7 @@ void Spell::EffectOpenLock(SpellEffectIndex effIdx)
             return;
 
         // Arathi Basin banner opening !
-        if ((goInfo->type == GAMEOBJECT_TYPE_BUTTON && goInfo->button.noDamageImmune) ||
-                (goInfo->type == GAMEOBJECT_TYPE_GOOBER && goInfo->goober.losOK))
+        if (goInfo->type == GAMEOBJECT_TYPE_BUTTON && goInfo->button.noDamageImmune)
         {
             //CanUseBattleGroundObject() already called in CheckCast()
             // in battleground check
