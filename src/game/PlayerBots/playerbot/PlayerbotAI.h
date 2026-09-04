@@ -602,6 +602,7 @@ public:
     std::pair<uint32,uint32> GetPriorityBracket(ActivePiorityType type);
     bool AllowActive(ActivityType activityType);
     bool AllowActivity(ActivityType activityType = ALL_ACTIVITY, bool checkNow = false);
+    bool IsActivityAllowedCached(ActivityType activityType = ALL_ACTIVITY) const { return allowActive[activityType]; }
 
     bool HasCheat(BotCheatMask mask) const;
     BotCheatMask GetCheat() { return cheatMask; }

@@ -212,6 +212,7 @@ public:
         std::list<std::string> HandleConsoleUpdate(std::string param);
         std::list<std::string> HandleConsolePid(std::string param);
         std::list<std::string> HandleConsoleDiff(std::string param);
+        std::list<std::string> HandleConsoleCpu(std::string param);
         std::list<std::string> HandleConsoleCleanMap(std::string param);
         std::list<std::string> HandleConsoleLoginDebug(std::string param);
         std::list<std::string> HandleConsolePathCheck(std::string param);

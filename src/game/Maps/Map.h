@@ -45,6 +45,7 @@
 #include <set>
 #include <mutex>
 #include <shared_mutex>
+#include <atomic>
 
 using Movement::Vector3;
 
@@ -418,6 +419,25 @@ class Map : public GridRefManager<NGridType>
         static bool CheckGridIntegrity(Creature* c, bool moved);
 
         uint32 GetInstanceId() const { return m_instanceId; }
+
+        double GetAverageUpdateTimeMs10s() const { return static_cast<double>(m_averageUpdateTimeUs10s.load()) / 1000.0; }
+
+        double GetAverageSessionsUpdateTimeMs10s() const { return static_cast<double>(m_averageSessionsUpdateTimeUs10s.load()) / 1000.0; }
+
+        double GetAveragePlayersUpdateTimeMs10s() const { return static_cast<double>(m_averagePlayersUpdateTimeUs10s.load()) / 1000.0; }
+
+        double GetAverageCellsUpdateTimeMs10s() const { return static_cast<double>(m_averageCellsUpdateTimeUs10s.load()) / 1000.0; }
+
+        double GetAverageObjectsUpdateTimeMs10s() const { return static_cast<double>(m_averageObjectsUpdateTimeUs10s.load()) / 1000.0; }
+
+        double GetAverageVisibilityUpdateTimeMs10s() const { return static_cast<double>(m_averageVisibilityUpdateTimeUs10s.load()) / 1000.0; }
+
+        double GetAveragePlayersUpdateTime2Ms10s() const { return static_cast<double>(m_averagePlayersUpdateTime2Us10s.load()) / 1000.0; }
+
+        double GetAverageOtherUpdateTimeMs10s() const { return static_cast<double>(m_averageOtherUpdateTimeUs10s.load()) / 1000.0; }
+
+        uint32 GetAverageUpdateTimeSamples10s() const { return m_averageUpdateTimeSamples10s.load(); }
+
         virtual bool CanEnter(Player* /*player*/) { return true; }
         char const* GetMapName() const;
 
@@ -752,6 +772,32 @@ class Map : public GridRefManager<NGridType>
         uint32 m_lastPlayersUpdate;
         uint32 m_inactivePlayersSkippedUpdates = 0;
         uint32 m_lastCellsUpdate;
+
+        // Continent partition update timing
+        uint64 m_updateTimeAccumulatorUs = 0;
+        uint32 m_updateTimeSampleCount = 0;
+        uint32 m_updateTimeWindowMs = 0;
+
+        // Per-phase accumulation for the current 10-second window.
+        uint64 m_sessionsUpdateTimeAccumulatorMs = 0;
+        uint64 m_playersUpdateTimeAccumulatorMs = 0;
+        uint64 m_cellsUpdateTimeAccumulatorMs = 0;
+        uint64 m_objectsUpdateTimeAccumulatorMs = 0;
+        uint64 m_visibilityUpdateTimeAccumulatorMs = 0;
+        uint64 m_playersUpdateTime2AccumulatorMs = 0;
+        uint64 m_otherUpdateTimeAccumulatorUs = 0;
+
+        // Published 10-second phase averages.
+        std::atomic<uint64> m_averageSessionsUpdateTimeUs10s{0};
+        std::atomic<uint64> m_averagePlayersUpdateTimeUs10s{0};
+        std::atomic<uint64> m_averageCellsUpdateTimeUs10s{0};
+        std::atomic<uint64> m_averageObjectsUpdateTimeUs10s{0};
+        std::atomic<uint64> m_averageVisibilityUpdateTimeUs10s{0};
+        std::atomic<uint64> m_averagePlayersUpdateTime2Us10s{0};
+        std::atomic<uint64> m_averageOtherUpdateTimeUs10s{0};
+
+        std::atomic<uint64> m_averageUpdateTimeUs10s{0};
+        std::atomic<uint32> m_averageUpdateTimeSamples10s{0};
 
         // Elevators are not loaded normally.
         void LoadElevatorTransports();

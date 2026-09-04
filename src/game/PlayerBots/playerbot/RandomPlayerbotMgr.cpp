@@ -3325,6 +3325,7 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* handler, cha
     handlers["diff "] = &RandomPlayerbotMgr::HandleConsoleDiff;
     handlers["clean map"] = &RandomPlayerbotMgr::HandleConsoleCleanMap;
     handlers["login debug"] = &RandomPlayerbotMgr::HandleConsoleLoginDebug;
+    handlers["cpu"] = &RandomPlayerbotMgr::HandleConsoleCpu;
 
     for (auto& [prefix, consoleHandler] : handlers)
     {
@@ -4221,6 +4222,7 @@ std::unordered_map<std::string, std::string> RandomPlayerbotMgr::GetCommandTexts
         {"remove", "Remove a random bot from the server.\nUsage: remove <botname>"},
         {"reset", "Reset all random bots and clear event cache.\nUsage: reset"},
         {"diff", "Show server performance metrics.\nUsage: diff [player_diff] [empty_diff]"},
+        {"cpu", "Show detailed map/continent CPU profiling.\nUsage: cpu"},
         {"stats", "Print bot statistics.\nUsage: stats"},
         {"update", "Trigger immediate bot AI update.\nUsage: update"},
         {"pid", "Adjust PID controller values.\nUsage: pid p i d"},
@@ -4452,9 +4454,11 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsolePid(std::string param)
 std::list<std::string> RandomPlayerbotMgr::HandleConsoleDiff(std::string param)
 {
     std::list<std::string> messages;
+
     if (param.empty())
     {
         std::stringstream ss;
+
         ss << "Avg diff (10 sec): " << sWorld.GetCurrentDiff() << "\n";
         ss << "Avg diff (60 sec): " << sWorld.GetAverageDiff() << "\n";
         ss << "char db ping: " << sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") << "\n";
@@ -4467,17 +4471,310 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleDiff(std::string param)
     else if (param.find(" ") != std::string::npos)
     {
         std::vector<std::string> diff = Qualified::getMultiQualifiers(param, " ");
+
         if (diff.size() == 0)
             diff.push_back("100");
+
         if (diff.size() == 1)
             diff.push_back(diff[0]);
+
         sPlayerbotAIConfig.diffWithPlayer = stoi(diff[0]);
         sPlayerbotAIConfig.diffEmpty = stoi(diff[1]);
 
         std::string msg = "Diff set to " + std::to_string(stoi(diff[0])) + " (player), " + std::to_string(stoi(diff[1])) + " (empty)";
+
         messages.push_back(msg);
         return messages;
     }
+
+    return messages;
+}
+
+std::list<std::string> RandomPlayerbotMgr::HandleConsoleCpu(std::string param)
+{
+    std::list<std::string> messages;
+    std::stringstream ss;
+
+    ss << "CPU / map partition profile (10 sec)\n";
+    ss << "World-map update tasks: " << sMapMgr.GetContinentUpdateTaskCount() << "\n";
+
+    struct PartitionStats
+    {
+        uint32 mapId = 0;
+        uint32 instanceId = 0;
+
+        uint32 bots = 0;
+        uint32 activeBots = 0;
+        uint32 realPlayers = 0;
+
+        double averageUpdateMs = 0.0;
+        uint32 updateSamples = 0;
+
+        double sessionsMs = 0.0;
+        double playersMs = 0.0;
+        double cellsMs = 0.0;
+        double objectsMs = 0.0;
+        double visibilityMs = 0.0;
+        double players2Ms = 0.0;
+        double otherMs = 0.0;
+
+        std::map<uint32, uint32> zoneBots;
+        std::map<uint32, uint32> zoneActiveBots;
+    };
+
+    std::vector<PartitionStats> partitions;
+
+    for (auto const& mapPair : sMapMgr.Maps())
+    {
+        Map* map = mapPair.second;
+
+        if (!map || !map->IsContinent())
+            continue;
+
+        PartitionStats stats;
+
+        stats.mapId = map->GetId();
+        stats.instanceId = map->GetInstanceId();
+
+        stats.averageUpdateMs = map->GetAverageUpdateTimeMs10s();
+
+        stats.updateSamples = map->GetAverageUpdateTimeSamples10s();
+
+        stats.sessionsMs = map->GetAverageSessionsUpdateTimeMs10s();
+
+        stats.playersMs = map->GetAveragePlayersUpdateTimeMs10s();
+
+        stats.cellsMs = map->GetAverageCellsUpdateTimeMs10s();
+
+        stats.objectsMs = map->GetAverageObjectsUpdateTimeMs10s();
+
+        stats.visibilityMs = map->GetAverageVisibilityUpdateTimeMs10s();
+
+        stats.players2Ms = map->GetAveragePlayersUpdateTime2Ms10s();
+
+        stats.otherMs = map->GetAverageOtherUpdateTimeMs10s();
+
+        Map::PlayerList const& players = map->GetPlayers();
+
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->getSource();
+
+            if (!player || !player->IsInWorld())
+                continue;
+
+            if (player->isRealPlayer())
+            {
+                ++stats.realPlayers;
+                continue;
+            }
+
+            ++stats.bots;
+
+            uint32 const zoneId = player->GetCachedZoneId();
+
+            ++stats.zoneBots[zoneId];
+
+            PlayerbotAI* botAI = player->GetPlayerbotAI();
+
+            if (botAI && botAI->IsActivityAllowedCached(ALL_ACTIVITY))
+            {
+                ++stats.activeBots;
+                ++stats.zoneActiveBots[zoneId];
+            }
+        }
+
+        partitions.push_back(stats);
+    }
+
+    std::sort(partitions.begin(), partitions.end(),
+              [](PartitionStats const& left, PartitionStats const& right)
+              {
+                  if (left.mapId != right.mapId)
+                      return left.mapId < right.mapId;
+
+                  return left.instanceId < right.instanceId;
+              });
+
+    for (uint32 continentId = 0; continentId <= 1; ++continentId)
+    {
+        char const* continentName = continentId == 0 ? "Eastern Kingdoms" : "Kalimdor";
+
+        uint32 totalBots = 0;
+        uint32 totalActiveBots = 0;
+        uint32 totalRealPlayers = 0;
+        uint32 partitionCount = 0;
+
+        uint32 minBots = 0;
+        uint32 maxBots = 0;
+        bool firstBotPartition = true;
+
+        double totalUpdateMs = 0.0;
+        double minUpdateMs = 0.0;
+        double maxUpdateMs = 0.0;
+
+        uint32 timedPartitions = 0;
+        bool firstTimedPartition = true;
+
+        for (PartitionStats const& stats : partitions)
+        {
+            if (stats.mapId != continentId)
+                continue;
+
+            ++partitionCount;
+
+            totalBots += stats.bots;
+            totalActiveBots += stats.activeBots;
+            totalRealPlayers += stats.realPlayers;
+
+            if (firstBotPartition)
+            {
+                minBots = stats.bots;
+                maxBots = stats.bots;
+                firstBotPartition = false;
+            }
+            else
+            {
+                minBots = std::min(minBots, stats.bots);
+                maxBots = std::max(maxBots, stats.bots);
+            }
+
+            if (stats.updateSamples)
+            {
+                ++timedPartitions;
+
+                totalUpdateMs += stats.averageUpdateMs;
+
+                if (firstTimedPartition)
+                {
+                    minUpdateMs = stats.averageUpdateMs;
+                    maxUpdateMs = stats.averageUpdateMs;
+                    firstTimedPartition = false;
+                }
+                else
+                {
+                    minUpdateMs = std::min(minUpdateMs, stats.averageUpdateMs);
+
+                    maxUpdateMs = std::max(maxUpdateMs, stats.averageUpdateMs);
+                }
+            }
+        }
+
+        ss << "\n" << continentName << ":\n";
+
+        ss << "  Partitions: " << partitionCount << " | Bots: " << totalBots << " | Active: " << totalActiveBots << " | Real players: " << totalRealPlayers;
+
+        if (partitionCount)
+        {
+            double const averageBots = static_cast<double>(totalBots) / static_cast<double>(partitionCount);
+
+            ss << " | Avg bots/partition: " << std::fixed << std::setprecision(1) << averageBots << " | Min: " << minBots << " | Max: " << maxBots << " | Spread: " << (maxBots - minBots);
+        }
+
+        ss << "\n";
+
+        if (timedPartitions)
+        {
+            double const averagePartitionUpdate = totalUpdateMs / static_cast<double>(timedPartitions);
+
+            ss << "  Partition work (10 sec):"
+               << " Avg task: " << std::fixed << std::setprecision(2) << averagePartitionUpdate << " ms"
+               << " | Min: " << minUpdateMs << " ms"
+               << " | Max: " << maxUpdateMs << " ms"
+               << " | Spread: " << (maxUpdateMs - minUpdateMs) << " ms\n";
+        }
+        else
+        {
+            ss << "  Partition work (10 sec): warming up...\n";
+        }
+
+        for (PartitionStats const& stats : partitions)
+        {
+            if (stats.mapId != continentId)
+                continue;
+
+            ss << "\n  Instance " << stats.instanceId << ": " << stats.bots << " bots (" << stats.activeBots << " active)";
+
+            if (stats.bots)
+            {
+                double const activePercent = (static_cast<double>(stats.activeBots) / static_cast<double>(stats.bots)) * 100.0;
+
+                ss << " [" << std::fixed << std::setprecision(1) << activePercent << "%]";
+            }
+
+            if (stats.realPlayers)
+                ss << ", " << stats.realPlayers << " real";
+
+            if (stats.updateSamples)
+            {
+                ss << " | Work avg: " << std::fixed << std::setprecision(2) << stats.averageUpdateMs << " ms (" << stats.updateSamples << " samples)";
+            }
+            else
+            {
+                ss << " | Work avg: warming up";
+            }
+
+            ss << "\n";
+
+            if (stats.updateSamples)
+            {
+                ss << "    Phases:"
+                   << " sess=" << std::fixed << std::setprecision(2) << stats.sessionsMs << " ms"
+
+                   << " | players=" << stats.playersMs << " ms"
+
+                   << " | cells=" << stats.cellsMs << " ms"
+
+                   << " | objects=" << stats.objectsMs << " ms"
+
+                   << " | reloc=" << stats.visibilityMs << " ms"
+
+                   << " | players2=" << stats.players2Ms << " ms"
+
+                   << " | other=" << stats.otherMs << " ms\n";
+            }
+
+            std::vector<std::pair<uint32, uint32>> sortedZones(stats.zoneBots.begin(), stats.zoneBots.end());
+
+            std::sort(sortedZones.begin(), sortedZones.end(),
+                      [](std::pair<uint32, uint32> const& left, std::pair<uint32, uint32> const& right)
+                      {
+                          if (left.second != right.second)
+                              return left.second > right.second;
+
+                          return left.first < right.first;
+                      });
+
+            for (std::pair<uint32, uint32> const& zoneStats : sortedZones)
+            {
+                uint32 const zoneId = zoneStats.first;
+                uint32 const botCount = zoneStats.second;
+
+                uint32 activeBotCount = 0;
+
+                auto const activeItr = stats.zoneActiveBots.find(zoneId);
+
+                if (activeItr != stats.zoneActiveBots.end())
+                {
+                    activeBotCount = activeItr->second;
+                }
+
+                char const* zoneName = "Unknown";
+
+                if (AreaTableEntry const* zone = GetAreaEntryByAreaID(zoneId))
+                {
+                    if (zone->Name && zone->Name[0])
+                    {
+                        zoneName = zone->Name;
+                    }
+                }
+
+                ss << "    " << zoneName << " [" << zoneId << "]: " << botCount << " bots (" << activeBotCount << " active)\n";
+            }
+        }
+    }
+
+    messages.push_back(ss.str());
     return messages;
 }
 

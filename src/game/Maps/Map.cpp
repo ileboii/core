@@ -1006,16 +1006,22 @@ void Map::DoUpdate(uint32 maxDiff)
 {
     uint32 now = WorldTimer::getMSTime();
     uint32 diff = WorldTimer::getMSTimeDiff(m_lastMapUpdate, now);
+
     if (diff > maxDiff)
         diff = maxDiff;
+
     m_lastMapUpdate = now;
+
     if (HavePlayers())
         m_lastPlayerLeftTime = now;
+
     Update(diff);
 }
 
 void Map::Update(uint32 t_diff)
 {
+    std::chrono::steady_clock::time_point const partitionWorkStart = std::chrono::steady_clock::now();
+
     uint32 updateMapTime = WorldTimer::getMSTime();
     m_currentTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
     m_dynamicTree.update(t_diff);
@@ -1058,13 +1064,93 @@ void Map::Update(uint32 t_diff)
     RemoveCorpses();
     RemoveOldBones(t_diff);
 
+    RemoveCorpses();
+    RemoveOldBones(t_diff);
     updateMapTime = WorldTimer::getMSTimeDiffToNow(updateMapTime);
+
+    if (IsContinent())
+    {
+        std::chrono::steady_clock::time_point const partitionWorkEnd = std::chrono::steady_clock::now();
+
+        uint64 const elapsedUs = static_cast<uint64>(std::chrono::duration_cast<std::chrono::microseconds>(partitionWorkEnd - partitionWorkStart).count());
+
+        //
+        // Accumulate total partition work.
+        //
+        m_updateTimeAccumulatorUs += elapsedUs;
+        ++m_updateTimeSampleCount;
+        m_updateTimeWindowMs += t_diff;
+
+        //
+        // Accumulate the existing Map::Update phase timers.
+        //
+        m_sessionsUpdateTimeAccumulatorMs += sessionsUpdateTime;
+        m_playersUpdateTimeAccumulatorMs += playersUpdateTime;
+        m_cellsUpdateTimeAccumulatorMs += activeCellsUpdateTime;
+        m_objectsUpdateTimeAccumulatorMs += objectsUpdateTime;
+        m_visibilityUpdateTimeAccumulatorMs += visibilityUpdateTime;
+        m_playersUpdateTime2AccumulatorMs += playersUpdateTime2;
+
+        //
+        // Anything not accounted for by the existing phase timers.
+        //
+        // This includes things such as corpse/bone cleanup and timing
+        // resolution differences.
+        //
+        uint64 const measuredPhaseUs = static_cast<uint64>(sessionsUpdateTime + playersUpdateTime + activeCellsUpdateTime + objectsUpdateTime + visibilityUpdateTime + playersUpdateTime2) * 1000ULL;
+
+        if (elapsedUs > measuredPhaseUs)
+            m_otherUpdateTimeAccumulatorUs += elapsedUs - measuredPhaseUs;
+
+        //
+        // Publish stable averages roughly every 10 seconds.
+        //
+        if (m_updateTimeWindowMs >= 10000)
+        {
+            if (m_updateTimeSampleCount)
+            {
+                uint64 const samples = m_updateTimeSampleCount;
+
+                m_averageUpdateTimeUs10s.store(m_updateTimeAccumulatorUs / samples);
+
+                m_averageUpdateTimeSamples10s.store(m_updateTimeSampleCount);
+
+                m_averageSessionsUpdateTimeUs10s.store((m_sessionsUpdateTimeAccumulatorMs * 1000ULL) / samples);
+
+                m_averagePlayersUpdateTimeUs10s.store((m_playersUpdateTimeAccumulatorMs * 1000ULL) / samples);
+
+                m_averageCellsUpdateTimeUs10s.store((m_cellsUpdateTimeAccumulatorMs * 1000ULL) / samples);
+
+                m_averageObjectsUpdateTimeUs10s.store((m_objectsUpdateTimeAccumulatorMs * 1000ULL) / samples);
+
+                m_averageVisibilityUpdateTimeUs10s.store((m_visibilityUpdateTimeAccumulatorMs * 1000ULL) / samples);
+
+                m_averagePlayersUpdateTime2Us10s.store((m_playersUpdateTime2AccumulatorMs * 1000ULL) / samples);
+
+                m_averageOtherUpdateTimeUs10s.store(m_otherUpdateTimeAccumulatorUs / samples);
+            }
+
+            m_updateTimeAccumulatorUs = 0;
+            m_updateTimeSampleCount = 0;
+            m_updateTimeWindowMs = 0;
+
+            m_sessionsUpdateTimeAccumulatorMs = 0;
+            m_playersUpdateTimeAccumulatorMs = 0;
+            m_cellsUpdateTimeAccumulatorMs = 0;
+            m_objectsUpdateTimeAccumulatorMs = 0;
+            m_visibilityUpdateTimeAccumulatorMs = 0;
+            m_playersUpdateTime2AccumulatorMs = 0;
+            m_otherUpdateTimeAccumulatorUs = 0;
+        }
+    }
 
     uint32 additionnalWaitTime = 0;
     uint32 additionnalUpdateCounts = 0;
+
     if (!Instanceable())
     {
         additionnalWaitTime = WorldTimer::getMSTime();
+
         sMapMgr.MarkContinentUpdateFinished();
         while (!sMapMgr.waitContinentUpdateFinishedUntil(start + std::chrono::milliseconds(sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE))))
         {
