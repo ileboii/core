@@ -47,6 +47,7 @@
 #include "ChannelMgr.h"
 #include "PlayerbotLLMInterface.h"
 #include "Packets/Chat.h"
+#include "World.h"
 
 
 
@@ -7779,18 +7780,46 @@ std::list<Unit*> PlayerbotAI::GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* w
 
 void PlayerbotAI::SendDelayedPacket(WorldSession* session, futurePackets futPackets)
 {
-    std::thread t([session, futPacket = std::move(futPackets)]() mutable {
-        for (auto& delayedPacket : futPacket.get())
-        {
-            if (delayedPacket.second)
-                std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
+    if (!session || !session->GetPlayer())
+        return;
 
-            WorldPacket wp(delayedPacket.first);
-            WorldPackets::Chat::ChatMessage chatMsg;
-            chatMsg.ReadFromWorldPacket(wp);
-            session->HandleChatMessageOpcode(chatMsg);
-        }
-    });
+    uint32 accountId = session->GetAccountId();
+    ObjectGuid playerGuid = session->GetPlayer()->GetObjectGuid();
+
+    std::thread t(
+        [accountId, playerGuid, futPacket = std::move(futPackets)]() mutable
+        {
+            for (auto& delayedPacket : futPacket.get())
+            {
+                if (delayedPacket.second)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
+
+                WorldPacket wp(delayedPacket.first);
+
+                sWorld.GetMessager().AddMessage(
+                    [accountId, playerGuid, wp = std::move(wp)](World* world) mutable
+                    {
+                        WorldSession* currentSession = world->FindSession(accountId);
+                        if (!currentSession)
+                            return;
+
+                        Player* currentPlayer = currentSession->GetPlayer();
+                        if (!currentPlayer)
+                            return;
+
+                        if (currentPlayer->GetObjectGuid() != playerGuid)
+                            return;
+
+                        if (!currentPlayer->IsInWorld())
+                            return;
+
+                        WorldPackets::Chat::ChatMessage chatMsg;
+                        chatMsg.ReadFromWorldPacket(wp);
+
+                        currentSession->HandleChatMessageOpcode(chatMsg);
+                    });
+            }
+        });
 
     t.detach();
 }

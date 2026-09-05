@@ -153,6 +153,9 @@ uint32 WorldSession::ChatCooldown()
 
 void WorldSession::HandleChatMessageOpcode(WorldPackets::Chat::ChatMessage const& packet)
 {
+    if (!GetPlayer())
+        return;
+
     if (packet.type >= MAX_CHAT_MSG_TYPE)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "CHAT: Wrong message type received: %u", packet.type);
