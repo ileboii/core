@@ -1,6 +1,8 @@
 
 #include "playerbot/playerbot.h"
 #include "MovementActions.h"
+#include "BattleGround.h"
+#include "BattleGroundAV.h"
 #include "MotionMaster.h"
 #include "MovementGenerator.h"
 #include "playerbot/FleeManager.h"
@@ -18,6 +20,28 @@
 #include "playerbot/strategy/generic/CombatStrategy.h"
 
 using namespace ai;
+
+namespace
+{
+    bool ShouldLockAvCaptainRoom(Player* bot)
+    {
+        if (!bot || !bot->InBattleGround())
+            return false;
+
+        BattleGround* bg = bot->GetBattleGround();
+        if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+            return false;
+
+        uint32 enemyCaptainSlot = bot->GetTeam() == ALLIANCE ? BG_AV_CAPTAIN_H : BG_AV_CAPTAIN_A;
+
+        Creature* captain = bot->GetMap()->GetCreature(bg->GetSingleCreatureGuid(enemyCaptainSlot, 0));
+
+        if (!captain || captain->GetHealth() == 0)
+            return false;
+
+        return sServerFacade.GetDistance2d(bot, captain) <= 60.0f;
+    }
+}
 
 void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float o, uint32 entry, bool important)
 {
@@ -2777,7 +2801,7 @@ void MovementAction::WaitForReach(const Movement::PointsArray& path)
     WaitForReach(distance);
 }
 
-bool MovementAction::Flee(Unit *target)
+bool MovementAction::Flee(Unit* target)
 {
     Player* master = GetMaster();
     if (!target)
@@ -2787,6 +2811,10 @@ bool MovementAction::Flee(Unit *target)
         return false;
 
     if (!sPlayerbotAIConfig.fleeingEnabled)
+        return false;
+
+    // Do not flee out of Galvangar/Balinda's room.
+    if (ShouldLockAvCaptainRoom(bot))
         return false;
 
     if (!IsMovingAllowed())
@@ -3198,6 +3226,9 @@ bool FleeAction::Execute(Event& event)
 
 bool FleeWithPetAction::Execute(Event& event)
 {
+    if (ShouldLockAvCaptainRoom(bot))
+        return false;
+
     Pet* pet = bot->GetPet();
     if (pet)
     {
