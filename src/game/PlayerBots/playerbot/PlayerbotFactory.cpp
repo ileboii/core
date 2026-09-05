@@ -9,6 +9,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "AccountMgr.h"
 #include "Database/DBCStore.h"
+#include "Database/CharacterDatabaseCache.h"
 #include "SharedDefines.h"
 #include "RandomItemMgr.h"
 #include "RandomPlayerbotFactory.h"
@@ -548,11 +549,16 @@ void PlayerbotFactory::AddConsumables()
 
 void PlayerbotFactory::InitPet()
 {
-    // Randomize a new pet (only for hunters)
     if (bot->GetClass() != CLASS_HUNTER)
         return;
 
     Pet* pet = bot->GetPet();
+
+    if (!pet && (bot->GetTemporaryUnsummonedPetNumber() || sCharacterDatabaseCache.GetCharacterPetByOwner(bot->GetGUIDLow())))
+    {
+        return;
+    }
+
     if (!pet)
     {
         Map* map = bot->GetMap();
