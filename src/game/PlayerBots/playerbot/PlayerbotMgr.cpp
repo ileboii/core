@@ -566,7 +566,17 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
 #endif
             bot->StoreNewItemInBestSlots(6948, 1);
     }
-    if (bot->GetLevel() >= 10 && (bot->GetClass() == CLASS_HUNTER || bot->GetClass() == CLASS_WARLOCK) && !bot->GetPet())
+    if (bot->GetLevel() >= 10 && bot->GetClass() == CLASS_HUNTER)
+    {
+        PlayerbotFactory factory(bot, bot->GetLevel());
+
+        if (!bot->GetPet())
+            factory.InitPet();
+
+        if (bot->GetPet())
+            factory.InitPetSpells();
+    }
+    else if (bot->GetLevel() >= 10 && bot->GetClass() == CLASS_WARLOCK && !bot->GetPet())
     {
         PlayerbotFactory factory(bot, bot->GetLevel());
         factory.InitPet();
