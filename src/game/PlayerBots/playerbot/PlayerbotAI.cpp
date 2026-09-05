@@ -238,9 +238,26 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
     masterOutgoingPacketHandlers.AddHandler(MSG_RAID_READY_CHECK_FINISHED, "ready check finished");
 #endif
 
-    if (!HasRealPlayerMaster() && bot->GetFreeTalentPoints() > 0)
+        if (!HasRealPlayerMaster() && bot->GetFreeTalentPoints() > 0)
     {
         DoSpecificAction("auto talents");
+    }
+
+    if (!IsRealPlayer() && !sPlayerbotAIConfig.IsFreeAltBot(bot) && sRandomPlayerbotMgr.IsRandomBot(bot) && !sPlayerbotAIConfig.randomGearBlacklist.empty())
+    {
+        for (uint32 itemId : sPlayerbotAIConfig.randomGearBlacklist)
+        {
+            if (!itemId)
+                continue;
+
+            uint32 count = bot->GetItemCount(itemId, true);
+            if (!count)
+                continue;
+
+            sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "RNDBOT %s: destroying blacklisted item %u x%u on login", bot->GetName(), itemId, count);
+
+            bot->DestroyItemCount(itemId, count, true, false, true);
+        }
     }
 }
 
