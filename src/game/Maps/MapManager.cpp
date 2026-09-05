@@ -641,7 +641,7 @@ bool IsNorthTo(float x, float y, float const* limits, int count /* last case is 
     return insideCount % 2 == 1;
 }
 
-uint32 MapManager::GetContinentInstanceId(uint32 mapId, float x, float y, bool* transitionArea)
+uint32 MapManager::GetContinentInstanceId(uint32 mapId, float x, float y, bool* transitionArea, uint32 zoneId)
 {
     if (transitionArea)
         *transitionArea = false;
@@ -725,17 +725,51 @@ uint32 MapManager::GetContinentInstanceId(uint32 mapId, float x, float y, bool* 
                  -7949.329590f, -4081.389404f,
                  -7910.859375f, -5855.578125f
             };
+            uint32 baseInstanceId = MAP0_SOUTH;
+
             if (IsNorthTo(x, y, topNorthSouthLimit, sizeof(topNorthSouthLimit) / (2 * sizeof(float))))
-                return MAP0_TOP_NORTH;
-            if (x > -2521)
-                return MAP0_MIDDLE_NORTH;
-            if (IsNorthTo(x, y, ironforgeAreaSouthLimit, sizeof(ironforgeAreaSouthLimit) / (2 * sizeof(float))))
-                return MAP0_IRONFORGE_AREA;
-            if (IsNorthTo(x, y, stormwindAreaNorthLimit, sizeof(stormwindAreaNorthLimit) / (2 * sizeof(float))))
-                return MAP0_MIDDLE;
-            if (IsNorthTo(x, y, stormwindAreaSouthLimit, sizeof(stormwindAreaSouthLimit) / (2 * sizeof(float))))
-                return MAP0_STORMWIND_AREA;
-            return MAP0_SOUTH;
+                baseInstanceId = MAP0_TOP_NORTH;
+            else if (x > -2521)
+                baseInstanceId = MAP0_MIDDLE_NORTH;
+            else if (IsNorthTo(x, y, ironforgeAreaSouthLimit, sizeof(ironforgeAreaSouthLimit) / (2 * sizeof(float))))
+                baseInstanceId = MAP0_IRONFORGE_AREA;
+            else if (IsNorthTo(x, y, stormwindAreaNorthLimit, sizeof(stormwindAreaNorthLimit) / (2 * sizeof(float))))
+                baseInstanceId = MAP0_MIDDLE;
+            else if (IsNorthTo(x, y, stormwindAreaSouthLimit, sizeof(stormwindAreaSouthLimit) / (2 * sizeof(float))))
+                baseInstanceId = MAP0_STORMWIND_AREA;
+
+            if (zoneId)
+            {
+                switch (zoneId)
+                {
+                case 139:
+                    if (baseInstanceId == MAP0_TOP_NORTH)
+                        return MAP0_EASTERN_PLAGUELANDS;
+                    break;
+
+                case 267:
+                    if (baseInstanceId == MAP0_MIDDLE_NORTH)
+                        return MAP0_HILLSBRAD;
+                    break;
+
+                case 11:
+                    if (baseInstanceId == MAP0_MIDDLE_NORTH || baseInstanceId == MAP0_IRONFORGE_AREA)
+                    {
+                        return MAP0_WETLANDS;
+                    }
+                    break;
+
+                case 33:
+                    if (baseInstanceId == MAP0_SOUTH)
+                        return MAP0_STRANGLETHORN;
+                    break;
+
+                default:
+                    break;
+                }
+            }
+
+            return baseInstanceId;
         }
         case MAP_KALIMDOR:
         {
@@ -864,19 +898,51 @@ uint32 MapManager::GetContinentInstanceId(uint32 mapId, float x, float y, bool* 
                     -7142.1211f,  4808.4331f
             };
 
+            uint32 baseInstanceId = MAP1_SOUTH;
+
             if (IsNorthTo(x, y, northMiddleLimit, sizeof(northMiddleLimit) / (2 * sizeof(float))))
-                return MAP1_NORTH;
-            if (IsNorthTo(x, y, orgrimmarSouthLimit, sizeof(orgrimmarSouthLimit) / (2 * sizeof(float))))
-                return MAP1_ORGRIMMAR;
-            if (IsNorthTo(x, y, durotarSouthLimit, sizeof(durotarSouthLimit) / (2 * sizeof(float))))
-                return MAP1_DUROTAR;
-            if (IsNorthTo(x, y, valleyoftrialsSouthLimit, sizeof(valleyoftrialsSouthLimit) / (2 * sizeof(float))))
-                return MAP1_VALLEY;
-            if (IsNorthTo(x, y, middleToSouthLimit, sizeof(middleToSouthLimit) / (2 * sizeof(float))))
-                return MAP1_UPPER_MIDDLE;
-            if (IsNorthTo(x, y, feralasThousandNeedlesSouthLimit, sizeof(feralasThousandNeedlesSouthLimit) / (2 * sizeof(float))))
-                return MAP1_LOWER_MIDDLE;
-            return MAP1_SOUTH;
+                baseInstanceId = MAP1_NORTH;
+            else if (IsNorthTo(x, y, orgrimmarSouthLimit, sizeof(orgrimmarSouthLimit) / (2 * sizeof(float))))
+                baseInstanceId = MAP1_ORGRIMMAR;
+            else if (IsNorthTo(x, y, durotarSouthLimit, sizeof(durotarSouthLimit) / (2 * sizeof(float))))
+                baseInstanceId = MAP1_DUROTAR;
+            else if (IsNorthTo(x, y, valleyoftrialsSouthLimit, sizeof(valleyoftrialsSouthLimit) / (2 * sizeof(float))))
+                baseInstanceId = MAP1_VALLEY;
+            else if (IsNorthTo(x, y, middleToSouthLimit, sizeof(middleToSouthLimit) / (2 * sizeof(float))))
+                baseInstanceId = MAP1_UPPER_MIDDLE;
+            else if (IsNorthTo(x, y, feralasThousandNeedlesSouthLimit, sizeof(feralasThousandNeedlesSouthLimit) / (2 * sizeof(float))))
+                baseInstanceId = MAP1_LOWER_MIDDLE;
+
+            if (zoneId)
+            {
+                switch (zoneId)
+                {
+                case 331:
+                case 406:
+                case 405:
+                    if (baseInstanceId == MAP1_NORTH)
+                        return MAP1_NORTH_CENTRAL;
+                    break;
+
+                case 361:
+                case 493:
+                case 618:
+                case 16:
+                    if (baseInstanceId == MAP1_NORTH)
+                        return MAP1_NORTH_EAST;
+                    break;
+
+                case 17:
+                    if (baseInstanceId == MAP1_UPPER_MIDDLE)
+                        return MAP1_BARRENS;
+                    break;
+
+                default:
+                    break;
+                }
+            }
+
+            return baseInstanceId;
         }
     }
     return 0;

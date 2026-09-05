@@ -1330,7 +1330,7 @@ void Player::Update(uint32 update_diff, uint32 p_time)
     if (m_enableInstanceSwitch && !IsTaxiFlying() && IsInWorld() && GetMap()->IsContinent() && !GetTransport() && !IsBeingTeleported())
     {
         bool transition = false;
-        uint16 newInstanceId = sMapMgr.GetContinentInstanceId(GetMap()->GetId(), GetPositionX(), GetPositionY(), &transition);
+        uint16 newInstanceId = sMapMgr.GetContinentInstanceId(GetMap()->GetId(), GetPositionX(), GetPositionY(), &transition, GetCachedZoneId());
         if (newInstanceId != GetInstanceId())
             if (!transition || !IsInCombat())
                 sMapMgr.ScheduleInstanceSwitch(this, newInstanceId);
