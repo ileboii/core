@@ -2880,9 +2880,6 @@ bool BGTactics::Execute(Event& event)
         else
             return true;
 
-        if (bgType == BATTLEGROUND_AV && ai->IsAvQuester())
-            return false;
-
 #ifdef MANGOSBOT_ZERO
         if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG))
 #else
@@ -4895,9 +4892,14 @@ bool BGTactics::startNewPathBegin(std::vector<BattleBotPath*> const& vPaths)
         bool reverse = false;
     };
     std::vector<AvailablePath> availablePaths;
-
     for (const auto& pPath : vPaths)
     {
+        // AV questers must never recover onto normal combat/capture branches.
+        if (bgType == BATTLEGROUND_AV && ai->IsAvQuester() && IsAvQuesterForbiddenPath(pPath))
+        {
+            continue;
+        }
+
         // skip mine paths of own faction
         if (bot->GetTeam() == ALLIANCE && std::find(vPaths_AllyMine.begin(), vPaths_AllyMine.end(), pPath) != vPaths_AllyMine.end())
             continue;
@@ -4950,8 +4952,13 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
     uint32 closestPoint = 0;
     float closestDistance = FLT_MAX;
 
-    for (const auto& pPath : vPaths)
+        for (const auto& pPath : vPaths)
     {
+        if (bgType == BATTLEGROUND_AV && ai->IsAvQuester() && IsAvQuesterForbiddenPath(pPath))
+        {
+            continue;
+        }
+
         // skip mine paths of own faction
         if (bot->GetTeam() == ALLIANCE && std::find(vPaths_AllyMine.begin(), vPaths_AllyMine.end(), pPath) != vPaths_AllyMine.end())
             continue;
@@ -4994,7 +5001,7 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
 
     if (reverse && std::find(vPaths_NoReverseAllowed.begin(), vPaths_NoReverseAllowed.end(), pClosestPath) != vPaths_NoReverseAllowed.end())
     {
-        return false;
+        reverse = false;
     }
 
     BattleBotPath* currentPath = pClosestPath;
