@@ -47,18 +47,27 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
         LearnDroppedSpells(out);
 #endif
 
-    if (!ai->HasActivePlayerMaster()) //Hunter spells for pets.
+    if (sPlayerbotAIConfig.autoLearnQuestSpells && bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= 10)
     {
-        if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= 10)
-        {
-#if !defined(MANGOSBOT_TWO) // Beast training not available in WotLK 
-            bot->LearnSpell(5149, false); //Beast training
+#if !defined(MANGOSBOT_TWO)
+        if (!bot->HasSpell(5149))
+            bot->LearnSpell(5149, false); // Beast Training
 #endif
-            bot->LearnSpell(883, false); //Call pet
-            bot->LearnSpell(982, false); //Revive pet
-            bot->LearnSpell(6991, false); //Feed pet
-            bot->LearnSpell(1515, false); //Tame beast
-        }
+
+        if (!bot->HasSpell(883))
+            bot->LearnSpell(883, false); // Call Pet
+
+        if (!bot->HasSpell(982))
+            bot->LearnSpell(982, false); // Revive Pet
+
+        if (!bot->HasSpell(6991))
+            bot->LearnSpell(6991, false); // Feed Pet
+
+        if (!bot->HasSpell(1515))
+            bot->LearnSpell(1515, false); // Tame Beast
+
+        if (!bot->HasSpell(2641))
+            bot->LearnSpell(2641, false); // Dismiss Pet
     }
 }
 
@@ -162,52 +171,87 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
 void AutoLearnSpellAction::LearnQuestSpells(std::ostringstream* out)
 {
     ObjectMgr::QuestMap const& questTemplates = sObjectMgr.GetQuestTemplates();
+
     for (ObjectMgr::QuestMap::const_iterator i = questTemplates.begin(); i != questTemplates.end(); ++i)
     {
-        uint32 questId = i->first;
         Quest const* quest = i->second.get();
+        LearnQuestSpell(quest, out);
+    }
+}
 
-        if (!quest->GetRequiredClasses() || quest->IsRepeatable())
+void AutoLearnSpellAction::RepairQuestSpells(const std::list<uint32>& questIds)
+{
+    std::ostringstream out;
+
+    // Generic class quest rewards for all classes.
+    for (uint32 questId : questIds)
+    {
+        Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+        if (!quest)
             continue;
 
-        if (!bot->SatisfyQuestClass(quest, false) ||
-            quest->GetMinLevel() > bot->GetLevel() ||
-            !bot->SatisfyQuestRace(quest, false))
-            continue;
+        LearnQuestSpell(quest, &out);
+    }
 
-        if (quest->GetRewSpellCast() > 0 &&
-            quest->GetRewSpellCast() != 12510) // Prevents mages from learning the Teleport to Azushara Tower spell.
+#ifdef MANGOSBOT_ZERO
+    // Hunter specific quest rewards
+    if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= 10)
+    {
+        LearnSpell(1515, &out); // Tame Beast
+        LearnSpell(883, &out); // Call Pet
+        LearnSpell(2641, &out); // Dismiss Pet
+        LearnSpell(982, &out); // Revive Pet
+        LearnSpell(6991, &out); // Feed Pet
+        LearnSpell(5149, &out); // Beast Training
+    }
+#endif
+
+    if (!out.str().empty())
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot %s repaired missing class quest spells", bot->GetName());
+    }
+}
+
+void AutoLearnSpellAction::LearnQuestSpell(Quest const* quest, std::ostringstream* out)
+{
+    if (!quest)
+        return;
+
+    if (!quest->GetRequiredClasses() || quest->IsRepeatable())
+        return;
+
+    if (!bot->SatisfyQuestClass(quest, false) || quest->GetMinLevel() > bot->GetLevel() || !bot->SatisfyQuestRace(quest, false))
+        return;
+
+    if (quest->GetRewSpellCast() > 0 && quest->GetRewSpellCast() != 12510)
+    {
+        if (LearnSpellFromSpell(quest->GetRewSpellCast(), out))
         {
-            if (LearnSpellFromSpell(quest->GetRewSpellCast(), out))
+            GetClassQuestItem(quest, out);
+        }
+        else if (quest->GetRewSpellCast() == 8385)
+        {
+            bool hasAirTotem = bot->HasItemCount(5178, 1, true);
+            if (!hasAirTotem)
             {
                 GetClassQuestItem(quest, out);
             }
-            // Shaman Call of Air Quest casts Swift Wind on player and rewards Air Totem, Swift Wind is not to be learned however it is a one time cast.
-            else if (quest->GetRewSpellCast() == 8385)
+        }
+    }
+    else if (quest->GetRewSpell() > 0)
+    {
+        if (IsTeachingSpellListedAsSpell(quest->GetRewSpell()))
+        {
+            if (LearnSpellFromSpell(quest->GetRewSpell(), out))
             {
-                bool hasAirTotem = false;
-                hasAirTotem = bot->HasItemCount(5178, 1, true);
-                if (!hasAirTotem)
-                {
-                    GetClassQuestItem(quest, out);
-                }
+                GetClassQuestItem(quest, out);
             }
         }
-        else if (quest->GetRewSpell() > 0)
+        else
         {
-            if (IsTeachingSpellListedAsSpell(quest->GetRewSpell()))
+            if (LearnSpell(quest->GetRewSpell(), out))
             {
-                if (LearnSpellFromSpell(quest->GetRewSpell(), out))
-                {
-                    GetClassQuestItem(quest, out);
-                }
-            }
-            else
-            {
-                if (LearnSpell(quest->GetRewSpell(), out))
-                {
-                    GetClassQuestItem(quest, out);
-                }
+                GetClassQuestItem(quest, out);
             }
         }
     }
@@ -323,11 +367,35 @@ bool AutoLearnSpellAction::LearnSpell(uint32 spellId, std::ostringstream* out)
 bool AutoLearnSpellAction::LearnSpellFromSpell(uint32 spellId, std::ostringstream* out)
 {
     SpellEntry const* proto = sServerFacade.LookupSpellInfo(spellId);
-
     if (!proto)
         return false;
 
+#ifdef MANGOSBOT_ZERO
+    if (spellId == 23356) // Taming Lesson
+    {
+        bool learned = false;
+
+        learned |= LearnSpell(1515, out); // Tame Beast
+        learned |= LearnSpell(883, out); // Call Pet
+        learned |= LearnSpell(2641, out); // Dismiss Pet
+
+        return learned;
+    }
+
+    if (spellId == 23357) // Training Lesson
+    {
+        bool learned = false;
+
+        learned |= LearnSpell(5149, out); // Beast Training
+        learned |= LearnSpell(6991, out); // Feed Pet
+        learned |= LearnSpell(982, out); // Revive Pet
+
+        return learned;
+    }
+#endif
+
     bool learned = false;
+
     for (int j = 0; j < 3; ++j)
     {
         if (proto->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
@@ -346,6 +414,7 @@ bool AutoLearnSpellAction::LearnSpellFromSpell(uint32 spellId, std::ostringstrea
             }
         }
     }
+
     return learned;
 }
 /**

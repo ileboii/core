@@ -16,6 +16,7 @@
 #include "strategy/actions/ChangeTalentsAction.h"
 #include "strategy/actions/InviteToGroupAction.h"
 #include "AiFactory.h"
+#include "strategy/actions/AutoLearnSpellAction.h"
 
 class CharacterHandler;
 
@@ -543,6 +544,13 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
         {
             sRandomPlayerbotMgr.InstaRandomize(bot);
         }
+    }
+
+    // Repair missing class quest spells for ALL bots, including grouped alt bots.
+    if (sPlayerbotAIConfig.autoLearnQuestSpells)
+    {
+        AutoLearnSpellAction repairAction(ai);
+        repairAction.RepairQuestSpells(PlayerbotFactory::classQuestIds);
     }
 
     if (!bot->HasItemCount(6948, 1)

@@ -66,7 +66,8 @@ void PlayerbotFactory::Init()
             uint32 questId = i->first;
             Quest const* quest = i->second.get();
 
-            if (!quest->GetRequiredClasses() || quest->IsRepeatable() || quest->GetMinLevel() < 10)
+            if (!quest->GetRequiredClasses() || quest->IsRepeatable())
+                continue;
                 continue;
 
             AddPrevQuests(questId, classQuestIds);
@@ -201,6 +202,11 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
             //Reset xp and xp for next level.
             bot->SetUInt32Value(PLAYER_XP, 0);
             bot->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, sObjectMgr.GetXPForLevel(level));
+        }
+
+        if (sPlayerbotAIConfig.randomBotPreQuests)
+        {
+            InitQuests(classQuestIds);
         }
 
         InitQuests(specialQuestIds);
