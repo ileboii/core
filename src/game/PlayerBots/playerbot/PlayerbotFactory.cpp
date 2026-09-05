@@ -1198,7 +1198,30 @@ void PlayerbotFactory::InitPetSpells()
         auto it = hunterPetSpells.find(petType);
         if (it != hunterPetSpells.end())
         {
-            // Find Cower spells
+            std::vector<uint32> activeSpellsToRemove;
+
+            for (PetSpellMap::const_iterator spellItr = pet->m_petSpells.begin(); spellItr != pet->m_petSpells.end(); ++spellItr)
+            {
+                if (spellItr->second.state == PETSPELL_REMOVED)
+                    continue;
+
+                uint32 spellId = spellItr->first;
+
+                if (IsPassiveSpell(spellId))
+                    continue;
+
+                activeSpellsToRemove.push_back(spellId);
+            }
+
+            for (uint32 spellId : activeSpellsToRemove)
+            {
+                pet->ToggleAutocast(spellId, false);
+                pet->RemoveSpell(spellId, false, false);
+            }
+
+            pet->CleanupActionBar();
+
+            // Cower
             static const std::unordered_set<uint32> cowerSpellIds = {1742, 1753, 1754, 1755, 1756, 16697};
 
             for (const auto& pair : it->second)
@@ -1215,8 +1238,9 @@ void PlayerbotFactory::InitPetSpells()
 
                     if (!IsPassiveSpell(spellID))
                     {
-                        // Toggle Cower off by default
+                        // Cower should be available, but not autocast.
                         const bool autocast = (cowerSpellIds.find(spellID) == cowerSpellIds.end());
+
                         if (pet->HasSpell(spellID))
                         {
                             pet->ToggleAutocast(spellID, autocast);
@@ -1247,9 +1271,17 @@ void PlayerbotFactory::InitPetSpells()
             if (pet->GetLevel() >= rank.minLevel)
                 growlSpellId = rank.spellId;
         }
-        if (growlSpellId && !pet->HasSpell(growlSpellId))
+        if (growlSpellId)
         {
-            pet->AddSpell(growlSpellId);
+            if (!pet->HasSpell(growlSpellId))
+            {
+                pet->AddSpell(growlSpellId);
+            }
+
+            if (pet->HasSpell(growlSpellId))
+            {
+                pet->ToggleAutocast(growlSpellId, true);
+            }
         }
 
         // Natural Armor
@@ -1304,33 +1336,38 @@ void PlayerbotFactory::InitPetSpells()
             pet->AddSpell(greatStaminaSpellId);
         }
 
-        // Resistances
+                // Resistances
         if (pet->GetLevel() >= 20)
         {
             struct ResistanceSpell
             {
                 uint32 spellId;
             };
+
             static const ResistanceSpell resistances[] = {
                 {24493}, // Arcane
                 {23992}, // Fire
                 {24446}, // Frost
                 {24492}, // Nature
-                {24488}  // Shadow
+                {24488} // Shadow
             };
+
             for (const auto& res : resistances)
             {
                 if (!pet->HasSpell(res.spellId))
                     pet->AddSpell(res.spellId);
             }
         }
-    }
+
+        pet->CleanupActionBar();
+        bot->PetSpellInitialize();
+}
 #endif
 
 // Warlock pets should auto learn spells in WOTLK
 #ifndef MANGOSBOT_TWO
-    if (bot->GetClass() == CLASS_WARLOCK)
-    {
+if (bot->GetClass() == CLASS_WARLOCK)
+{
         constexpr uint32 PET_IMP = 416;
         constexpr uint32 PET_FELHUNTER = 417;
         constexpr uint32 PET_VOIDWALKER = 1860;
