@@ -186,13 +186,9 @@ RandomPlayerbotMgr::RandomPlayerbotMgr()
 , processTicks(0)
 , loginProgressBar(NULL)
 {
-    // PBCB COMMAND SERVER STARTUP
-    // The companion bridge must not depend on random-bot autologin.
-    if (sPlayerbotAIConfig.enabled && sPlayerbotAIConfig.commandServerPort)
-        sPlayerbotCommandServer.Start();
-
     if (sPlayerbotAIConfig.enabled && sPlayerbotAIConfig.randomBotAutologin)
     {
+        sPlayerbotCommandServer.Start();
         PrepareTeleportCache();
 
         for (int i = BG_BRACKET_ID_FIRST; i < MAX_BATTLEGROUND_BRACKETS; ++i)
@@ -4110,122 +4106,6 @@ uint32 RandomPlayerbotMgr::GetTradeDiscount(Player* bot, Player* master)
 
 std::string RandomPlayerbotMgr::HandleRemoteCommand(std::string request)
 {
-    // PBCB BEGIN REMOTE ROUTER
-    // Handle bridge traffic before the legacy first-comma parser below.
-    {
-        size_t bridgePos = request.rfind(',');
-        if (bridgePos != std::string::npos)
-        {
-            std::string bridgeCommand = request.substr(0, bridgePos);
-            std::string bridgeSelector = request.substr(bridgePos + 1);
-
-            if (bridgeCommand == "bridge-version")
-                return "playerbot-companion-bridge/2";
-
-            if (bridgeCommand == "list")
-            {
-                std::map<uint32, Player*> bridgeBots;
-
-                ForEachPlayerbot([&bridgeBots](Player* candidate)
-                {
-                    if (!candidate)
-                        return;
-
-                    PlayerbotAI* candidateAi = candidate->GetPlayerbotAI();
-                    if (!candidateAi || candidateAi->IsRealPlayer())
-                        return;
-
-                    bridgeBots[candidate->GetGUIDLow()] = candidate;
-                });
-
-                PlayerBotMap bridgePlayers = GetPlayersSnapshot();
-                for (PlayerBotMap::iterator i = bridgePlayers.begin(); i != bridgePlayers.end(); ++i)
-                {
-                    Player* candidate = i->second;
-                    if (!candidate)
-                        continue;
-
-                    PlayerbotAI* candidateAi = candidate->GetPlayerbotAI();
-                    if (!candidateAi || candidateAi->IsRealPlayer())
-                        continue;
-
-                    bridgeBots[candidate->GetGUIDLow()] = candidate;
-                }
-
-                std::ostringstream out;
-                bool first = true;
-
-                for (std::map<uint32, Player*>::iterator i = bridgeBots.begin(); i != bridgeBots.end(); ++i)
-                {
-                    Player* candidate = i->second;
-                    PlayerbotAI* candidateAi = candidate->GetPlayerbotAI();
-
-                    if (!first)
-                        out << ";";
-                    first = false;
-
-                    out << candidate->GetGUIDLow() << "|"
-                        << candidate->GetName() << "|"
-                        << candidate->GetLevel() << "|"
-                        << uint32(candidate->GetClass()) << "|";
-
-                    Player* candidateMaster = candidateAi ? candidateAi->GetMaster() : NULL;
-                    if (candidateMaster)
-                        out << candidateMaster->GetName();
-                }
-
-                return out.str();
-            }
-
-            bool bridgeForward =
-                bridgeCommand == "snapshot" ||
-                bridgeCommand.compare(0, 4, "cmd:") == 0 ||
-                bridgeCommand.compare(0, 6, "party:") == 0 ||
-                bridgeCommand.compare(0, 4, "say:") == 0;
-
-            if (bridgeForward)
-            {
-                uint32 bridgeGuid = std::atoi(bridgeSelector.c_str());
-                Player* bridgeBot = bridgeGuid ? GetPlayerBot(bridgeGuid) : NULL;
-
-                if (!bridgeBot && bridgeGuid)
-                    bridgeBot = GetPlayer(bridgeGuid);
-
-                if (!bridgeBot && !bridgeSelector.empty())
-                {
-                    ForEachPlayerbot([&bridgeBot, &bridgeSelector](Player* candidate)
-                    {
-                        if (!bridgeBot && candidate && candidate->GetName() == bridgeSelector)
-                            bridgeBot = candidate;
-                    });
-
-                    if (!bridgeBot)
-                    {
-                        PlayerBotMap bridgePlayers = GetPlayersSnapshot();
-                        for (PlayerBotMap::iterator i = bridgePlayers.begin(); i != bridgePlayers.end(); ++i)
-                        {
-                            Player* candidate = i->second;
-                            if (candidate && candidate->GetName() == bridgeSelector)
-                            {
-                                bridgeBot = candidate;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (!bridgeBot)
-                    return "bot offline";
-
-                PlayerbotAI* bridgeAi = bridgeBot->GetPlayerbotAI();
-                if (!bridgeAi || bridgeAi->IsRealPlayer())
-                    return "not a playerbot";
-
-                return bridgeAi->HandleRemoteCommand(bridgeCommand);
-            }
-        }
-    }
-    // PBCB END REMOTE ROUTER
     std::string::iterator pos = find(request.begin(), request.end(), ',');
     if (pos == request.end())
     {

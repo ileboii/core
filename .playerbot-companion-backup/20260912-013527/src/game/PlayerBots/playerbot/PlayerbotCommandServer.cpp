@@ -80,9 +80,7 @@ static void serverLoop(short port)
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    // PBCB LOCALHOST BIND
-    // The companion bridge is a local control surface. Do not expose it by default.
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
 
     if (bind(listenSock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
