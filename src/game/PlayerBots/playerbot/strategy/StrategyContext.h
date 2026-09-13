@@ -188,6 +188,7 @@ namespace ai
             creators["ranged"] = [](PlayerbotAI* ai) { return new RangedCombatStrategy(ai); };
 
             creators["kite"] = [](PlayerbotAI* ai) { return new KiteStrategy(ai); };
+            creators["kite stack"] = [](PlayerbotAI* ai) { return new KiteStackStrategy(ai); };
         }
     };
 

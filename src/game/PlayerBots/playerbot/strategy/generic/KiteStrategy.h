@@ -33,4 +33,16 @@ namespace ai
         void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
         void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
+
+    class KiteStackStrategy : public KiteStrategy
+    {
+    public:
+        KiteStackStrategy(PlayerbotAI* ai) : KiteStrategy(ai) {}
+
+        std::string getName() override { return "kite stack"; }
+
+    protected:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+    };
 } // namespace ai
