@@ -25,6 +25,7 @@
 #include "Player.h"
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotFactory.h"
 #include "Log.h"
 #include "Opcodes.h"
 #include "WorldPacket.h"
@@ -4920,7 +4921,18 @@ void Unit::SetPet(Pet* pet)
     if (pet)
         pet->SetWorldMask(GetWorldMask());
     if (IsPlayer())
+    {
         ApplyModByteFlag(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_FLAGS, PLAYER_FIELD_BYTE_CONTROLLING_PET, pet != nullptr);
+
+        Player* player = ToPlayer();
+        WorldSession* session = player->GetSession();
+        if (pet && player->GetClass() == CLASS_WARLOCK &&
+            (player->GetPlayerbotAI() || (session && !session->GetSocket())))
+        {
+            PlayerbotFactory factory(player, player->GetLevel());
+            factory.InitPetSpells(pet);
+        }
+    }
 }
 
 void Unit::SetCharm(Unit* pet)

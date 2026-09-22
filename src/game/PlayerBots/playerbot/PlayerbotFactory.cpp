@@ -689,13 +689,13 @@ void PlayerbotFactory::InitPet()
     }
 }
 
-void PlayerbotFactory::InitPetSpells()
+void PlayerbotFactory::InitPetSpells(Pet* initializedPet)
 {
     Map* map = bot->GetMap();
     if (!map)
         return;
 
-    Pet* pet = bot->GetPet();
+    Pet* pet = initializedPet ? initializedPet : bot->GetPet();
     if (!pet)
         return;
 
@@ -1628,7 +1628,7 @@ if (bot->GetClass() == CLASS_WARLOCK)
         const auto& petSpellListItr = spellList.find(pet->GetEntry());
         if (petSpellListItr != spellList.end())
         {
-            const auto& petSpellList = petSpellListItr->second;
+            std::map<uint32, uint32> expectedSpells;
             for (const auto& pair : petSpellListItr->second)
             {
                 const uint32& levelRequired = pair.first;
@@ -1636,8 +1636,37 @@ if (bot->GetClass() == CLASS_WARLOCK)
 
                 if (pet->GetLevel() >= levelRequired)
                 {
-                    pet->AddSpell(spellID);
+                    uint32 firstSpell = sSpellMgr.GetFirstSpellInChain(spellID);
+                    std::map<uint32, uint32>::iterator expectedSpell = expectedSpells.find(firstSpell);
+                    if (expectedSpell == expectedSpells.end() || sSpellMgr.IsHighRankOfSpell(spellID, expectedSpell->second))
+                        expectedSpells[firstSpell] = spellID;
                 }
+            }
+
+            bool spellsAdded = false;
+            for (const auto& expectedSpell : expectedSpells)
+            {
+                if (pet->AddSpell(expectedSpell.second))
+                    spellsAdded = true;
+            }
+
+            bool autocastChanged = false;
+            for (PetSpellMap::const_iterator itr = pet->m_petSpells.begin(); itr != pet->m_petSpells.end(); ++itr)
+            {
+                if (itr->second.state == PETSPELL_REMOVED || IsPassiveSpell(itr->first))
+                    continue;
+
+                const bool wasEnabled = itr->second.active == ACT_ENABLED;
+                const uint8 autoSpellCount = pet->GetPetAutoSpellSize();
+                pet->ToggleAutocast(itr->first, true);
+                if (!wasEnabled || pet->GetPetAutoSpellSize() != autoSpellCount)
+                    autocastChanged = true;
+            }
+
+            if (spellsAdded || autocastChanged)
+            {
+                pet->CleanupActionBar();
+                bot->PetSpellInitialize();
             }
         }
     }

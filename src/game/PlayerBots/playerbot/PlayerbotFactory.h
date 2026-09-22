@@ -1,6 +1,7 @@
 #pragma once
 
 class Player;
+class Pet;
 class PlayerbotMgr;
 class ChatHandler;
 
@@ -65,7 +66,7 @@ public:
     void AddFood() { return InitFood(); }
     void InitAmmo();
     void InitPet();
-    void InitPetSpells();
+    void InitPetSpells(Pet* pet = nullptr);
     void LearnTrainerSpells();
 
 private:

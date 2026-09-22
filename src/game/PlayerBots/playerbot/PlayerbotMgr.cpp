@@ -576,10 +576,9 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
         if (bot->GetPet())
             factory.InitPetSpells();
     }
-    else if (bot->GetLevel() >= 10 && bot->GetClass() == CLASS_WARLOCK && !bot->GetPet())
+    else if (bot->GetClass() == CLASS_WARLOCK)
     {
         PlayerbotFactory factory(bot, bot->GetLevel());
-        factory.InitPet();
         factory.InitPetSpells();
     }
     if (sPlayerbotAIConfig.autoLearnTrainerSpells)
