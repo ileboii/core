@@ -1141,7 +1141,7 @@ Movement::PointsArray path;
 // ---------------------------------------------------------------
 // MoveTo2  (refactored version of MoveTo)
 // ---------------------------------------------------------------
-bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
+bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets, bool naturalTravel)
 {
     WorldPosition endPosition(mapId, x, y, z, 0);
     if (!endPosition.isValid())
@@ -1174,7 +1174,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     }
 #endif
     bool detailedMove = ai->AllowActivity(DETAILED_MOVE_ACTIVITY, true);
-    if (!detailedMove)
+    if (!naturalTravel && !detailedMove)
     {
         LastMovement& lm = AI_VALUE(LastMovement&, "last movement");
         time_t now = time(0);
@@ -1352,7 +1352,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
             mover->StopMoving();
     }
 
-    if (totalDistance > maxDist && !detailedMove && !ai->HasPlayerNearby(movePosition))
+    if (totalDistance > maxDist && !detailedMove && !naturalTravel && !ai->HasPlayerNearby(movePosition))
     {
         time_t now = time(0);
         lastMove.nextTeleport = now + (time_t)MoveDelay(startPosition.distance(movePosition));
@@ -1395,9 +1395,9 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
 }
 
 
-bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
+bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets, bool naturalTravel)
 {
-    return MoveTo2(mapId, x, y, z, idle, react, noPath, ignoreEnemyTargets);
+    return MoveTo2(mapId, x, y, z, idle, react, noPath, ignoreEnemyTargets, naturalTravel);
 
     WorldPosition endPosition(mapId, x, y, z, 0);
     if(!endPosition.isValid())

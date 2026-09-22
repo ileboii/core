@@ -17,7 +17,14 @@ bool FollowAction::Execute(Event& event)
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
     Formation* formation = AI_VALUE(Formation*, "formation");
 
-    if (ai->IsSafe(followTarget))
+    bool useFollowGenerator = ai->IsSafe(followTarget);
+    if (useFollowGenerator && followTarget)
+    {
+        float distance = sServerFacade.GetDistance2d(bot, followTarget);
+        useFollowGenerator = !sServerFacade.IsDistanceGreaterThan(distance, sPlayerbotAIConfig.sightDistance);
+    }
+
+    if (useFollowGenerator)
     {
         if (formation)
         {
@@ -33,21 +40,8 @@ bool FollowAction::Execute(Event& event)
         moved = MoveTo(followTarget->GetMapId(),
                        followTarget->GetPositionX(),
                        followTarget->GetPositionY(),
-                       followTarget->GetPositionZ());
-
-        Player* followPlayer = dynamic_cast<Player*>(followTarget);
-        if (!moved && ai->CanMove() && followPlayer &&
-            bot->GetMapId() != followPlayer->GetMapId() &&
-            !bot->IsBeingTeleported() &&
-            !followPlayer->IsBeingTeleported() &&
-            followPlayer->IsInWorld())
-        {
-            moved = bot->TeleportTo(followPlayer->GetMapId(),
-                                    followPlayer->GetPositionX(),
-                                    followPlayer->GetPositionY(),
-                                    followPlayer->GetPositionZ(),
-                                    followPlayer->GetOrientation());
-        }
+                       followTarget->GetPositionZ(),
+                       false, false, false, false, true);
     }
 
     return moved;
