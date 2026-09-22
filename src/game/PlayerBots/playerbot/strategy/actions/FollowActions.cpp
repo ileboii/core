@@ -34,6 +34,20 @@ bool FollowAction::Execute(Event& event)
                        followTarget->GetPositionX(),
                        followTarget->GetPositionY(),
                        followTarget->GetPositionZ());
+
+        Player* followPlayer = dynamic_cast<Player*>(followTarget);
+        if (!moved && ai->CanMove() && followPlayer &&
+            bot->GetMapId() != followPlayer->GetMapId() &&
+            !bot->IsBeingTeleported() &&
+            !followPlayer->IsBeingTeleported() &&
+            followPlayer->IsInWorld())
+        {
+            moved = bot->TeleportTo(followPlayer->GetMapId(),
+                                    followPlayer->GetPositionX(),
+                                    followPlayer->GetPositionY(),
+                                    followPlayer->GetPositionZ(),
+                                    followPlayer->GetOrientation());
+        }
     }
 
     return moved;
