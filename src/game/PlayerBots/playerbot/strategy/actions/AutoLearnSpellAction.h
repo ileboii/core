@@ -16,6 +16,7 @@ namespace ai
         virtual bool isUsefulWhenStunned() override { return true; }
 
         void RepairQuestSpells(const std::list<uint32>& questIds);
+        void RepairPriestRacialSpells();
         void RepairPetSpells();
 
     private:
@@ -29,6 +30,8 @@ namespace ai
         bool LearnSpell(uint32 spellId, std::ostringstream* out);
         bool LearnSpellFromSpell(uint32 spellId, std::ostringstream* out);
         bool IsValidSpell(uint32 spellId);
+        bool IsPriestRacialSpell(uint32 spellId);
+        bool IsPriestRacialSpellAllowed(uint32 spellId);
         bool IsTeachingSpellListedAsSpell(uint32 spellId);
     };
 }

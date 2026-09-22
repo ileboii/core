@@ -256,6 +256,8 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Initializing spells (step 2)...");
     InitAvailableSpells();
     InitSpecialSpells();
+    AutoLearnSpellAction repairAction(ai);
+    repairAction.RepairPriestRacialSpells();
     pmo.reset();
 
     if (isRealRandomBot)

@@ -546,10 +546,11 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
         }
     }
 
+    AutoLearnSpellAction repairAction(ai);
+
     // Repair missing class quest spells for ALL bots, including grouped alt bots.
     if (sPlayerbotAIConfig.autoLearnQuestSpells)
     {
-        AutoLearnSpellAction repairAction(ai);
         repairAction.RepairQuestSpells(PlayerbotFactory::classQuestIds);
     }
 
@@ -586,6 +587,8 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
         PlayerbotFactory factory(bot, bot->GetLevel());
         factory.LearnTrainerSpells();
     }
+
+    repairAction.RepairPriestRacialSpells();
 }
 
 std::string PlayerbotHolder::ProcessBotCommand(std::string cmd, ObjectGuid guid, ObjectGuid masterguid, bool admin, uint32 masterAccountId, uint32 masterGuildId, const std::string param)

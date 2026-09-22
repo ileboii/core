@@ -7,6 +7,43 @@
 
 using namespace ai;
 
+namespace
+{
+    struct PriestRacialSpellInfo
+    {
+        uint32 spellId;
+        uint8 allowedRaces[2];
+        uint8 allowedRaceCount;
+        uint32 teachingSpellIds[7];
+        uint8 teachingSpellCount;
+    };
+
+    const PriestRacialSpellInfo priestRacialSpells[] =
+    {
+        { 2652,  { RACE_UNDEAD,   0 }, 1, { 19318, 19320, 19321, 19322, 19323, 19324, 0 }, 6 },
+        { 2944,  { RACE_UNDEAD,   0 }, 1, { 2946,  19313, 19314, 19315, 19316, 19317, 0 }, 6 },
+        { 9035,  { RACE_TROLL,    0 }, 1, { 19325, 19326, 19327, 19328, 19329, 19330, 0 }, 6 },
+        { 18137, { RACE_TROLL,    0 }, 1, { 19331, 19332, 19333, 19334, 19335, 19336, 0 }, 6 },
+        { 13908, { RACE_HUMAN, RACE_DWARF }, 2, { 19338, 19339, 19340, 19341, 19342, 19343, 19344 }, 7 },
+        { 6346,  { RACE_DWARF,   0 }, 1, { 19337, 0, 0, 0, 0, 0, 0 }, 1 },
+        { 13896, { RACE_HUMAN,   0 }, 1, { 19345, 19346, 19347, 19348, 19349, 0, 0 }, 5 },
+        { 10797, { RACE_NIGHTELF, 0 }, 1, { 19350, 19351, 19352, 19353, 19354, 19355, 19356 }, 7 },
+        { 2651,  { RACE_NIGHTELF, 0 }, 1, { 19357, 19358, 19359, 19360, 19361, 0, 0 }, 5 }
+    };
+
+    const PriestRacialSpellInfo* GetPriestRacialSpellInfo(uint32 spellId)
+    {
+        for (uint32 i = 0; i < sizeof(priestRacialSpells) / sizeof(priestRacialSpells[0]); ++i)
+        {
+            PriestRacialSpellInfo const& info = priestRacialSpells[i];
+            if (spellId == info.spellId || sSpellMgr.GetFirstSpellInChain(spellId) == info.spellId)
+                return &info;
+        }
+
+        return nullptr;
+    }
+}
+
 bool AutoLearnSpellAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
@@ -49,6 +86,8 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
 
     if (sPlayerbotAIConfig.autoLearnQuestSpells)
         LearnPetSpells(out);
+
+    RepairPriestRacialSpells();
 }
 
 void AutoLearnSpellAction::LearnPetSpells(std::ostringstream* out)
@@ -228,6 +267,29 @@ void AutoLearnSpellAction::RepairQuestSpells(const std::list<uint32>& questIds)
     if (!out.str().empty())
     {
         sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot %s repaired missing class quest spells", bot->GetName());
+    }
+}
+
+void AutoLearnSpellAction::RepairPriestRacialSpells()
+{
+    std::list<uint32> spellsToRemove;
+
+    for (PlayerSpellMap::const_iterator itr = bot->GetSpellMap().begin(); itr != bot->GetSpellMap().end(); ++itr)
+    {
+        if (itr->second.state == PLAYERSPELL_REMOVED)
+            continue;
+
+        uint32 spellId = itr->first;
+        if (IsTeachingSpellListedAsSpell(spellId) || (IsPriestRacialSpell(spellId) && !IsPriestRacialSpellAllowed(spellId)))
+            spellsToRemove.push_back(spellId);
+    }
+
+    for (std::list<uint32>::const_iterator itr = spellsToRemove.begin(); itr != spellsToRemove.end(); ++itr)
+        bot->RemoveSpell(*itr, false, false);
+
+    if (!spellsToRemove.empty())
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot %s removed %u invalid priest racial spell(s)", bot->GetName(), uint32(spellsToRemove.size()));
     }
 }
 
@@ -441,6 +503,9 @@ bool AutoLearnSpellAction::LearnSpellFromSpell(uint32 spellId, std::ostringstrea
 */
 bool AutoLearnSpellAction::IsValidSpell(uint32 spellId)
 {
+    if (IsTeachingSpellListedAsSpell(spellId) || (IsPriestRacialSpell(spellId) && !IsPriestRacialSpellAllowed(spellId)))
+        return false;
+
     bool isSpellValid = true;
 #ifdef MANGOSBOT_ZERO
     isSpellValid =
@@ -524,20 +589,37 @@ bool AutoLearnSpellAction::IsValidSpell(uint32 spellId)
     return isSpellValid;
 }
 
+bool AutoLearnSpellAction::IsPriestRacialSpell(uint32 spellId)
+{
+    return GetPriestRacialSpellInfo(spellId) != nullptr;
+}
+
+bool AutoLearnSpellAction::IsPriestRacialSpellAllowed(uint32 spellId)
+{
+    PriestRacialSpellInfo const* info = GetPriestRacialSpellInfo(spellId);
+    if (!info || bot->GetClass() != CLASS_PRIEST)
+        return false;
+
+    for (uint8 i = 0; i < info->allowedRaceCount; ++i)
+    {
+        if (bot->GetRace() == info->allowedRaces[i])
+            return true;
+    }
+
+    return false;
+}
+
 bool AutoLearnSpellAction::IsTeachingSpellListedAsSpell(uint32 spellId)
 {
-    bool isTeachingSpellListedAsSpell = false;
-#ifdef MANGOSBOT_ZERO
-    isTeachingSpellListedAsSpell =
-        spellId == 19318 ||    // Touch of weakness Teaching Spell listed as actual spell
-        spellId == 2946  ||    // Devouring Plague Teaching Spell listed as actual spell
-        spellId == 19325 ||    // Hex Of Weakness Teaching Spell listed as actual spell
-        spellId == 19331 ||    // Shadowguard Teaching Spell listed as actual spell
-        spellId == 19338 ||    // Desperate Prayer Teaching Spell listed as actual spell
-        spellId == 19345 ||    // Feed Back Teaching Spell listed as actual spell
-        spellId == 19337 ||    // Fear Ward Teaching Spell listed as actual spell
-        spellId == 19357 ||    // Elune's Grace Teaching Spell listed as actual spell
-        spellId == 19350;      // Starshards Teaching Spell listed as actual spell
-#endif
-        return isTeachingSpellListedAsSpell;
+    for (uint32 i = 0; i < sizeof(priestRacialSpells) / sizeof(priestRacialSpells[0]); ++i)
+    {
+        PriestRacialSpellInfo const& info = priestRacialSpells[i];
+        for (uint8 j = 0; j < info.teachingSpellCount; ++j)
+        {
+            if (spellId == info.teachingSpellIds[j])
+                return true;
+        }
+    }
+
+    return false;
 }
