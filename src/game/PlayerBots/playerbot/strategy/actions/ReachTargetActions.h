@@ -73,7 +73,14 @@ namespace ai
                 }
                 else
                 {
-                    return ChaseTo(target, chaseDist, bot->GetAngle(target));
+                    float chaseAngle = target->GetAngle(bot) - target->GetOrientation();
+                    if (sServerFacade.GetChaseTarget(bot) == target &&
+                        sServerFacade.GetChaseOffset(bot) == chaseDist)
+                    {
+                        chaseAngle = sServerFacade.GetChaseAngle(bot);
+                    }
+
+                    return ChaseTo(target, chaseDist, chaseAngle);
                 }
             }
 

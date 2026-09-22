@@ -2788,6 +2788,16 @@ void Unit::SetFacingTo(float ori)
 {
     m_movementInfo.ChangeOrientation(ori);
 
+    if (Player* player = ToPlayer())
+    {
+        if (player->IsBot())
+        {
+            SetOrientation(ori);
+            SendMovementPacket(MSG_MOVE_SET_FACING);
+            return;
+        }
+    }
+
     Movement::MoveSplineInit init(*this, "SetFacingTo");
     if (GenericTransport* t = GetTransport())
         init.SetTransport(t->GetGUIDLow());
@@ -9114,6 +9124,15 @@ void Unit::StopMoving(bool force)
         init.Launch();
 
         DisableSpline();
+
+        if (Player* player = ToPlayer())
+        {
+            if (player->IsBot())
+            {
+                player->SetPosition(m_movementInfo.pos.x, m_movementInfo.pos.y,
+                                    m_movementInfo.pos.z, m_movementInfo.pos.o);
+            }
+        }
     }
 }
 

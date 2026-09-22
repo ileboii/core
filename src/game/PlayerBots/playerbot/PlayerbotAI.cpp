@@ -8788,10 +8788,6 @@ void PlayerbotAI::StopMoving()
 
     bot->StopMoving();
     MovementInfo mInfo = bot->m_movementInfo;
-    float x, y, z;
-    bot->GetPosition(x, y, z);
-    float o = bot->GetPosition().o;
-    mInfo.ChangePosition(x, y, z, o);
     WorldPacket data(MSG_MOVE_STOP);
 #ifdef MANGOSBOT_TWO
     data << bot->GetObjectGuid().WriteAsPacked();

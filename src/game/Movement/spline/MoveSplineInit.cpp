@@ -22,6 +22,7 @@
 #include "Opcodes.h"
 #include "WorldPacket.h"
 #include "Unit.h"
+#include "Player.h"
 #include "Transport.h"
 #include "ObjectMgr.h"
 #include "ObjectAccessor.h"
@@ -136,8 +137,10 @@ int32 MoveSplineInit::Launch()
     if (Player* pPlayer = unit.ToPlayer())
         pPlayer->GetCheatData()->ResetJumpCounters();
 
-    if (unit.IsPlayer() || unit.GetPossessorGuid().IsPlayer())
+    if ((unit.IsPlayer() && !unit.ToPlayer()->IsBot()) || unit.GetPossessorGuid().IsPlayer())
         unit.SetSplineDonePending(true);
+    else if (unit.IsPlayer())
+        unit.SetSplineDonePending(false);
 
     unit.m_movementInfo.ctime = 0;
     unit.m_movementInfo.SetMovementFlags((MovementFlags)moveFlags);

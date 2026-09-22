@@ -1221,6 +1221,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         return false;
     }
 
+    MotionMaster& mm = *mover->GetMotionMaster();
     WorldPosition movePosition;
     if (FlyDirect(startPosition, endPosition, movePosition, lastMove.lastPath, idle))
         return true;
@@ -1304,10 +1305,33 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         movePosition.setZ(movePosition.getHeight(true));
     }
 
+    if (IsHazardNearPosition(movePosition))
+    {
+        if (!react)
+            SetDuration(sPlayerbotAIConfig.reactDelay);
+        return false;
+    }
+
     if (!react)
     {
         float waitDist = (totalDistance > maxDist) ? startPosition.distance(movePosition) - 10.0f : startPosition.distance(movePosition);
         WaitForReach(waitDist);
+    }
+
+    if (!mover->IsStopped() && mm.GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+    {
+        float destinationX, destinationY, destinationZ;
+        if (mm.GetDestination(destinationX, destinationY, destinationZ))
+        {
+            WorldPosition activeDestination(movePosition.getMapId(), destinationX, destinationY, destinationZ);
+            if (activeDestination.fDist(movePosition) < 5.0f)
+            {
+                lastMove.setShort(startPosition, movePosition);
+                if (!idle)
+                    ClearIdleState();
+                return true;
+            }
+        }
     }
 
     if (!isVehicle)
@@ -1320,7 +1344,6 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
             ai->InterruptSpell(false);
     }
 
-    MotionMaster& mm = *mover->GetMotionMaster();
     if (mm.GetCurrent()->GetMovementGeneratorType() != POINT_MOTION_TYPE || movePosition.fDist(lastMove.lastMoveShort) > 5.0f)
     {
         if (mover == bot)
@@ -1347,13 +1370,6 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         {
             masterWalking = true;
         }
-    }
-
-    if (IsHazardNearPosition(movePosition))
-    {
-        if (!react)
-            SetDuration(sPlayerbotAIConfig.reactDelay);
-        return false;
     }
 
 #ifndef MANGOSBOT_ZERO
@@ -3104,9 +3120,7 @@ bool MovementAction::Flee(Unit* target)
 
         if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
         {
-            auto* chase = mm->GetCurrent();
-
-            if (nullptr /* GetCurrentTarget not in vmangos */ == target && sServerFacade.GetChaseOffset(bot) == distance)
+            if (sServerFacade.GetChaseTarget(bot) == target && sServerFacade.GetChaseOffset(bot) == distance)
                 return true;
         }
 
