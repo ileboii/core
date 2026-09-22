@@ -24,8 +24,7 @@ namespace ai
 
                 if (sRandomPlayerbotMgr.IsRandomBot(bot))
                 {
-                    ai->ResetStrategies();
-                    ai->Reset();
+                    ai->Reset(true);
                 }
                 
                 return true;
