@@ -1278,6 +1278,8 @@ void Map::Update(uint32 t_diff)
 
                 m_botPlayerUpdateProfileSamples10s.store(m_botPlayerUpdateProfileSamples);
 
+                m_averageBotPlayerWorkTimeUs10s.store(m_botPlayerUpdateTimeAccumulatorUs / samples);
+
                 if (m_botPlayerUpdateProfileSamples)
                 {
                     uint64 const playerSamples = m_botPlayerUpdateProfileSamples;

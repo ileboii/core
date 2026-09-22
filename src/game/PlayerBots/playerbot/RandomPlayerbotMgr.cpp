@@ -1105,16 +1105,22 @@ void RandomPlayerbotMgr::ScaleBotActivity()
 
                 uint32 const wantedMs = map->HaveRealPlayers() ? sPlayerbotAIConfig.continentInstancedTargetMsWithPlayer : sPlayerbotAIConfig.continentInstancedTargetMsEmpty;
 
-                float const currentMs = static_cast<float>(map->GetAverageUpdateTimeMs10s());
+                float const currentMs = static_cast<float>(map->GetAverageBotPlayerWorkTimeMs10s());
 
                 float previousActivity = map->GetBotActivityPercentage();
 
                 if (previousActivity < 0.0f)
                     previousActivity = getActivityPercentage();
 
-                float const errorMs = static_cast<float>(wantedMs) - currentMs;
+                float const deadbandMs = std::max(2.0f, static_cast<float>(wantedMs) * 0.10f);
+                float activityDelta = 0.0f;
 
-                float activityDelta = errorMs * 0.5f;
+                if (currentMs > static_cast<float>(wantedMs) + deadbandMs ||
+                    currentMs < static_cast<float>(wantedMs) - deadbandMs)
+                {
+                    float const errorMs = static_cast<float>(wantedMs) - currentMs;
+                    activityDelta = errorMs * 0.5f;
+                }
 
                 activityDelta = std::max(-10.0f, std::min(10.0f, activityDelta));
 
@@ -5016,6 +5022,7 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleCpu(std::string param)
         uint64 cellActiveObjectCalls = 0;
         uint64 markedCells = 0;
 
+        double botPlayerWorkMs = 0.0;
         double botPlayerUpdateMs = 0.0;
         double botPlayerInstanceMs = 0.0;
         double botPlayerAreaMs = 0.0;
@@ -5078,6 +5085,7 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleCpu(std::string param)
         stats.cellActiveObjectCalls = map->GetCellActiveObjectCalls10s();
         stats.markedCells = map->GetAverageMarkedCells10s();
 
+        stats.botPlayerWorkMs = map->GetAverageBotPlayerWorkTimeMs10s();
         stats.botPlayerUpdateMs = map->GetAverageBotPlayerUpdateTimeMs10s();
         stats.botPlayerInstanceMs = map->GetAverageBotPlayerInstanceTimeMs10s();
         stats.botPlayerAreaMs = map->GetAverageBotPlayerAreaTimeMs10s();
@@ -5322,6 +5330,8 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleCpu(std::string param)
                     double const accountedPlayerMs = stats.botPlayerInstanceMs + stats.botPlayerAreaMs + stats.botPlayerAnticheatMs + stats.botPlayerAiMs;
 
                     double const corePlayerMs = std::max(0.0, stats.botPlayerUpdateMs - accountedPlayerMs);
+
+                    ss << "    Bot workload/map tick: " << std::fixed << std::setprecision(2) << stats.botPlayerWorkMs << " ms\n";
 
                     ss << "    Bot Player::Update avg:"
                        << " total=" << std::fixed << std::setprecision(3) << stats.botPlayerUpdateMs << " ms"

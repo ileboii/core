@@ -1012,14 +1012,14 @@ AiPlayerbot.PerfMonEnabled = 0
 AiPlayerbot.ContinentInstancedActivityScaling = 0
 
 # Desired average workload in milliseconds for instanced maps.
-AiPlayerbot.ContinentInstancedTargetMsWithPlayer = 40
-AiPlayerbot.ContinentInstancedTargetMsEmpty = 40
+AiPlayerbot.ContinentInstancedTargetMsWithPlayer = 20
+AiPlayerbot.ContinentInstancedTargetMsEmpty = 20
 
 # Gradually move safe, idle random bots from overloaded continent map shards to neighboring underloaded zones.
 # Requires Continents.Instanciate = 1 and Continents.Sharding = 1.
 AiPlayerbot.ContinentInstancedTeleport = 0
-AiPlayerbot.ContinentInstancedTeleportOverloadMs = 80
-AiPlayerbot.ContinentInstancedTeleportUnderloadMs = 45
+AiPlayerbot.ContinentInstancedTeleportOverloadMs = 50
+AiPlayerbot.ContinentInstancedTeleportUnderloadMs = 25
 AiPlayerbot.ContinentInstancedTeleportMaxBotsPerCheck = 3
 AiPlayerbot.ContinentInstancedTeleportCooldown = 600
 AiPlayerbot.ContinentInstancedTeleportActivityThreshold = 50
