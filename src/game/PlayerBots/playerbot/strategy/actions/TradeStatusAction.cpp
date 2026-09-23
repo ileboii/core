@@ -9,16 +9,31 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/CraftValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
+#include "playerbot/strategy/values/TradeValues.h"
 #include "SetCraftAction.h"
 
 using namespace ai;
 
 bool TradeStatusAction::Execute(Event& event)
 {
+    WorldPacket p(event.getPacket());
+    p.rpos(0);
+    uint32 status;
+    p >> status;
+
     Player* trader = bot->GetTrader();
     Player* master = GetMaster();
+    if (status == TRADE_STATUS_TRADE_CANCELED || status == TRADE_STATUS_TRADE_COMPLETE || status == TRADE_STATUS_CLOSE_WINDOW)
+    {
+        RESET_AI_VALUE2(bool, "manual bool", "player sale trade active");
+        RESET_AI_VALUE2(std::string, "manual string", "pending sale item request");
+        RESET_AI_VALUE2(std::string, "manual string", "pending sale buyer");
+    }
+
     if (!trader)
+    {
         return false;
+    }
 
     bool shouldTrade = true;
     if (!trader->GetPlayerbotAI())
@@ -38,11 +53,6 @@ bool TradeStatusAction::Execute(Event& event)
         bot->GetSession()->HandleCancelTradeOpcode(NullClientPacket());
         return false;
     }
-
-    WorldPacket p(event.getPacket());
-    p.rpos(0);
-    uint32 status;
-    p >> status;
 
     if (status == TRADE_STATUS_TRADE_ACCEPT || (status == TRADE_STATUS_BACK_TO_TRADE && trader->GetTradeData() && trader->GetTradeData()->IsAccepted()))
     {
@@ -99,6 +109,9 @@ bool TradeStatusAction::Execute(Event& event)
                 }
             }
 
+            RESET_AI_VALUE2(bool, "manual bool", "player sale trade active");
+            RESET_AI_VALUE2(std::string, "manual string", "pending sale item request");
+            RESET_AI_VALUE2(std::string, "manual string", "pending sale buyer");
             return true;
         }
     }
@@ -118,26 +131,52 @@ bool TradeStatusAction::Execute(Event& event)
 void TradeStatusAction::BeginTrade()
 {
     Player* trader = bot->GetTrader();
-    if (!trader || trader->GetPlayerbotAI())
+    if (!trader)
         return;
 
-    WorldPacket p;
-    bot->GetSession()->HandleBeginTradeOpcode(MakeNullPacket(p));
+    std::string pendingRequest = AI_VALUE2(std::string, "manual string", "pending sale item request");
+    std::string pendingBuyer = AI_VALUE2(std::string, "manual string", "pending sale buyer");
+    bool isSaleRequest = !pendingRequest.empty() && pendingBuyer == std::to_string(trader->GetGUIDLow());
 
-    ListItemsVisitor visitor;
-    ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
-
-    ai->TellPlayer(trader, "=== Inventory ===");
-    ai->InventoryTellItems(trader, visitor.items, visitor.soulbound);
-
-    if (sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (!pendingRequest.empty() && !isSaleRequest)
     {
-        uint32 discount = sRandomPlayerbotMgr.GetTradeDiscount(bot, ai->GetMaster());
-        if (discount)
+        RESET_AI_VALUE2(bool, "manual bool", "player sale trade active");
+        RESET_AI_VALUE2(std::string, "manual string", "pending sale item request");
+        RESET_AI_VALUE2(std::string, "manual string", "pending sale buyer");
+    }
+
+    if (!trader->GetPlayerbotAI())
+    {
+        WorldPacket p;
+        bot->GetSession()->HandleBeginTradeOpcode(MakeNullPacket(p));
+
+        if (!isSaleRequest)
         {
-            std::ostringstream out; out << "Discount up to: " << chat->formatMoney(discount);
-            ai->TellPlayer(trader, out);
+            ListItemsVisitor visitor;
+            ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+
+            ai->TellPlayer(trader, "=== Inventory ===");
+            ai->InventoryTellItems(trader, visitor.items, visitor.soulbound);
         }
+
+        if (sRandomPlayerbotMgr.IsRandomBot(bot))
+        {
+            uint32 discount = sRandomPlayerbotMgr.GetTradeDiscount(bot, ai->GetMaster());
+            if (discount)
+            {
+                std::ostringstream out; out << "Discount up to: " << chat->formatMoney(discount);
+                ai->TellPlayer(trader, out);
+            }
+        }
+    }
+
+    if (isSaleRequest)
+    {
+        RESET_AI_VALUE2(std::string, "manual string", "pending sale item request");
+        RESET_AI_VALUE2(std::string, "manual string", "pending sale buyer");
+
+        if (!ai->DoSpecificAction("trade", Event("sale offer", pendingRequest.c_str()), true))
+            RESET_AI_VALUE2(bool, "manual bool", "player sale trade active");
     }
 }
 
@@ -147,7 +186,8 @@ bool TradeStatusAction::CheckTrade()
     if (!bot->GetTradeData() || !trader || !trader->GetTradeData())
         return false;
 
-    if (!ai->HasActivePlayerMaster() && bot->GetTrader()->GetPlayerbotAI())
+    bool isSaleTrade = AI_VALUE2(bool, "manual bool", "player sale trade active");
+    if (!ai->HasActivePlayerMaster() && bot->GetTrader()->GetPlayerbotAI() && !isSaleTrade)
     {
         bool isGivingItem = false;
         for (uint32 slot = 0; slot < 6; ++slot)
@@ -211,6 +251,15 @@ bool TradeStatusAction::CheckTrade()
     for (uint32 slot = 0; slot < 6; ++slot)
     {
         Item* item = bot->GetTradeData()->GetItem((TradeSlots)slot);
+        if (item && isSaleTrade && !ItemsForSaleValue::IsItemForSale(ai, item))
+        {
+            std::ostringstream out;
+            out << chat->formatItem(item) << " - This is not for sale";
+            ai->TellPlayer(trader, out);
+            ai->PlaySound(TEXTEMOTE_NO);
+            return false;
+        }
+
         if (item && !ItemUsageValue::GetBotSellPrice(item->GetProto(), bot))
         {
             std::ostringstream out;

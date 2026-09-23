@@ -12,6 +12,9 @@ float RpgActionMultiplier::GetValue(Action* action)
     std::string nextAction = AI_VALUE(std::string, "next rpg action");
     std::string name = action->getName();
 
+    if (name == "rpg sale offer")
+        return 1.0f;
+
     if (dynamic_cast<RpgEnabled*>(action))
     {
         if (!nextAction.empty() && name != nextAction)
@@ -179,6 +182,10 @@ void RpgBgStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void RpgPlayerStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode(
+        "new player nearby",
+        NextAction::array(0, new NextAction("rpg sale offer", 1.035f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "rpg trade useful",
         NextAction::array(0, new NextAction("rpg trade useful", 1.030f), NULL)));

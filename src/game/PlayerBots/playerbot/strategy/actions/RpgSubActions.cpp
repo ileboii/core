@@ -12,8 +12,12 @@
 #include "GuildCreateActions.h"
 #include "SocialMgr.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/ServerFacade.h"
 #include "SayAction.h"
 #include "playerbot/PlayerbotLLMInterface.h"
+#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/strategy/values/ItemUsageValue.h"
+#include "playerbot/strategy/values/TradeValues.h"
 
 
 using namespace ai;
@@ -749,6 +753,92 @@ bool RpgTradeUsefulAction::Execute(Event& event)
     DoDelay();
 
     return isTrading;
+}
+
+bool RpgSaleOfferAction::isPossible()
+{
+    return !!AI_VALUE(ObjectGuid, "new player nearby");
+}
+
+bool RpgSaleOfferAction::isUseful()
+{
+    if (!isPossible() || !sRandomPlayerbotMgr.IsRandomBot(bot) || ai->HasActivePlayerMaster() || bot->IsInCombat() || bot->GetTrader())
+        return false;
+
+    ObjectGuid newPlayer = AI_VALUE(ObjectGuid, "new player nearby");
+    Player* player = dynamic_cast<Player*>(ai->GetWorldObject(newPlayer));
+    if (!player || !ai->IsSafe(player) || !player->IsWithinLOSInMap(bot))
+        return false;
+
+    if (sPlayerbotAIConfig.whisperDistance && !bot->GetGroup() && sRandomPlayerbotMgr.IsFreeBot(bot) &&
+        player->GetSession()->GetSecurity() < SEC_GAMEMASTER &&
+        sServerFacade.GetDistance2d(bot, player) > sPlayerbotAIConfig.whisperDistance)
+        return false;
+
+    std::set<ObjectGuid>& alreadySeenPlayers = AI_VALUE(std::set<ObjectGuid>&, "already seen players");
+    return alreadySeenPlayers.find(newPlayer) == alreadySeenPlayers.end() &&
+        !AI_VALUE(std::list<Item*>, "items for sale").empty();
+}
+
+bool RpgSaleOfferAction::Execute(Event& event)
+{
+    ObjectGuid targetGuid = AI_VALUE(ObjectGuid, "new player nearby");
+    Player* player = dynamic_cast<Player*>(ai->GetWorldObject(targetGuid));
+    std::set<ObjectGuid>& alreadySeenPlayers = AI_VALUE(std::set<ObjectGuid>&, "already seen players");
+
+    if (!player || !ai->IsSafe(player) || !player->IsWithinLOSInMap(bot) || !alreadySeenPlayers.insert(targetGuid).second)
+    {
+        rpg->AfterExecute(false, false, "rpg");
+        DoDelay();
+        return false;
+    }
+
+    if (alreadySeenPlayers.size() > 100)
+    {
+        std::set<ObjectGuid>::iterator oldest = alreadySeenPlayers.begin();
+        if (*oldest == targetGuid)
+            ++oldest;
+        if (oldest != alreadySeenPlayers.end())
+            alreadySeenPlayers.erase(oldest);
+    }
+
+    if (urand(0, 19) != 0)
+    {
+        rpg->AfterExecute();
+        DoDelay();
+        return true;
+    }
+
+    std::list<Item*> saleItems = AI_VALUE(std::list<Item*>, "items for sale");
+    std::vector<Item*> candidates(saleItems.begin(), saleItems.end());
+    if (candidates.empty())
+    {
+        rpg->AfterExecute();
+        DoDelay();
+        return true;
+    }
+
+    uint32 offerCount = std::min<uint32>(3, (uint32)candidates.size());
+    offerCount = urand(1, offerCount);
+
+    std::ostringstream out;
+    out << "For sale:";
+    for (uint32 i = 0; i < offerCount; ++i)
+    {
+        uint32 index = urand(0, (uint32)candidates.size() - 1);
+        Item* item = candidates[index];
+        uint32 price = ItemUsageValue::GetBotSellPrice(item->GetProto(), bot) * item->GetCount();
+
+        out << (i ? ", " : " ") << chat->formatItem(item) << " for " << chat->formatMoney(price);
+        candidates.erase(candidates.begin() + index);
+    }
+
+    if (!ai->TellPlayer(player, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false))
+        alreadySeenPlayers.erase(targetGuid);
+
+    rpg->AfterExecute();
+    DoDelay();
+    return true;
 }
 
 bool RpgEnchantAction::Execute(Event& event)

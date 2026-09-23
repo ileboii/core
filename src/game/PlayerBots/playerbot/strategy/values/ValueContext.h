@@ -412,6 +412,7 @@ namespace ai
 
             creators["entry loot usage"] = [](PlayerbotAI* ai) { return new EntryLootUsageValue(ai); };
             creators["has upgrade"] = [](PlayerbotAI* ai) { return new HasUpgradeValue(ai); };
+            creators["items for sale"] = [](PlayerbotAI* ai) { return new ItemsForSaleValue(ai); };
             creators["items useful to give"] = [](PlayerbotAI* ai) { return new ItemsUsefulToGiveValue(ai); };
             creators["items useful to enchant"] = [](PlayerbotAI* ai) { return new ItemsUsefulToEnchantValue(ai); };
 

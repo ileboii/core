@@ -3,6 +3,15 @@
 
 namespace ai
 {
+    class ItemsForSaleValue : public CalculatedValue<std::list<Item*>>
+    {
+    public:
+        ItemsForSaleValue(PlayerbotAI* ai, std::string name = "items for sale") : CalculatedValue(ai, name) {}
+        std::list<Item*> Calculate() override;
+
+        static bool IsItemForSale(PlayerbotAI* ai, Item* item);
+    };
+
     class ItemsUsefulToGiveValue : public CalculatedValue< std::list<Item*>>, public Qualified
 	{
 	public:

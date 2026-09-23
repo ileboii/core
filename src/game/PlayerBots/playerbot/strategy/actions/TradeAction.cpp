@@ -4,15 +4,23 @@
 #include "TradeAction.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
+#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/strategy/values/TradeValues.h"
 
 using namespace ai;
 
 bool TradeAction::Execute(Event& event)
 {
     std::string text = event.getParam();
+    IterateItemsMask mask = IterateItemsMask((uint8)IterateItemsMask::ITERATE_ITEMS_IN_EQUIP | (uint8)IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+    bool isSaleCommand = event.getSource() == "t" || event.getSource() == "nt";
 
     if (!bot->GetTrader())
     {
+        RESET_AI_VALUE2(bool, "manual bool", "player sale trade active");
+        RESET_AI_VALUE2(std::string, "manual string", "pending sale item request");
+        RESET_AI_VALUE2(std::string, "manual string", "pending sale buyer");
+
         std::list<ObjectGuid> guids = chat->parseGameobjects(text);
         Player* player = nullptr;
 
@@ -36,6 +44,17 @@ bool TradeAction::Execute(Event& event)
 
         if (!player->GetTrader())
         {
+            std::list<Item*> requestedItems = ai->InventoryParseItems(text, mask);
+            bool wantsSaleItem = isSaleCommand && sRandomPlayerbotMgr.IsRandomBot(bot) &&
+                std::any_of(requestedItems.begin(), requestedItems.end(), [this](Item* item) { return ItemsForSaleValue::IsItemForSale(ai, item); });
+
+            if (wantsSaleItem)
+            {
+                SET_AI_VALUE2(bool, "manual bool", "player sale trade active", true);
+                SET_AI_VALUE2(std::string, "manual string", "pending sale item request", text);
+                SET_AI_VALUE2(std::string, "manual string", "pending sale buyer", std::to_string(player->GetGUIDLow()));
+            }
+
             WorldPacket packet(CMSG_INITIATE_TRADE);
             packet << player->GetObjectGuid();
             bot->GetSession()->HandleInitiateTradeOpcode(MakeTypedPacket<WorldPackets::Trade::InitiateTrade>(packet));
@@ -58,10 +77,21 @@ bool TradeAction::Execute(Event& event)
     size_t pos = text.rfind(" ");
     int count = pos!= std::string::npos ? atoi(text.substr(pos + 1).c_str()) : 1;
 
-    IterateItemsMask mask = IterateItemsMask((uint8)IterateItemsMask::ITERATE_ITEMS_IN_EQUIP | (uint8)IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
     std::list<Item*> found = ai->InventoryParseItems(text, mask);
+
+    if (event.getSource() == "sale offer")
+    {
+        found.remove_if([this](Item* item) { return !ItemsForSaleValue::IsItemForSale(ai, item); });
+    }
+
     if (found.empty())
         return false;
+
+    if (isSaleCommand && sRandomPlayerbotMgr.IsRandomBot(bot) &&
+        std::any_of(found.begin(), found.end(), [this](Item* item) { return ItemsForSaleValue::IsItemForSale(ai, item); }))
+    {
+        SET_AI_VALUE2(bool, "manual bool", "player sale trade active", true);
+    }
 
     int traded = 0;
     for (std::list<Item*>::iterator i = found.begin(); i != found.end(); i++)
@@ -75,6 +105,9 @@ bool TradeAction::Execute(Event& event)
         if (TradeItem(*item, slot) && slot != 6 && ++traded >= count)
             break;
     }
+
+    if (event.getSource() == "sale offer")
+        return traded > 0;
 
     return true;
 }

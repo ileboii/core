@@ -9,6 +9,52 @@
 
 using namespace ai;
 
+bool ItemsForSaleValue::IsItemForSale(PlayerbotAI* ai, Item* item)
+{
+    if (!ai || !item || !item->GetProto() || !item->CanBeTraded() || item->IsEquipped() || item->IsInTrade())
+        return false;
+
+    ItemPrototype const* proto = item->GetProto();
+    if (proto->Quality <= ITEM_QUALITY_POOR ||
+        proto->Class == ITEM_CLASS_TRADE_GOODS ||
+        proto->Class == ITEM_CLASS_REAGENT ||
+        proto->Class == ITEM_CLASS_JUNK)
+    {
+        return false;
+    }
+
+    ItemUsage usage = ai->GetAiObjectContext()->GetValue<ItemUsage>("item usage", ItemQualifier(item).GetQualifier())->Get();
+    if (usage != ItemUsage::ITEM_USAGE_VENDOR &&
+        usage != ItemUsage::ITEM_USAGE_AH &&
+        usage != ItemUsage::ITEM_USAGE_BROKEN_AH)
+    {
+        return false;
+    }
+
+    return ItemUsageValue::GetBotSellPrice(proto, ai->GetBot()) > 0;
+}
+
+std::list<Item*> ItemsForSaleValue::Calculate()
+{
+    std::list<Item*> itemsForSale;
+    std::set<uint32> itemEntries;
+    std::list<ItemUsage> sellUsages = { ItemUsage::ITEM_USAGE_VENDOR, ItemUsage::ITEM_USAGE_AH, ItemUsage::ITEM_USAGE_BROKEN_AH };
+
+    for (ItemUsage usage : sellUsages)
+    {
+        std::list<Item*> items = AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)usage));
+        for (Item* item : items)
+        {
+            if (!IsItemForSale(ai, item) || !itemEntries.insert(item->GetEntry()).second)
+                continue;
+
+            itemsForSale.push_back(item);
+        }
+    }
+
+    return itemsForSale;
+}
+
 bool ItemsUsefulToGiveValue::IsTradingItem(uint32 entry)
 {
     TradeData* trade = bot->GetTradeData();

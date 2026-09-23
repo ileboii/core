@@ -346,6 +346,17 @@ namespace ai
         virtual bool Execute(Event& event) override;
     };
 
+    class RpgSaleOfferAction : public RpgSubAction
+    {
+    public:
+        RpgSaleOfferAction(PlayerbotAI* ai, std::string name = "rpg sale offer") : RpgSubAction(ai, name) {}
+
+        virtual std::string GetRpgActionName() const override { return "offering items for sale to"; }
+        virtual bool isPossible() override;
+        virtual bool isUseful() override;
+        virtual bool Execute(Event& event) override;
+    };
+
     class RpgEnchantAction : public RpgTradeUsefulAction
     {
     public:
