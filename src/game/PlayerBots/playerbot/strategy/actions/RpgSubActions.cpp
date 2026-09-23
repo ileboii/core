@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include <ctime>
 #include "Objects/TradeData.h"
 #include "RpgSubActions.h"
 #include "ChooseRpgTargetAction.h"
@@ -776,7 +777,15 @@ bool RpgSaleOfferAction::isUseful()
         return false;
 
     std::set<ObjectGuid>& alreadySeenPlayers = AI_VALUE(std::set<ObjectGuid>&, "already seen players");
-    return alreadySeenPlayers.find(newPlayer) == alreadySeenPlayers.end() &&
+    uint32 now = (uint32)std::time(nullptr);
+    if (resetSeenPlayersAfterCooldown && now >= nextSaleOfferTime)
+    {
+        alreadySeenPlayers.clear();
+        resetSeenPlayersAfterCooldown = false;
+    }
+
+    return (!nextSaleOfferTime || now >= nextSaleOfferTime) &&
+        alreadySeenPlayers.find(newPlayer) == alreadySeenPlayers.end() &&
         !AI_VALUE(std::list<Item*>, "items for sale").empty();
 }
 
@@ -786,7 +795,10 @@ bool RpgSaleOfferAction::Execute(Event& event)
     Player* player = dynamic_cast<Player*>(ai->GetWorldObject(targetGuid));
     std::set<ObjectGuid>& alreadySeenPlayers = AI_VALUE(std::set<ObjectGuid>&, "already seen players");
 
-    if (!player || !ai->IsSafe(player) || !player->IsWithinLOSInMap(bot) || !alreadySeenPlayers.insert(targetGuid).second)
+    uint32 now = (uint32)std::time(nullptr);
+    if (!player || !ai->IsSafe(player) || !player->IsWithinLOSInMap(bot) ||
+        (nextSaleOfferTime && now < nextSaleOfferTime) ||
+        !alreadySeenPlayers.insert(targetGuid).second)
     {
         rpg->AfterExecute(false, false, "rpg");
         DoDelay();
@@ -802,7 +814,7 @@ bool RpgSaleOfferAction::Execute(Event& event)
             alreadySeenPlayers.erase(oldest);
     }
 
-    if (urand(0, 19) != 0)
+    if (urand(0, 9) != 0)
     {
         rpg->AfterExecute();
         DoDelay();
@@ -855,6 +867,11 @@ bool RpgSaleOfferAction::Execute(Event& event)
 
     if (!ai->TellPlayer(player, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false))
         alreadySeenPlayers.erase(targetGuid);
+    else
+    {
+        nextSaleOfferTime = now + urand(60, 300);
+        resetSeenPlayersAfterCooldown = true;
+    }
 
     rpg->AfterExecute();
     DoDelay();

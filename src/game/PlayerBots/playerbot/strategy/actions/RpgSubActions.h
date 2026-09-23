@@ -355,6 +355,10 @@ namespace ai
         virtual bool isPossible() override;
         virtual bool isUseful() override;
         virtual bool Execute(Event& event) override;
+
+    private:
+        uint32 nextSaleOfferTime = 0;
+        bool resetSeenPlayersAfterCooldown = false;
     };
 
     class RpgEnchantAction : public RpgTradeUsefulAction
