@@ -36,7 +36,26 @@ Unit* GrindTargetValue::Calculate()
         target = FindTargetForGrinding(assistCount++);
     }
 
+    targetGuid = target ? target->GetObjectGuid() : ObjectGuid();
     return target;
+}
+
+Unit* GrindTargetValue::Get()
+{
+    UnitCalculatedValue::Get();
+    return targetGuid.IsEmpty() ? nullptr : ai->GetUnit(targetGuid);
+}
+
+Unit* GrindTargetValue::LazyGet()
+{
+    UnitCalculatedValue::LazyGet();
+    return targetGuid.IsEmpty() ? nullptr : ai->GetUnit(targetGuid);
+}
+
+void GrindTargetValue::Set(Unit* unit)
+{
+    targetGuid = unit ? unit->GetObjectGuid() : ObjectGuid();
+    UnitCalculatedValue::Set(unit);
 }
 
 Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)

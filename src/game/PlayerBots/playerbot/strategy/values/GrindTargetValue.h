@@ -12,8 +12,12 @@ namespace ai
 
     public:
         Unit* Calculate() override;
+        Unit* Get() override;
+        Unit* LazyGet() override;
+        void Set(Unit* unit) override;
 
     private:
+        ObjectGuid targetGuid;
         int GetTargetingPlayerCount(Unit* unit);
         Unit* FindTargetForGrinding(int assistCount);
     };
