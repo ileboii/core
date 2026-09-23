@@ -163,6 +163,13 @@ if (target->GetVictim() && target->GetVictim()->GetObjectGuid() == bot->GetObjec
         virtual float GetAngle() override
         {
             Unit* target = GetTarget();
+
+            if (target && target->GetTypeId() != TYPEID_PLAYER && target->GetVictim() &&
+                target->GetVictim()->GetObjectGuid() == bot->GetObjectGuid())
+            {
+                return target->GetOrientation();
+            }
+
             Group* group = bot->GetGroup();
             int index = 0, count = 0;
             if (group)
