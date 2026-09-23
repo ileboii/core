@@ -2997,6 +2997,21 @@ bool MovementAction::Flee(Unit* target)
         }
     }
     
+    // Keep an active retreat destination while it continues to increase distance from the threat.
+    MotionMaster* currentMotion = bot->GetMotionMaster();
+    if (currentMotion && !bot->IsStopped() &&
+        (currentMotion->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE ||
+         currentMotion->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE))
+    {
+        float destinationX, destinationY, destinationZ;
+        if (currentMotion->GetDestination(destinationX, destinationY, destinationZ) &&
+            sServerFacade.GetDistance2d(target, destinationX, destinationY) >
+                sServerFacade.GetDistance2d(bot, target) + 1.0f)
+        {
+            return true;
+        }
+    }
+
     const bool isHealer = ai->IsHeal(bot);
     const bool isTank = ai->IsTank(bot);
     const bool isDps = !isHealer && !isTank;
@@ -3131,6 +3146,20 @@ bool MovementAction::Flee(Unit* target)
     // Generate a position to flee
     if(!succeeded)
     {
+        // Use the movement system's direct retreat when no group destination was found.
+        if (!fleeTarget && ai->IsStateActive(BotState::BOT_STATE_COMBAT))
+        {
+            bool fullDistance = target->IsPlayer() || WorldPosition(bot).isOverworld();
+            float distance = fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
+            MotionMaster* mm = bot->GetMotionMaster();
+
+            if (mm->MoveDistance(target, distance))
+            {
+                AI_VALUE(LastMovement&, "last movement").lastFlee = time(0);
+                return true;
+            }
+        }
+
         if (lastFlee && bot->GetGroup())
         {
             if (!lastFlee)
