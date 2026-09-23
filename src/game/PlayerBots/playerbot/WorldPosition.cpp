@@ -467,9 +467,7 @@ WorldPosition WorldPosition::getDisplayLocation() const
 
 AreaTableEntry const* WorldPosition::GetArea() const
 {
-    uint16 areaFlag = getAreaFlag();
-
-    return sAreaStorage.LookupEntry<AreaEntry>(areaFlag);
+    return AreaEntry::GetByAreaFlagAndMap(getAreaFlag(), getMapId());
 }
 
 std::string WorldPosition::getAreaName(const bool fullName, const bool zoneName) const
