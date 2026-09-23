@@ -821,8 +821,28 @@ bool RpgSaleOfferAction::Execute(Event& event)
     uint32 offerCount = std::min<uint32>(3, (uint32)candidates.size());
     offerCount = urand(1, offerCount);
 
+    static char const* const saleOpeners[] =
+    {
+        "I'm selling",
+        "Got a few things for sale",
+        "I've got these available",
+        "Looking to sell",
+        "Need anything from these?",
+        "Would any of these be useful to you?",
+        "Interested in any of these?",
+        "Take a look at what I've got",
+        "I could part with these items",
+        "Trying to make some room in my bags",
+        "These are up for grabs",
+        "Need supplies? Here's what I've got",
+        "Anyone looking for something like this?",
+        "Can I interest you in any of these?",
+        "Here's what I'm selling"
+    };
+
     std::ostringstream out;
-    out << "For sale:";
+    uint32 openerCount = sizeof(saleOpeners) / sizeof(saleOpeners[0]);
+    out << saleOpeners[urand(0, openerCount - 1)];
     for (uint32 i = 0; i < offerCount; ++i)
     {
         uint32 index = urand(0, (uint32)candidates.size() - 1);
