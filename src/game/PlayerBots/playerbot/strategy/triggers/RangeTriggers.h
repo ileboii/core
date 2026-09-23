@@ -28,8 +28,8 @@ namespace ai
 
                 const bool canMove = !PossibleAttackTargetsValue::HasBreakableCC(target, bot) && !PossibleAttackTargetsValue::HasUnBreakableCC(target, bot);
 
-                // Don't move if the target is targeting you and you can't add distance between you and the target
-                if (target->GetTargetGuid() == bot->GetObjectGuid() && canMove && target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) * 0.65))
+                if (target->GetTargetGuid() == bot->GetObjectGuid() && canMove &&
+                    (!target->IsPlayer() || target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) * 0.65f)))
                 {
                     return false;
                 }

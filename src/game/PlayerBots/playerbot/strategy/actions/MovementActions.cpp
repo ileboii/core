@@ -3121,7 +3121,7 @@ bool MovementAction::Flee(Unit* target)
         succeeded = MoveNear(fleeTarget);
     }
 
-    if (!ai->HasRealPlayerMaster() && !ai->IsRealPlayer(target))
+    if (!ai->HasRealPlayerMaster() && !ai->IsRealPlayer(target) && !ai->IsStateActive(BotState::BOT_STATE_COMBAT))
     {
         bool fullDistance = false;
         if (target->IsPlayer())
@@ -3151,6 +3151,10 @@ bool MovementAction::Flee(Unit* target)
         {
             bool fullDistance = target->IsPlayer() || WorldPosition(bot).isOverworld();
             float distance = fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
+            if (isRanged)
+            {
+                distance = std::max(distance, ai->GetRange("spell") * 0.75f);
+            }
             MotionMaster* mm = bot->GetMotionMaster();
 
             if (mm->MoveDistance(target, distance))

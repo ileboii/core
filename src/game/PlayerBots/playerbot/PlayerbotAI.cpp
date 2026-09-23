@@ -4795,7 +4795,6 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     if (!sServerFacade.IsInFront(bot, faceTo, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
     {
         sServerFacade.SetFacingTo(bot, faceTo);
-        if (!HasRealPlayerMaster()) failWithDelay = true;
     }
 
     if (failWithDelay)
@@ -4898,8 +4897,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
 
         StopMoving();
 
-        // fail if not with real player to avoid movement glitches
-        if (!HasActivePlayerMaster())
+        if (!HasActivePlayerMaster() && sServerFacade.isMoving(bot))
         {
             if (waitForSpell)
             {

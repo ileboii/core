@@ -156,10 +156,10 @@ bool CastSpellAction::isPossible()
 
             if (range != ATTACK_DISTANCE && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_COMBAT && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_SELF_ONLY && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_ANYWHERE)
             {
-                float max_range, min_range;
-                if (ai->GetSpellRange(GetSpellName(), &max_range, &min_range))
+                float max_range;
+                if (ai->GetSpellRange(GetSpellName(), &max_range))
                 {
-                    canReach = dist < max_range && dist >= min_range;
+                    canReach = dist <= max_range;
                 }
             }
         }
