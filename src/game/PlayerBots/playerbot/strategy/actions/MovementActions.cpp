@@ -2989,26 +2989,31 @@ bool MovementAction::Flee(Unit* target)
         fleeDelay = 1;
     }
 
-    if (lastFlee && sServerFacade.isMoving(bot))
+    if (lastFlee && (now - lastFlee) <= fleeDelay)
     {
-        if ((now - lastFlee) <= fleeDelay)
+        // A cast can stop movement; avoid selecting a new retreat path until
+        // the existing flee cooldown expires.
+        return sServerFacade.isMoving(bot);
+    }
+    
+    // Finish an active retreat spline before choosing another retreat destination.
+    MotionMaster* currentMotion = bot->GetMotionMaster();
+    if (currentMotion && !bot->IsStopped())
+    {
+        if (currentMotion->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE)
         {
             return true;
         }
-    }
-    
-    // Keep an active retreat destination while it continues to increase distance from the threat.
-    MotionMaster* currentMotion = bot->GetMotionMaster();
-    if (currentMotion && !bot->IsStopped() &&
-        (currentMotion->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE ||
-         currentMotion->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE))
-    {
-        float destinationX, destinationY, destinationZ;
-        if (currentMotion->GetDestination(destinationX, destinationY, destinationZ) &&
-            sServerFacade.GetDistance2d(target, destinationX, destinationY) >
-                sServerFacade.GetDistance2d(bot, target) + 1.0f)
+
+        if (currentMotion->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
         {
-            return true;
+            float destinationX, destinationY, destinationZ;
+            if (currentMotion->GetDestination(destinationX, destinationY, destinationZ) &&
+                sServerFacade.GetDistance2d(target, destinationX, destinationY) >
+                    sServerFacade.GetDistance2d(bot, target) + 1.0f)
+            {
+                return true;
+            }
         }
     }
 
@@ -3119,6 +3124,10 @@ bool MovementAction::Flee(Unit* target)
     if (fleeTarget)
     {
         succeeded = MoveNear(fleeTarget);
+        if (succeeded)
+        {
+            AI_VALUE(LastMovement&, "last movement").lastFlee = now;
+        }
     }
 
     if (!ai->HasRealPlayerMaster() && !ai->IsRealPlayer(target) && !ai->IsStateActive(BotState::BOT_STATE_COMBAT))
