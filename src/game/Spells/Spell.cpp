@@ -7767,7 +7767,7 @@ bool Spell::HaveTargetsForEffect(SpellEffectIndex effect) const
     return false;
 }
 
-SpellEvent::SpellEvent(Spell* spell) : BasicEvent()
+SpellEvent::SpellEvent(Spell* spell) : BasicEvent(), m_lastUpdateTime(WorldTimer::getMSTime())
 {
     m_Spell = spell;
 }
@@ -7782,9 +7782,14 @@ SpellEvent::~SpellEvent()
 
 bool SpellEvent::Execute(uint64 e_time, uint32 p_time)
 {
+    // A spell may have started after this update interval began.
+    uint32 const now = WorldTimer::getMSTime();
+    uint32 const elapsed = WorldTimer::getMSTimeDiff(m_lastUpdateTime, now);
+    m_lastUpdateTime = now;
+
     // update spell if it is not finished
     if (m_Spell->getState() != SPELL_STATE_FINISHED)
-        m_Spell->update(p_time);
+        m_Spell->update(std::min(p_time, elapsed));
 
     // check spell state to process
     switch (m_Spell->getState())

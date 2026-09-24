@@ -611,6 +611,7 @@ class SpellEvent : public BasicEvent
         Spell* GetSpell() { return m_Spell; }
     protected:
         Spell* m_Spell;
+        uint32 m_lastUpdateTime;
 };
 
 class ChannelResetEvent : public BasicEvent
