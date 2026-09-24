@@ -17,6 +17,8 @@
 #include "Chat.h"
 #include "Group.h"
 #include <unordered_map>
+#include <deque>
+#include <map>
 
 class Player;
 class PlayerbotMgr;
@@ -740,6 +742,9 @@ protected:
     bool aiPlayGenerationPending = false;
     std::string aiPlayContext;
     std::queue<AIPlayQueuedMessage> aiPlayMessages;
+    time_t aiPlayLastObservation = 0;
+    std::map<std::string, std::string> aiPlayFacts;
+    std::deque<std::pair<time_t, std::string>> aiPlayEvents;
     static std::set<std::string> unsecuredCommands;
     bool allowActive[MAX_ACTIVITY_TYPE];
     time_t allowActiveCheckTimer[MAX_ACTIVITY_TYPE];

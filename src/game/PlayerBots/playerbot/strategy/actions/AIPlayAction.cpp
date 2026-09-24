@@ -16,6 +16,9 @@
 #include "World.h"
 #include "ObjectAccessor.h"
 #include "Group.h"
+#include "Pet.h"
+#include "Transport.h"
+#include "QuestDef.h"
 #include "Log.h"
 
 #include <algorithm>
@@ -24,15 +27,87 @@
 #include <exception>
 #include <future>
 #include <map>
-#include <random>
-#include <set>
+#include <deque>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using namespace ai;
 
 namespace
 {
+    std::string BriefAIPlayText(std::string text, size_t limit = 48)
+    {
+        std::string plain;
+        plain.reserve(text.size());
+        for (size_t i = 0; i < text.size();)
+        {
+            if (text.compare(i, 2, "|H") == 0)
+            {
+                const size_t label = text.find("|h", i + 2);
+                const size_t end = label == std::string::npos ? std::string::npos : text.find("|h", label + 2);
+                if (end != std::string::npos)
+                {
+                    plain.append(text, label + 2, end - label - 2);
+                    i = end + 2;
+                    continue;
+                }
+            }
+            if (text.compare(i, 2, "|c") == 0 && i + 10 <= text.size() &&
+                std::all_of(text.begin() + i + 2, text.begin() + i + 10,
+                    [](unsigned char c) { return std::isxdigit(c) != 0; }))
+            {
+                i += 10;
+                continue;
+            }
+            if (text.compare(i, 2, "|r") == 0)
+            {
+                i += 2;
+                continue;
+            }
+            if (text.compare(i, 2, "|T") == 0)
+            {
+                const size_t end = text.find("|t", i + 2);
+                if (end != std::string::npos)
+                {
+                    i = end + 2;
+                    continue;
+                }
+            }
+            plain += text[i++];
+        }
+
+        std::string result;
+        result.reserve(plain.size());
+        for (unsigned char c : plain)
+        {
+            if (c == '|' || c == ';' || std::isspace(c) || c < 32)
+            {
+                if (!result.empty() && result.back() != ' ')
+                    result += ' ';
+            }
+            else
+                result += static_cast<char>(c);
+        }
+        if (!result.empty() && result.back() == ' ')
+            result.pop_back();
+        if (result.size() > limit)
+        {
+            size_t end = result.rfind(' ', limit);
+            if (end == std::string::npos || end < limit / 2)
+                end = limit;
+            while (end && (static_cast<unsigned char>(result[end]) & 0xc0) == 0x80)
+                --end;
+            result.resize(end);
+        }
+        return result;
+    }
+
+    uint32 AIPlayPercent(uint32 current, uint32 maximum)
+    {
+        return maximum ? std::min<uint32>(100, uint32(uint64(current) * 100 / maximum)) : 0;
+    }
+
     bool IsValidAIPlayAttackTarget(Player* bot, Unit* target)
     {
         return bot && target && target->IsInWorld() && sServerFacade.IsAlive(target) &&
@@ -46,6 +121,36 @@ namespace
 
         Unit* target = ai->GetUnit(guid);
         return IsValidAIPlayAttackTarget(bot, target) ? target : nullptr;
+    }
+}
+
+void AIPlayAction::RememberEvent(PlayerbotAI* ai, std::string message)
+{
+    if (!ai || message.empty())
+        return;
+    auto& events = ai->aiPlayEvents;
+    const time_t now = time(nullptr);
+    message = BriefAIPlayText(message, 100);
+    if (!events.empty() && events.back().second == message)
+        return;
+    events.emplace_back(now, std::move(message));
+    while (events.size() > 12 || (!events.empty() && now - events.front().first > 300))
+        events.pop_front();
+}
+
+void AIPlayAction::ObserveFact(PlayerbotAI* ai, const std::string& key, std::string value, bool reportChange)
+{
+    if (!ai)
+        return;
+    value = BriefAIPlayText(std::move(value));
+    if (ai->aiPlayFacts.size() >= 128 && !ai->aiPlayFacts.count(key))
+        ai->aiPlayFacts.erase(ai->aiPlayFacts.begin());
+    auto result = ai->aiPlayFacts.emplace(key, value);
+    if (!result.second && result.first->second != value)
+    {
+        if (reportChange)
+            RememberEvent(ai, key + ": " + result.first->second + " -> " + value);
+        result.first->second = std::move(value);
     }
 }
 
@@ -193,6 +298,39 @@ namespace
         return nullptr;
     }
 
+    std::string ParseAIPlayActionLine(std::string line, bool allowBare = true)
+    {
+        size_t start = line.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos)
+            return "";
+        line.erase(0, start);
+
+        const std::string lower = LowerAIPlayText(line);
+        size_t prefix = 0;
+        if (lower.compare(0, 7, "action:") == 0)
+            prefix = 7;
+        else if (lower.compare(0, 8, "command:") == 0 ||
+            lower.compare(0, 8, "ai_play=") == 0 || lower.compare(0, 8, "ai_play:") == 0)
+            prefix = 8;
+        else if (!allowBare)
+            return "";
+
+        line.erase(0, prefix);
+        start = line.find_first_not_of(" \t");
+        if (start == std::string::npos)
+            return "";
+        line.erase(0, start);
+        size_t end = line.find_last_not_of(" \t\r\n");
+        line.erase(end + 1);
+        if (line.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_") != std::string::npos)
+            return "";
+
+        std::transform(line.begin(), line.end(), line.begin(), [](unsigned char c) { return (char)std::toupper(c); });
+        if (line == "FOLLOW" || line == "FOLLOWING")
+            return "COME";
+        return (line == "NONE" || FindAIPlayCommand(line)) ? line : "";
+    }
+
     std::string JoinStrings(const std::vector<std::string>& strings)
     {
         std::string result;
@@ -207,87 +345,6 @@ namespace
         return result;
     }
 
-    std::string GetNearbySight(PlayerbotAI* ai)
-    {
-        AiObjectContext* context = ai->GetAiObjectContext();
-        Player* bot = ai->GetBot();
-        std::vector<std::pair<ObjectGuid, bool>> visible;
-        std::set<ObjectGuid> added;
-
-        const char* playerLists[] = { "nearest non bot players", "nearest friendly players" };
-        for (const char* valueName : playerLists)
-        {
-            Value<std::list<ObjectGuid>>* value = context->GetValue<std::list<ObjectGuid>>(valueName);
-            if (!value)
-                continue;
-
-            for (ObjectGuid guid : value->Get())
-            {
-                if (added.insert(guid).second)
-                    visible.emplace_back(guid, false);
-            }
-        }
-
-        const char* creatureLists[] = { "nearest npcs", "possible targets" };
-        for (const char* valueName : creatureLists)
-        {
-            Value<std::list<ObjectGuid>>* value = context->GetValue<std::list<ObjectGuid>>(valueName);
-            if (!value)
-                continue;
-
-            for (ObjectGuid guid : value->Get())
-            {
-                if (added.insert(guid).second)
-                    visible.emplace_back(guid, false);
-            }
-        }
-
-        Value<std::list<ObjectGuid>>* gameObjects = context->GetValue<std::list<ObjectGuid>>("nearest game objects");
-        if (gameObjects)
-        {
-            for (ObjectGuid guid : gameObjects->Get())
-            {
-                if (added.insert(guid).second)
-                    visible.emplace_back(guid, true);
-            }
-        }
-
-        if (visible.empty())
-            return "No nearby players, creatures, or objects are visible.";
-
-        static thread_local std::mt19937 generator(std::random_device{}());
-        std::shuffle(visible.begin(), visible.end(), generator);
-        const size_t maxVisible = std::min<size_t>(3, visible.size());
-        const size_t selectedCount = urand(1, (uint32)maxVisible);
-
-        std::vector<std::string> descriptions;
-        for (size_t i = 0; i < selectedCount; ++i)
-        {
-            const ObjectGuid& guid = visible[i].first;
-            if (visible[i].second)
-            {
-                GameObject* object = ai->GetGameObject(guid);
-                if (object)
-                    descriptions.push_back(std::string("object ") + object->GetName());
-                continue;
-            }
-
-            Unit* unit = ai->GetUnit(guid);
-            if (!unit)
-                continue;
-
-            std::string kind = unit->IsPlayer() ? "player" : "creature";
-            if (unit->IsPlayer() && ai->IsRealPlayer(unit))
-                kind = "real player";
-            else if (sServerFacade.IsHostileTo(unit, bot))
-                kind = "hostile creature";
-
-            descriptions.push_back(kind + " " + unit->GetName());
-        }
-
-        return descriptions.empty() ? "No nearby players, creatures, or objects are visible." : JoinStrings(descriptions);
-    }
-
     uint32 NextControlInterval()
     {
         uint32 minimum = sPlayerbotAIConfig.llmControlMinInterval;
@@ -298,6 +355,7 @@ namespace
     }
 
     void CapActionGenerationLength(std::string& json);
+    void SetActionTemperature(std::string& json);
 
     bool BuildActionRequest(PlayerbotAI* ai, const std::string& latestText, std::string& json)
     {
@@ -327,9 +385,11 @@ namespace
         jsonFill["<pre prompt>"] = "Select one action. Do not roleplay.";
         jsonFill["<context>"] = previousContext;
         jsonFill["<prompt>"] = latestText.empty() ? "Choose the next useful action from the current situation." : "Recent chat: " + latestText;
-        jsonFill["<prompt>"] += " Nearby: " + GetNearbySight(ai);
+        const size_t stateLimit = sPlayerbotAIConfig.llmContextLength ?
+            std::min<size_t>(420, std::max<size_t>(180, sPlayerbotAIConfig.llmContextLength / 3)) : 420;
+        jsonFill["<prompt>"] += " World: " + AIPlayAction::DescribeWorld(ai, latestText, stateLimit);
         jsonFill["<post prompt>"] = "IDs: " + AIPlayAction::GetCompactActionMenu() +
-            " Output only one ID.";
+            " Reply with one ID only. Use NONE when there is no clear action.";
 
         const uint32 fixedLength = jsonFill["<pre prompt>"].size() + jsonFill["<prompt>"].size() + jsonFill["<post prompt>"].size();
         PlayerbotLLMInterface::LimitContext(jsonFill["<context>"], fixedLength + jsonFill["<context>"].size());
@@ -342,6 +402,7 @@ namespace
         json = PlayerbotTextMgr::GetReplacePlaceholders(sPlayerbotAIConfig.llmApiJson, jsonFill);
         json = PlayerbotTextMgr::GetReplacePlaceholders(json, placeholders);
         CapActionGenerationLength(json);
+        SetActionTemperature(json);
         return !json.empty();
     }
 
@@ -374,7 +435,22 @@ namespace
             json.replace(valueStart, valueEnd - valueStart, std::to_string(maxActionTokens));
     }
 
-    bool ExecuteAIPlayTravel(PlayerbotAI* ai)
+    void SetActionTemperature(std::string& json)
+    {
+        const size_t key = json.find("\"temperature\"");
+        if (key == std::string::npos)
+            return;
+        const size_t colon = json.find_first_not_of(" \t\r\n", key + 13);
+        if (colon == std::string::npos || json[colon] != ':')
+            return;
+        const size_t start = json.find_first_not_of(" \t\r\n", colon + 1);
+        if (start == std::string::npos || !std::isdigit(static_cast<unsigned char>(json[start])))
+            return;
+        const size_t end = json.find_first_not_of("0123456789.eE+-", start);
+        json.replace(start, end - start, "0.3");
+    }
+
+    bool ExecuteAIPlayTravel(PlayerbotAI* ai, bool autonomous)
     {
         Player* bot = ai ? ai->GetBot() : nullptr;
         if (!bot || bot->InBattleGround())
@@ -387,6 +463,9 @@ namespace
         TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
         if (!target)
             return false;
+
+        if (autonomous && target->IsActive())
+            return true;
 
         // Do not interrupt an in-flight destination query. Otherwise expire
         // the current goal so this explicit request can replace it.
@@ -525,7 +604,8 @@ namespace
         return ai->DoSpecificAction("healing potion", Event("ai play", "", requester), true);
     }
 
-    bool ExecuteAIPlayCommand(PlayerbotAI* ai, const std::string& commandId, ObjectGuid ownerGuid)
+    bool ExecuteAIPlayCommand(PlayerbotAI* ai, const std::string& commandId, ObjectGuid ownerGuid,
+        bool autonomous = false)
     {
         const AIPlayCommand* command = FindAIPlayCommand(commandId);
         if (!command || !ai || !ai->GetBot() || !ai->GetBot()->IsInWorld() ||
@@ -538,22 +618,33 @@ namespace
         if (sPlayerbotAIConfig.llmRequirePlayerPresence && !ai->HasRealPlayerNearbyOrInGroup())
             return false;
 
+        AIPlayAction::ObserveFact(ai, "intent", commandId, true);
+
         Player* owner = ownerGuid.IsEmpty() ? nullptr : sObjectAccessor.FindPlayer(ownerGuid);
         if (!owner || !owner->IsInWorld() || !ai->IsRealPlayer(owner))
             owner = ai->GetMaster();
 
-        if (command->id == std::string("TRAVEL"))
-            return ExecuteAIPlayTravel(ai);
-        if (command->id == std::string("INTERACT"))
-            return ExecuteAIPlayInteract(ai, owner);
-        if (command->id == std::string("HEAL"))
-            return ExecuteAIPlayHeal(ai, owner);
+        if (command->id == std::string("TRAVEL") ||
+            command->id == std::string("INTERACT") ||
+            command->id == std::string("HEAL"))
+        {
+            bool started = command->id == std::string("TRAVEL") ? ExecuteAIPlayTravel(ai, autonomous) :
+                command->id == std::string("INTERACT") ? ExecuteAIPlayInteract(ai, owner) :
+                ExecuteAIPlayHeal(ai, owner);
+            AIPlayAction::RememberEvent(ai, commandId + (started ? " accepted" : " could not start"));
+            return started;
+        }
         if (command->id == std::string("ATTACK"))
         {
             AIPlayAttackAction attackAction(ai);
             Event attackEvent("ai play", "", owner);
             if (!attackAction.Execute(attackEvent))
+            {
+                AIPlayAction::RememberEvent(ai, "ATTACK could not start");
                 return false;
+            }
+
+            AIPlayAction::RememberEvent(ai, "ATTACK accepted");
 
             if (ai->HasStrategy("debug llm", BotState::BOT_STATE_NON_COMBAT))
                 ai->TellPlayerNoFacing(ai->GetMaster(), "AI play selected action: attack my target");
@@ -562,10 +653,18 @@ namespace
 
         const std::string action = command->action;
         if (!ai->CanDoSpecificAction(action, true, true))
+        {
+            AIPlayAction::RememberEvent(ai, commandId + " unavailable");
             return false;
+        }
 
         if (!ai->DoSpecificAction(action, Event("ai play", "", owner), true))
+        {
+            AIPlayAction::RememberEvent(ai, commandId + " could not start");
             return false;
+        }
+
+        AIPlayAction::RememberEvent(ai, commandId + " accepted");
 
         if (ai->HasStrategy("debug llm", BotState::BOT_STATE_NON_COMBAT))
             ai->TellPlayerNoFacing(ai->GetMaster(), "AI play selected action: " + action);
@@ -583,195 +682,448 @@ std::string AIPlayAction::GetCompactActionMenu()
         "HEAL, MOUNT, NONE.";
 }
 
-std::string AIPlayAction::ExtractActionIntent(std::string& text)
+void AIPlayAction::Observe(PlayerbotAI* ai)
 {
-    size_t position = 0;
-    bool foundNone = false;
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot || !bot->IsInWorld())
+        return;
 
-    while (position < text.size())
+    const time_t now = time(nullptr);
+    if (ai->aiPlayLastObservation && now - ai->aiPlayLastObservation < 2)
+        return;
+    ai->aiPlayLastObservation = now;
+    while (!ai->aiPlayEvents.empty() && now - ai->aiPlayEvents.front().first > 300)
+        ai->aiPlayEvents.pop_front();
+
+    ObserveFact(ai, "life", sServerFacade.IsAlive(bot) ? "alive" : "dead", true);
+    ObserveFact(ai, "combat", bot->IsInCombat() ? "fighting" : "safe", true);
+    ObserveFact(ai, "health", std::to_string(AIPlayPercent(bot->GetHealth(), bot->GetMaxHealth()) / 20 * 20) + "%");
+    if (bot->GetMaxPower(POWER_MANA))
+        ObserveFact(ai, "mana", std::to_string(AIPlayPercent(bot->GetPower(POWER_MANA), bot->GetMaxPower(POWER_MANA)) / 20 * 20) + "%");
+    ObserveFact(ai, "area", std::to_string(bot->GetMapId()) + "/" +
+        std::to_string(sServerFacade.GetAreaId(bot)), true);
+    ObserveFact(ai, "enemy", bot->GetVictim() ? bot->GetVictim()->GetName() : "none", true);
+    ObserveFact(ai, "transport", bot->GetTransport() ? bot->GetTransport()->GetName() : "none", true);
+    ObserveFact(ai, "mounted", bot->IsMounted() ? "yes" : "no");
+    ObserveFact(ai, "level", std::to_string(bot->GetLevel()), true);
+    ObserveFact(ai, "money", std::to_string(bot->GetMoney() / 10000) + "g");
+    ObserveFact(ai, "group", bot->GetGroup() ? std::to_string(bot->GetGroup()->GetMembersCount()) : "solo", true);
+    ObserveFact(ai, "companion", ai->GetMaster() ? ai->GetMaster()->GetName() : "none", true);
+    std::string harmfulAuras;
+    for (auto const& entry : bot->GetSpellAuraHolderMap())
     {
-        while (position < text.size() && !std::isalnum(static_cast<unsigned char>(text[position])) && text[position] != '_')
-            ++position;
-
-        size_t idStart = position;
-        while (position < text.size())
-        {
-            const unsigned char c = static_cast<unsigned char>(text[position]);
-            if (!std::isalnum(c) && text[position] != '_')
-                break;
-            ++position;
-        }
-
-        if (idStart == position)
+        SpellAuraHolder* holder = entry.second;
+        if (!holder || holder->IsPositive() || !holder->GetSpellProto())
             continue;
+        if (!harmfulAuras.empty())
+            harmfulAuras += ", ";
+        harmfulAuras += BriefAIPlayText(holder->GetSpellProto()->SpellName[0], 24);
+        if (harmfulAuras.size() > 65)
+            break;
+    }
+    ObserveFact(ai, "debuffs", harmfulAuras.empty() ? "none" : harmfulAuras, true);
 
-        std::string id = text.substr(idStart, position - idStart);
-        std::transform(id.begin(), id.end(), id.begin(), [](unsigned char c) { return (char)std::toupper(c); });
-
-        // Small models may add words around the ID or use this common synonym.
-        if (id == "FOLLOW" || id == "FOLLOWING")
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (context)
+    {
+        ObserveFact(ai, "movement", bot->IsStopped() ? "stopped" : "moving");
+        auto sensed = [&](const char* name) -> bool
         {
-            text.clear();
-            return "COME";
-        }
-
-        if (id == "NONE")
+            Value<bool>* found = context->GetValue<bool>(name);
+            return found && found->Get();
+        };
+        ObserveFact(ai, "loot", sensed("has available loot") ? "nearby" : "none", true);
+        ObserveFact(ai, "repair", sensed("should repair") ? "needed" : "okay");
+        ObserveFact(ai, "selling", sensed("should sell") ? "needed" : "okay");
+        if (auto* space = context->GetValue<uint8>("bag space"))
+            ObserveFact(ai, "bags", std::to_string(space->Get() / 20 * 20) + "% free");
+        if (auto* slots = context->GetValue<uint8>("free quest log slots"))
+            ObserveFact(ai, "quest slots", std::to_string(slots->Get()));
+        if (auto* attackers = context->GetValue<uint8>("attackers count"))
+            ObserveFact(ai, "attackers", std::to_string(attackers->Get()), true);
+        if (auto* visible = context->GetValue<std::list<ObjectGuid>>("possible targets"))
+            ObserveFact(ai, "visible threats", visible->Get().empty() ? "none" : "present");
+        if (auto* nearby = context->GetValue<std::list<ObjectGuid>>("nearest non bot players"))
+            ObserveFact(ai, "nearby players", nearby->Get().empty() ? "none" : "present");
+        if (auto* travel = context->GetValue<TravelTarget*>("travel target"))
         {
-            foundNone = true;
-            continue;
-        }
-
-        if (FindAIPlayCommand(id))
-        {
-            text.clear();
-            return id;
+            TravelTarget* target = travel->Get();
+            std::string goal = "none";
+            if (target && target->GetDestination() &&
+                (target->GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL ||
+                 target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK))
+                goal = target->GetDestination()->GetTitle();
+            ObserveFact(ai, "travel goal", goal);
         }
     }
 
-    if (foundNone)
-        text.clear();
-    return std::string();
+    if (Group* group = bot->GetGroup())
+    {
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (!member || member == bot)
+                continue;
+            const uint32 health = AIPlayPercent(member->GetHealth(), member->GetMaxHealth());
+            if (health <= 40 || !sServerFacade.IsAlive(member))
+                ObserveFact(ai, std::string("ally ") + member->GetName(),
+                    sServerFacade.IsAlive(member) ? std::to_string(health / 20 * 20) + "% hp" : "dead", true);
+            else
+                ObserveFact(ai, std::string("ally ") + member->GetName(), "okay");
+        }
+    }
+}
+
+std::string AIPlayAction::DescribeWorld(PlayerbotAI* ai, const std::string& topic, size_t maxLength)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    AiObjectContext* context = ai ? ai->GetAiObjectContext() : nullptr;
+    if (!bot || !context || !maxLength)
+        return "";
+    Observe(ai);
+
+    struct Fact { int priority; std::string category; std::string text; };
+    std::vector<Fact> facts;
+    const std::string lowerTopic = LowerAIPlayText(topic);
+    auto mentions = [&](const char* words) -> bool
+    {
+        std::string list(words);
+        size_t start = 0;
+        while (start < list.size())
+        {
+            size_t end = list.find(' ', start);
+            if (end == std::string::npos)
+                end = list.size();
+            if (lowerTopic.find(list.substr(start, end - start)) != std::string::npos)
+                return true;
+            start = end + 1;
+        }
+        return false;
+    };
+    auto add = [&](int priority, const char* category, std::string value)
+    {
+        if (value.empty())
+            return;
+        const std::string categoryName(category);
+        const bool related = lowerTopic.find(categoryName) != std::string::npos ||
+            (categoryName == "group" && mentions("heal help party friend resurrect")) ||
+            (categoryName == "combat" && mentions("attack kill fight enemy target")) ||
+            (categoryName == "travel" && mentions("go come follow move explore destination")) ||
+            (categoryName == "items" && mentions("loot bag sell item")) ||
+            (categoryName == "nearby" && mentions("see look who around interact"));
+        if (related)
+            priority += 35;
+        else if (!lowerTopic.empty() &&
+            (categoryName == "travel" || categoryName == "loot" || categoryName == "quest" || categoryName == "items"))
+            priority -= 40;
+        facts.push_back({ priority, categoryName, BriefAIPlayText(std::move(value), 110) });
+    };
+    auto value = [&](const char* name) -> std::string
+    {
+        auto it = ai->aiPlayFacts.find(name);
+        return it == ai->aiPlayFacts.end() ? "" : it->second;
+    };
+    auto flag = [&](const char* name) -> bool
+    {
+        Value<bool>* observed = context->GetValue<bool>(name);
+        return observed && observed->Get();
+    };
+
+    std::map<std::string, std::string> placeholders;
+    ChatReplyAction::GetAIChatPlaceholders(placeholders, bot, bot);
+    std::string place = placeholders["<bot subzone>"];
+    std::string zone = placeholders["<bot zone>"];
+    if (LowerAIPlayText(place) == "unknown")
+        place.clear();
+    if (LowerAIPlayText(zone) == "unknown" || zone == place)
+        zone.clear();
+    if (!place.empty() || !zone.empty())
+        add(100, "where", place + (place.empty() || zone.empty() ? "" : ", ") + zone);
+    add(98, "self", "hp " + std::to_string(AIPlayPercent(bot->GetHealth(), bot->GetMaxHealth())) + "%" +
+        (bot->GetMaxPower(POWER_MANA) ? ", mana " +
+            std::to_string(AIPlayPercent(bot->GetPower(POWER_MANA), bot->GetMaxPower(POWER_MANA))) + "%" : "") +
+        (bot->IsInCombat() ? ", in combat" : ""));
+    if (!sServerFacade.IsAlive(bot))
+        add(120, "self", "dead");
+    if (bot->IsMounted())
+        add(35, "movement", "mounted");
+    if (bot->GetTransport())
+        add(80, "movement", "aboard " + std::string(bot->GetTransport()->GetName()));
+    if (!value("intent").empty())
+        add(58, "intent", "last choice " + value("intent"));
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
+        add(60, "movement", "staying");
+    else if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT))
+        add(60, "movement", "following");
+
+    if (Player* master = ai->GetMaster())
+    {
+        std::string companion = master->GetName();
+        if (master->IsInWorld() && master->GetMapId() == bot->GetMapId())
+            companion += " " + std::to_string(uint32(sServerFacade.GetDistance2d(bot, master))) +
+                "y, hp " + std::to_string(AIPlayPercent(master->GetHealth(), master->GetMaxHealth())) + "%";
+        else
+            companion += " elsewhere";
+        add(94, "group", "with " + companion);
+    }
+    if (Group* group = bot->GetGroup())
+    {
+        add(48, "group", "group size " + std::to_string(group->GetMembersCount()));
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (member && member != bot &&
+                (!sServerFacade.IsAlive(member) || AIPlayPercent(member->GetHealth(), member->GetMaxHealth()) <= 60))
+                add(90, "group", std::string(member->GetName()) + " hp " +
+                    std::to_string(AIPlayPercent(member->GetHealth(), member->GetMaxHealth())) + "%");
+        }
+    }
+    if (Unit* enemy = bot->GetVictim())
+        add(105, "combat", std::string("fighting ") + enemy->GetName() + " hp " +
+            std::to_string(AIPlayPercent(enemy->GetHealth(), enemy->GetMaxHealth())) + "%");
+    if (auto* selected = context->GetValue<Unit*>("current target"))
+        if (Unit* unit = selected->Get())
+            add(65, "target", std::string("target ") + unit->GetName());
+    if (auto* attackers = context->GetValue<uint8>("attackers count"))
+        if (attackers->Get())
+            add(100, "combat", std::to_string(attackers->Get()) + " attackers");
+    if (auto* heal = context->GetValue<Unit*>("party member to heal"))
+        if (Unit* member = heal->Get())
+            add(95, "group", std::string(member->GetName()) + " needs healing");
+    if (auto* resurrect = context->GetValue<Unit*>("party member to resurrect"))
+        if (Unit* member = resurrect->Get())
+            add(98, "group", std::string(member->GetName()) + " needs resurrection");
+
+    if (auto* travel = context->GetValue<TravelTarget*>("travel target"))
+    {
+        TravelTarget* target = travel->Get();
+        if (target && target->GetDestination() && target->IsActive())
+            add(92, "travel", "going to " + target->GetDestination()->GetTitle());
+    }
+    if (flag("has available loot"))
+        add(70, "loot", "loot available");
+    if (flag("should repair"))
+        add(42, "gear", "needs repair");
+    if (flag("should sell"))
+        add(42, "items", "should sell items");
+    if (auto* space = context->GetValue<uint8>("bag space"))
+        if (space->Get() < 20)
+            add(68, "items", "bag space " + std::to_string(space->Get()) + "%");
+    if (auto* durability = context->GetValue<uint8>("durability"))
+        if (durability->Get() < 50)
+            add(68, "gear", "durability " + std::to_string(durability->Get()) + "%");
+    if (auto* slots = context->GetValue<uint8>("free quest log slots"))
+        add(24, "quest", std::to_string(slots->Get()) + " free quest slots");
+    if (Pet* pet = bot->GetPet())
+        add(52, "pet", std::string(pet->GetName()) + " hp " +
+            std::to_string(AIPlayPercent(pet->GetHealth(), pet->GetMaxHealth())) + "%");
+    if (Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND))
+        if (weapon->GetProto() && weapon->GetProto()->Name1)
+            add(26, "gear", std::string("weapon ") + weapon->GetProto()->Name1);
+
+    size_t debuffCount = 0;
+    size_t buffCount = 0;
+    for (auto const& entry : bot->GetSpellAuraHolderMap())
+    {
+        SpellAuraHolder* holder = entry.second;
+        if (!holder || !holder->GetSpellProto() || holder->GetSpellProto()->SpellName[0].empty())
+            continue;
+        if (!holder->IsPositive() && debuffCount++ < 3)
+            add(88, "self", "debuff " + holder->GetSpellProto()->SpellName[0]);
+        else if (holder->IsPositive() && lowerTopic.find("buff") != std::string::npos && buffCount++ < 3)
+            add(34, "self", "buff " + holder->GetSpellProto()->SpellName[0]);
+        if (debuffCount >= 3 && (buffCount >= 3 || lowerTopic.find("buff") == std::string::npos))
+            break;
+    }
+
+    size_t questCount = 0;
+    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        const uint32 id = bot->GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET);
+        if (!id)
+            continue;
+        ++questCount;
+        const Quest* quest = sObjectMgr.GetQuestTemplate(id);
+        if (quest && (questCount <= 3 || bot->GetQuestStatus(id) == QUEST_STATUS_COMPLETE))
+            add(bot->GetQuestStatus(id) == QUEST_STATUS_COMPLETE ? 75 : 45, "quest",
+                std::string(bot->GetQuestStatus(id) == QUEST_STATUS_COMPLETE ? "ready: " : "quest: ") +
+                quest->GetTitle());
+    }
+    if (questCount)
+        add(27, "quest", std::to_string(questCount) + " quests in log");
+
+    struct Signal { const char* value; const char* category; const char* label; int priority; };
+    static const Signal signals[] = {
+        { "should eat", "self", "needs food", 84 },
+        { "should drink", "self", "needs water", 84 },
+        { "has nearby quest taker", "quest", "quest giver nearby", 65 },
+        { "should get money", "money", "needs money", 50 },
+        { "can repair", "gear", "can repair here", 60 },
+        { "can sell", "items", "can sell here", 56 },
+        { "can buy", "items", "can buy here", 38 },
+        { "should get mail", "mail", "mail to collect", 60 },
+        { "has focus travel target", "travel", "following a focus destination", 68 },
+        { "travel target working", "travel", "working at destination", 62 },
+        { "travel target traveling", "travel", "traveling to destination", 62 },
+        { "near leader", "group", "near group leader", 34 },
+        { "following party", "group", "following the party", 40 },
+        { "can fight elite", "combat", "can fight elite enemies", 31 },
+        { "can fight boss", "combat", "can fight bosses", 31 },
+        { "can fish", "world", "can fish here", 28 },
+        { "should home bind", "travel", "should set hearthstone", 35 }
+    };
+    for (const Signal& signal : signals)
+        if (flag(signal.value))
+            add(signal.priority, signal.category, signal.label);
+    if (!sServerFacade.IsAlive(bot) && flag("should spirit healer"))
+        add(110, "death", "spirit healer needed");
+
+    if (auto* nearby = context->GetValue<std::list<ObjectGuid>>("nearest friendly players"))
+    {
+        std::vector<std::pair<float, Player*>> nearbyBots;
+        for (ObjectGuid guid : nearby->Get())
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (!unit || !unit->IsPlayer())
+                continue;
+            Player* other = static_cast<Player*>(unit);
+            if (other != bot && other != ai->GetMaster() && other->IsInWorld() && other->GetPlayerbotAI())
+                nearbyBots.emplace_back(sServerFacade.GetDistance2d(bot, other), other);
+        }
+        std::sort(nearbyBots.begin(), nearbyBots.end(),
+            [](const std::pair<float, Player*>& left, const std::pair<float, Player*>& right)
+            {
+                return left.first < right.first;
+            });
+        for (size_t i = 0; i < nearbyBots.size() && i < 2; ++i)
+        {
+            Player* other = nearbyBots[i].second;
+            add(84, "nearby", std::string("player ") + other->GetName() + " " +
+                std::to_string(uint32(nearbyBots[i].first)) + "y");
+        }
+    }
+
+    auto sight = [&](const char* name, bool objects, int priority)
+    {
+        Value<std::list<ObjectGuid>>* nearby = context->GetValue<std::list<ObjectGuid>>(name);
+        if (!nearby)
+            return;
+        size_t count = 0;
+        for (ObjectGuid guid : nearby->Get())
+        {
+            if (count >= 3)
+                break;
+            if (objects)
+            {
+                if (GameObject* object = ai->GetGameObject(guid))
+                {
+                    add(priority, "nearby", std::string("object ") + object->GetName());
+                    ++count;
+                }
+            }
+            else if (Unit* unit = ai->GetUnit(guid))
+            {
+                add(priority + (sServerFacade.IsHostileTo(unit, bot) ? 12 : 0), "nearby",
+                    std::string(sServerFacade.IsHostileTo(unit, bot) ? "hostile " : "") +
+                    std::string(unit->IsPlayer() ? "player " : "creature ") + unit->GetName());
+                ++count;
+            }
+        }
+    };
+    sight("possible targets", false, 57);
+    sight("nearest npcs", false, 38);
+    sight("nearest non bot players", false, 72);
+    sight("nearest game objects", true, 35);
+
+    if (!ai->aiPlayEvents.empty())
+    {
+        size_t count = 0;
+        for (auto it = ai->aiPlayEvents.rbegin(); it != ai->aiPlayEvents.rend() && count < 2; ++it, ++count)
+            add(68 - int(count * 8), "recent", it->second);
+    }
+
+    std::stable_sort(facts.begin(), facts.end(),
+        [](const Fact& a, const Fact& b) { return a.priority > b.priority; });
+    std::string result;
+    for (const Fact& fact : facts)
+    {
+        const std::string part = (result.empty() ? "" : "; ") + fact.text;
+        if (result.size() + part.size() > maxLength)
+            continue;
+        result += part;
+    }
+    return result;
+}
+
+std::string AIPlayAction::ExtractActionIntent(std::string& text)
+{
+    const size_t start = text.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos)
+        return "";
+    const size_t end = text.find_first_of("\r\n", start);
+    const std::string id = ParseAIPlayActionLine(text.substr(start, end - start));
+    text.clear();
+    return id == "NONE" ? "" : id;
 }
 
 std::string AIPlayAction::ExtractCombinedActionIntent(std::string& text, const std::string& responseSpeakerName)
 {
-    const auto normalizeId = [](std::string id) -> std::string
-    {
-        std::transform(id.begin(), id.end(), id.begin(), [](unsigned char c) { return (char)std::toupper(c); });
-        if (id == "FOLLOW" || id == "FOLLOWING")
-            return "COME";
-        if (id == "NONE" || FindAIPlayCommand(id))
-            return id;
+    (void)responseSpeakerName;
+    const size_t first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
         return "";
-    };
 
-    const auto lineId = [&](std::string line) -> std::string
-    {
-        size_t first = line.find_first_not_of(" \t\r\n[](){}<>`*_\"");
-        if (first == std::string::npos)
-            return "";
-        line.erase(0, first);
-        size_t last = line.find_last_not_of(" \t\r\n[](){}<>`*_\"");
-        if (last != std::string::npos)
-            line.erase(last + 1);
-
-        std::string lower = LowerAIPlayText(line);
-        if (lower.compare(0, 7, "action:") == 0)
-            line = line.substr(7);
-        else if (lower.compare(0, 8, "command:") == 0)
-            line = line.substr(8);
-        else if (lower.compare(0, 8, "ai_play=") == 0 || lower.compare(0, 8, "ai_play:") == 0)
-            line = line.substr(8);
-        else if (!responseSpeakerName.empty() && line.size() > responseSpeakerName.size() &&
-            LowerAIPlayText(line.substr(0, responseSpeakerName.size())) == LowerAIPlayText(responseSpeakerName) &&
-            line[responseSpeakerName.size()] == ':')
-            line = line.substr(responseSpeakerName.size() + 1);
-
-        first = line.find_first_not_of(" \t\r\n[](){}<>`*_\"");
-        if (first == std::string::npos)
-            return "";
-        line.erase(0, first);
-        size_t end = line.find_first_of(" \t\r\n:|,;.!?[](){}<>`*_\"");
-        return normalizeId(line.substr(0, end));
-    };
-
-    // The first generated line is reserved for the action ID. Always consume
-    // it, even when a small model misspells or omits the ID, so it cannot be
-    // sent as in-game dialogue.
-    size_t firstLine = text.find_first_not_of(" \t\r\n");
-    if (firstLine == std::string::npos)
-    {
-        text.clear();
-        return "";
-    }
-
-    size_t firstEnd = text.find_first_of("\r\n", firstLine);
+    size_t firstEnd = text.find_first_of("\r\n", first);
     if (firstEnd == std::string::npos)
         firstEnd = text.size();
-
-    std::string selected = lineId(text.substr(firstLine, firstEnd - firstLine));
-    size_t eraseEnd = firstEnd;
-    if (eraseEnd < text.size() && text[eraseEnd] == '\r')
-        ++eraseEnd;
-    if (eraseEnd < text.size() && text[eraseEnd] == '\n')
-        ++eraseEnd;
-    text.erase(firstLine, eraseEnd - firstLine);
-    if (!selected.empty())
-        return selected;
-
-    size_t remainingStart = text.find_first_not_of(" \t\r\n");
-    if (remainingStart == std::string::npos)
+    const bool hasReply = text.find_first_not_of(" \t\r\n", firstEnd) != std::string::npos;
+    const std::string firstLine = text.substr(first, firstEnd - first);
+    std::string id = ParseAIPlayActionLine(firstLine, hasReply);
+    if (!hasReply && id.empty() && !ParseAIPlayActionLine(firstLine).empty())
     {
         text.clear();
         return "";
     }
-    if (remainingStart > 0)
-        text.erase(0, remainingStart);
-
-    // Accept former tagged output in the remaining text for compatibility.
-    const std::string loweredText = LowerAIPlayText(text);
-    size_t tag = loweredText.find("ai_play");
-    while (tag != std::string::npos)
+    if (!id.empty())
     {
-        const bool wordStart = tag == 0 || !std::isalnum(static_cast<unsigned char>(text[tag - 1]));
-        size_t idStart = tag + 7;
-        while (idStart < text.size() && std::isspace(static_cast<unsigned char>(text[idStart])))
-            ++idStart;
-        if (wordStart && idStart < text.size() && (text[idStart] == '=' || text[idStart] == ':'))
+        size_t eraseEnd = firstEnd;
+        while (eraseEnd < text.size() && (text[eraseEnd] == '\r' || text[eraseEnd] == '\n'))
+            ++eraseEnd;
+        text.erase(0, eraseEnd);
+        return id;
+    }
+
+    const size_t last = text.find_last_not_of(" \t\r\n");
+    const size_t lineBreak = text.find_last_of("\r\n", last);
+    if (lineBreak != std::string::npos)
+    {
+        const size_t lastStart = text.find_first_not_of(" \t", lineBreak + 1);
+        if (lastStart != std::string::npos && lastStart <= last)
         {
-            ++idStart;
-            while (idStart < text.size() && std::isspace(static_cast<unsigned char>(text[idStart])))
-                ++idStart;
-            size_t idEnd = idStart;
-            while (idEnd < text.size() && std::isalnum(static_cast<unsigned char>(text[idEnd])))
-                ++idEnd;
-            std::string id = normalizeId(text.substr(idStart, idEnd - idStart));
+            id = ParseAIPlayActionLine(text.substr(lastStart, last - lastStart + 1), false);
             if (!id.empty())
             {
-                text.erase(tag, idEnd - tag);
+                text.erase(lineBreak);
+                const size_t end = text.find_last_not_of(" \t\r\n");
+                if (end != std::string::npos)
+                    text.erase(end + 1);
                 return id;
             }
         }
-        tag = loweredText.find("ai_play", tag + 7);
     }
 
-    size_t contentEnd = text.find_last_not_of(" \t\r\n");
-    if (contentEnd == std::string::npos)
+    const size_t tag = LowerAIPlayText(text).rfind("action:");
+    if (tag == std::string::npos || !tag || !std::isspace(static_cast<unsigned char>(text[tag - 1])))
         return "";
-    firstLine = text.find_first_not_of(" \t\r\n");
-    firstEnd = text.find_first_of("\r\n", firstLine);
-    if (firstEnd == std::string::npos)
-        firstEnd = text.size();
-    std::vector<std::pair<size_t, size_t>> candidates;
-    candidates.emplace_back(firstLine, firstEnd);
-
-    size_t lastLine = text.find_last_of("\r\n", contentEnd);
-    lastLine = lastLine == std::string::npos ? 0 : lastLine + 1;
-    if (lastLine != firstLine)
-        candidates.emplace_back(lastLine, contentEnd + 1);
-
-    for (const auto& bounds : candidates)
+    id = ParseAIPlayActionLine(text.substr(tag), false);
+    if (!id.empty())
     {
-        std::string id = lineId(text.substr(bounds.first, bounds.second - bounds.first));
-        if (id.empty())
-            continue;
-        size_t eraseStart = bounds.first;
-        size_t lineEnd = bounds.second;
-        if (lineEnd < text.size() && text[lineEnd] == '\r')
-            ++lineEnd;
-        if (lineEnd < text.size() && text[lineEnd] == '\n')
-            ++lineEnd;
-        else if (eraseStart > 0)
-        {
-            if (text[eraseStart - 1] == '\n')
-                --eraseStart;
-            if (eraseStart > 0 && text[eraseStart - 1] == '\r')
-                --eraseStart;
-        }
-        text.erase(eraseStart, lineEnd - eraseStart);
-        return id;
+        text.erase(tag);
+        const size_t end = text.find_last_not_of(" \t\r\n");
+        if (end != std::string::npos)
+            text.erase(end + 1);
     }
-    return "";
+    return id;
 }
 
 void AIPlayAction::StartActionSelection(PlayerbotAI* ai, const std::string& latestText, ObjectGuid ownerGuid)
@@ -785,16 +1137,30 @@ void AIPlayAction::StartActionSelection(PlayerbotAI* ai, const std::string& late
     if (sPlayerbotAIConfig.llmRequirePlayerPresence && !ai->HasRealPlayerNearbyOrInGroup())
         return;
 
-    std::string json;
-    if (!BuildActionRequest(ai, latestText, json))
+    if (!PlayerbotLLMInterface::TryReserveAIPlayGeneration())
         return;
 
-    ai->aiPlayGenerationPending = true;
-    ObjectGuid botGuid = ai->GetBot()->GetObjectGuid();
     try
     {
-        std::thread([botGuid, ownerGuid, json]()
+        std::string json;
+        if (!BuildActionRequest(ai, latestText, json))
         {
+            PlayerbotLLMInterface::FinishAIPlayGeneration();
+            return;
+        }
+
+        if (ai->GetMaster() && ai->HasStrategy("debug llm", BotState::BOT_STATE_NON_COMBAT))
+            ai->TellPlayerNoFacing(ai->GetMaster(), "AI play world: " + DescribeWorld(ai, latestText, 480));
+
+        ai->aiPlayGenerationPending = true;
+        ObjectGuid botGuid = ai->GetBot()->GetObjectGuid();
+        std::thread([botGuid, ownerGuid, autonomous = latestText.empty(), json]()
+        {
+            struct ReleaseGeneration
+            {
+                ~ReleaseGeneration() { PlayerbotLLMInterface::FinishAIPlayGeneration(); }
+            } releaseGeneration;
+
             std::string selected;
             try
             {
@@ -808,7 +1174,7 @@ void AIPlayAction::StartActionSelection(PlayerbotAI* ai, const std::string& late
                 sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "AI play action selection error: %s", e.what());
             }
 
-            sWorld.GetMessager().AddMessage([botGuid, ownerGuid, selected](World*)
+            sWorld.GetMessager().AddMessage([botGuid, ownerGuid, autonomous, selected](World*)
             {
                 Player* bot = sObjectAccessor.FindPlayer(botGuid);
                 if (!bot || !bot->GetPlayerbotAI())
@@ -819,13 +1185,14 @@ void AIPlayAction::StartActionSelection(PlayerbotAI* ai, const std::string& late
                 if (!bot->IsInWorld())
                     return;
 
-                ExecuteAIPlayCommand(botAI, selected, ownerGuid);
+                ExecuteAIPlayCommand(botAI, selected, ownerGuid, autonomous);
             });
         }).detach();
     }
     catch (const std::exception& e)
     {
         ai->aiPlayGenerationPending = false;
+        PlayerbotLLMInterface::FinishAIPlayGeneration();
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Unable to start AI play action selection: %s", e.what());
     }
 }
@@ -838,6 +1205,7 @@ bool AIPlayAction::isUseful()
     if (sPlayerbotAIConfig.llmRequirePlayerPresence && !ai->HasRealPlayerNearbyOrInGroup())
         return false;
 
+    Observe(ai);
     return !ai->aiPlayGenerationPending && (!ai->nextAIPlayGenerationTime || time(nullptr) >= ai->nextAIPlayGenerationTime);
 }
 

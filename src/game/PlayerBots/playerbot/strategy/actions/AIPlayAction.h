@@ -54,6 +54,10 @@ namespace ai
         static void QueueCombinedResponse(ObjectGuid botGuid, ObjectGuid ownerGuid,
             const std::string& replyText, const std::string& commandId);
         static std::string GetCompactActionMenu();
+        static void Observe(PlayerbotAI* ai);
+        static void RememberEvent(PlayerbotAI* ai, std::string message);
+        static void ObserveFact(PlayerbotAI* ai, const std::string& key, std::string value, bool reportChange = false);
+        static std::string DescribeWorld(PlayerbotAI* ai, const std::string& topic = "", size_t maxLength = 450);
         static std::string ExtractActionIntent(std::string& text);
         static std::string ExtractCombinedActionIntent(std::string& text, const std::string& responseSpeakerName);
         static void TryStartAutonomous(PlayerbotAI* ai);

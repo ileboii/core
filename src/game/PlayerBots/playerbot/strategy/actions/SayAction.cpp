@@ -7,11 +7,22 @@
 #include "playerbot/AiFactory.h"
 #include <regex>
 #include <cctype>
+#include <memory>
+#include <utility>
 
 #include "playerbot/PlayerbotLLMInterface.h"
 #include "AIPlayAction.h"
 
 using namespace ai;
+
+namespace
+{
+    struct ChatGenerationReservation
+    {
+        ChatGenerationReservation() { PlayerbotLLMInterface::ReserveChatGeneration(); }
+        ~ChatGenerationReservation() { PlayerbotLLMInterface::FinishChatGeneration(); }
+    };
+}
 
 std::unordered_set<std::string> noReplyMsgs = { "all ?", "attack", "attack rti", "bank", "c", "co ?", "de ?", "dead ?", "do accept invitation", "faction", "flee", "follow", "give leader", "guard", "guild leave", "help", "home", "items", "join", "jump", "leave", "lfg", "loot", "los", "nc ?", "pet aggressive", "pet defensive", "pet passive", "pet follow", "pet stay", "pet attack", "pet dismiss", "pet call", "pull", "pull rti", "quests", "quests co", "quests in", "quests all", "react ?", "release", "repair", "reset", "reset ai", "reset strats", "revive", "roll feedback", "rtsc", "rtsc cancel", "rtsc select", "skill", "spells", "stats", "stay", "summon", "talents", "talk", "trainer" "trainer learn", "u go", "who", "where" };
 
@@ -545,8 +556,6 @@ delayedPackets ChatReplyAction::GenerateResponsePacketsAIPlay(const std::string 
     bool structuredResponse = responseStart != std::string::npos &&
         (response[responseStart] == '{' || response[responseStart] == '[');
 
-    // The shared completion starts with a private action ID. Strip it before
-    // running the ordinary chat parser so it can never be spoken in game.
     std::string generatedText = fallbackText.empty() ? response : fallbackText;
     std::string selectedAction;
     if (processForAIPlay)
@@ -619,8 +628,6 @@ delayedPackets ChatReplyAction::GenerateResponsePacketsAIPlay(const std::string 
             responseText += line;
         }
 
-        // Chat generation is complete. Queue a separate, action-only LLM
-        // generation; its output is never sent through the chat packet path.
         AIPlayAction::QueueCombinedResponse(botGuid, ownerGuid, responseText, selectedAction);
     }
 
@@ -780,9 +787,27 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32
                     ai->HasStrategy("ai play", BotState::BOT_STATE_NON_COMBAT);
                 if (processForAIPlayPrompt)
                 {
-                    jsonFill["<post prompt>"] += "\nPick one action for this message. IDs: " +
-                        AIPlayAction::GetCompactActionMenu() + ". Output exactly one ID first on its own line, then one short reply as " +
-                        bot->GetName() + ". No text before the ID.\nACTION: ";
+                    const size_t stateLimit = sPlayerbotAIConfig.llmContextLength ?
+                        std::min<size_t>(380, std::max<size_t>(180, sPlayerbotAIConfig.llmContextLength / 3)) : 380;
+                    jsonFill["<prompt>"] += " World: " +
+                        AIPlayAction::DescribeWorld(botAI, msg, stateLimit);
+
+                    std::string& postPrompt = jsonFill["<post prompt>"];
+                    auto trimEnd = [](std::string& value)
+                    {
+                        const size_t end = value.find_last_not_of(" \t\r\n");
+                        value.erase(end == std::string::npos ? 0 : end + 1);
+                    };
+                    trimEnd(postPrompt);
+                    const std::string speakerCue = std::string(bot->GetName()) + ":";
+                    if (postPrompt.size() >= speakerCue.size() &&
+                        postPrompt.compare(postPrompt.size() - speakerCue.size(), speakerCue.size(), speakerCue) == 0)
+                    {
+                        postPrompt.resize(postPrompt.size() - speakerCue.size());
+                        trimEnd(postPrompt);
+                    }
+                    postPrompt += " Reply briefly. End with ACTION: ID if a game action is needed, otherwise ACTION: NONE. IDs: " +
+                        AIPlayAction::GetCompactActionMenu();
                 }
 
                 uint32 currentLength = jsonFill["<pre prompt>"].size() + jsonFill["<context>"].size() + jsonFill["<prompt>"].size() + jsonFill["<post prompt>"].size() + llmContext.size();
@@ -862,7 +887,19 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32
                 WorldPacket emoteTemplate = (type == CHAT_MSG_SAY || type == CHAT_MSG_WHISPER) ? GetPacketTemplate(CMSG_MESSAGECHAT, CHAT_MSG_EMOTE, bot, player) : WorldPacket();
                 WorldPacket systemTemplate = GetPacketTemplate(CMSG_MESSAGECHAT, CHAT_MSG_WHISPER, bot, player);
 
-                futurePackets futPackets = std::async(std::launch::async, ChatReplyAction::GenerateResponsePacketsAIPlay, json, chatTemplate, emoteTemplate, systemTemplate, startPattern, endPattern, deletePattern, splitPattern, bot->GetObjectGuid(), ObjectGuid(HIGHGUID_PLAYER, guid1), bot->GetName(), processForAIPlay, debug);
+                // Reserve before starting the worker so AI play cannot slip in ahead of queued chat.
+                auto chatReservation = std::make_shared<ChatGenerationReservation>();
+                futurePackets futPackets = std::async(std::launch::async,
+                    [chatReservation = std::move(chatReservation), json, chatTemplate, emoteTemplate, systemTemplate,
+                     startPattern, endPattern, deletePattern, splitPattern,
+                     botGuid = bot->GetObjectGuid(), ownerGuid = ObjectGuid(HIGHGUID_PLAYER, guid1),
+                     speakerName = bot->GetName(), processForAIPlay, debug]() mutable
+                    {
+                        auto activeChat = std::move(chatReservation);
+                        return ChatReplyAction::GenerateResponsePacketsAIPlay(json, chatTemplate, emoteTemplate,
+                            systemTemplate, startPattern, endPattern, deletePattern, splitPattern,
+                            botGuid, ownerGuid, speakerName, processForAIPlay, debug);
+                    });
 
                 ai->SendDelayedPacket(session, std::move(futPackets));
             }

@@ -232,6 +232,34 @@ namespace
 
 } // namespace
 
+bool PlayerbotLLMInterface::TryReserveAIPlayGeneration()
+{
+    std::lock_guard<std::mutex> guard(sPlayerbotLLMInterface.generationAdmissionMutex);
+    if (sPlayerbotLLMInterface.aiPlayGenerationReserved || sPlayerbotLLMInterface.outstandingChatGenerations)
+        return false;
+
+    sPlayerbotLLMInterface.aiPlayGenerationReserved = true;
+    return true;
+}
+
+void PlayerbotLLMInterface::FinishAIPlayGeneration()
+{
+    std::lock_guard<std::mutex> guard(sPlayerbotLLMInterface.generationAdmissionMutex);
+    sPlayerbotLLMInterface.aiPlayGenerationReserved = false;
+}
+
+void PlayerbotLLMInterface::ReserveChatGeneration()
+{
+    std::lock_guard<std::mutex> guard(sPlayerbotLLMInterface.generationAdmissionMutex);
+    ++sPlayerbotLLMInterface.outstandingChatGenerations;
+}
+
+void PlayerbotLLMInterface::FinishChatGeneration()
+{
+    std::lock_guard<std::mutex> guard(sPlayerbotLLMInterface.generationAdmissionMutex);
+    --sPlayerbotLLMInterface.outstandingChatGenerations;
+}
+
 std::string PlayerbotLLMInterface::SanitizeForJson(const std::string& input)
 {
     // If input is not valid UTF-8, assume Win-1251 (WoW 1.12.1 client encoding)
