@@ -620,9 +620,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Only update the internal ai when no reaction is running and the internal ai can be updated
     if(!UpdateAIReaction(elapsed, doMinimalReaction, bot->IsTaxiFlying()) && CanUpdateAIInternal())
     {
-        // Update the delay with the spell cast time
+        // Keep the AI idle while a timed spell or channel is in progress.
         Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (currentSpell && (currentSpell->getState() == SPELL_STATE_CASTING) && (currentSpell->GetCastedTime() > 0U))
+        if (!currentSpell || currentSpell->getState() == SPELL_STATE_FINISHED ||
+            currentSpell->getState() == SPELL_STATE_DELAYED || !currentSpell->GetCastedTime())
+            currentSpell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+
+        if (currentSpell && (currentSpell->getState() == SPELL_STATE_PREPARING || currentSpell->getState() == SPELL_STATE_CASTING) &&
+            currentSpell->GetCastedTime() > 0U)
         {
             SetAIInternalUpdateDelay(currentSpell->GetCastedTime() + sPlayerbotAIConfig.reactDelay + sWorld.GetAverageDiff());
 
