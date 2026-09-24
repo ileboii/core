@@ -19,9 +19,20 @@
 #include "playerbot/RandomPlayerbotMgr.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/TradeValues.h"
+#include "AIPlayAction.h"
+#include <memory>
 
 
 using namespace ai;
+
+namespace
+{
+    struct RpgChatGenerationReservation
+    {
+        RpgChatGenerationReservation() { PlayerbotLLMInterface::ReserveChatGeneration(); }
+        ~RpgChatGenerationReservation() { PlayerbotLLMInterface::FinishChatGeneration(); }
+    };
+}
 
 void RpgHelper::BeforeExecute()
 {
@@ -551,9 +562,26 @@ bool RpgAIChatAction::RequestNewLines()
     }
 
     Player* owner = ai->GetMaster();
-    bool processForAIPlay = ai->HasStrategy("ai play", BotState::BOT_STATE_NON_COMBAT);
+    const bool passReplyToAIPlay = botIstalking && ai->HasStrategy("ai play", BotState::BOT_STATE_NON_COMBAT);
+    ObjectGuid botGuid = bot->GetObjectGuid();
+    ObjectGuid ownerGuid = owner ? owner->GetObjectGuid() : ObjectGuid();
     std::string responseSpeakerName = botIstalking ? bot->GetName() : unit->GetName();
-    futPackets = std::async(std::launch::async, ChatReplyAction::GenerateResponsePacketsAIPlay, json, chatTemplate, emoteTemplate, systemTemplate, startPattern, endPattern, deletePattern, splitPattern, bot->GetObjectGuid(), owner ? owner->GetObjectGuid() : ObjectGuid(), responseSpeakerName, processForAIPlay, debug);
+    auto chatReservation = std::make_shared<RpgChatGenerationReservation>();
+    futPackets = std::async(std::launch::async,
+        [chatReservation = std::move(chatReservation), json, chatTemplate, emoteTemplate, systemTemplate,
+         startPattern, endPattern, deletePattern, splitPattern, botGuid, ownerGuid,
+         responseSpeakerName, passReplyToAIPlay, debug]() mutable
+        {
+            auto activeChat = std::move(chatReservation);
+            std::string lastReplyLine;
+            delayedPackets result = ChatReplyAction::GenerateResponsePacketsAIChat(json, chatTemplate, emoteTemplate,
+                systemTemplate, startPattern, endPattern, deletePattern, splitPattern,
+                responseSpeakerName, debug, &lastReplyLine);
+            activeChat.reset();
+            if (passReplyToAIPlay && !lastReplyLine.empty())
+                AIPlayAction::QueueGeneratedResponse(botGuid, ownerGuid, lastReplyLine);
+            return result;
+        });
 
     if (!urand(0, 10))
         chatLine += urand(-2, 2) * 2;

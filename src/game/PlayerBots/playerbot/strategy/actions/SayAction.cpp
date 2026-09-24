@@ -536,9 +536,12 @@ static std::string ExtractFirstSpeakerTurn(const std::string& text, const std::s
     return result.substr(first, last - first + 1);
 }
 
-delayedPackets ChatReplyAction::GenerateResponsePacketsAIPlay(const std::string json
-    , const WorldPacket chatTemplate, const WorldPacket emoteTemplate, const WorldPacket systemTemplate, const std::string startPattern, const std::string endPattern, const std::string deletePattern, const std::string splitPattern, ObjectGuid botGuid, ObjectGuid ownerGuid, const std::string responseSpeakerName, bool processForAIPlay, bool debug)
+delayedPackets ChatReplyAction::GenerateResponsePacketsAIChat(const std::string json
+    , const WorldPacket chatTemplate, const WorldPacket emoteTemplate, const WorldPacket systemTemplate, const std::string startPattern, const std::string endPattern, const std::string deletePattern, const std::string splitPattern, const std::string responseSpeakerName, bool debug, std::string* lastReplyLine)
 {
+    if (lastReplyLine)
+        lastReplyLine->clear();
+
     std::vector<std::string> debugLines;
 
     if (debug)
@@ -551,21 +554,10 @@ delayedPackets ChatReplyAction::GenerateResponsePacketsAIPlay(const std::string 
     auto timeAfter = time(nullptr);
     auto timeDiff = (timeAfter - startTime) * IN_MILLISECONDS;
 
-    std::string fallbackText = ExtractFallbackLLMText(response, processForAIPlay);
+    std::string fallbackText = ExtractFallbackLLMText(response, false);
     size_t responseStart = response.find_first_not_of(" \t\r\n");
     bool structuredResponse = responseStart != std::string::npos &&
         (response[responseStart] == '{' || response[responseStart] == '[');
-
-    std::string generatedText = fallbackText.empty() ? response : fallbackText;
-    std::string selectedAction;
-    if (processForAIPlay)
-    {
-        selectedAction = AIPlayAction::ExtractCombinedActionIntent(generatedText, responseSpeakerName);
-        if (!fallbackText.empty())
-            fallbackText = generatedText;
-        if (!structuredResponse)
-            response = generatedText;
-    }
 
     std::vector<std::string> lines;
     if (structuredResponse && !fallbackText.empty())
@@ -618,18 +610,8 @@ delayedPackets ChatReplyAction::GenerateResponsePacketsAIPlay(const std::string 
     if (lines.empty() && debug && !response.empty())
         debugLines.push_back("No displayable chat text could be extracted from the LLM response.");
 
-    if (processForAIPlay)
-    {
-        std::string responseText;
-        for (const std::string& line : lines)
-        {
-            if (!responseText.empty())
-                responseText += " ";
-            responseText += line;
-        }
-
-        AIPlayAction::QueueCombinedResponse(botGuid, ownerGuid, responseText, selectedAction);
-    }
+    if (lastReplyLine && !lines.empty())
+        *lastReplyLine = lines.back();
 
     delayedPackets packets, debugPackets;
 
@@ -647,8 +629,8 @@ delayedPackets ChatReplyAction::GenerateResponsePacketsAIPlay(const std::string 
 delayedPackets ChatReplyAction::GenerateResponsePackets(const std::string json
     , const WorldPacket chatTemplate, const WorldPacket emoteTemplate, const WorldPacket systemTemplate, const std::string startPattern, const std::string endPattern, const std::string deletePattern, const std::string splitPattern, bool debug)
 {
-    return GenerateResponsePacketsAIPlay(json, chatTemplate, emoteTemplate, systemTemplate, startPattern,
-        endPattern, deletePattern, splitPattern, ObjectGuid(), ObjectGuid(), "", false, debug);
+    return GenerateResponsePacketsAIChat(json, chatTemplate, emoteTemplate, systemTemplate, startPattern,
+        endPattern, deletePattern, splitPattern, "", debug);
 }
 
 void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32 guid2, std::string msg, std::string chanName, std::string name)
@@ -771,7 +753,7 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32
 
                 std::string llmPromptCustom = AI_VALUE(std::string, "manual saved string::llmdefaultprompt");
 
-                bool processForAIPlay = botAI && botAI->HasStrategy("ai play", BotState::BOT_STATE_NON_COMBAT) &&
+                const bool passReplyToAIPlay = botAI && botAI->HasStrategy("ai play", BotState::BOT_STATE_NON_COMBAT) &&
                     sPlayerbotAIConfig.llmEnabled && (!sPlayerbotAIConfig.llmRequirePlayerPresence || botAI->HasRealPlayerNearbyOrInGroup());
 
                 std::map<std::string, std::string> jsonFill;
@@ -781,33 +763,6 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32
                 for (auto& prompt : jsonFill)
                 {
                     prompt.second = BOT_TEXT2(prompt.second, placeholders);
-                }
-
-                const bool processForAIPlayPrompt = player->isRealPlayer() &&
-                    ai->HasStrategy("ai play", BotState::BOT_STATE_NON_COMBAT);
-                if (processForAIPlayPrompt)
-                {
-                    const size_t stateLimit = sPlayerbotAIConfig.llmContextLength ?
-                        std::min<size_t>(380, std::max<size_t>(180, sPlayerbotAIConfig.llmContextLength / 3)) : 380;
-                    jsonFill["<prompt>"] += " World: " +
-                        AIPlayAction::DescribeWorld(botAI, msg, stateLimit);
-
-                    std::string& postPrompt = jsonFill["<post prompt>"];
-                    auto trimEnd = [](std::string& value)
-                    {
-                        const size_t end = value.find_last_not_of(" \t\r\n");
-                        value.erase(end == std::string::npos ? 0 : end + 1);
-                    };
-                    trimEnd(postPrompt);
-                    const std::string speakerCue = std::string(bot->GetName()) + ":";
-                    if (postPrompt.size() >= speakerCue.size() &&
-                        postPrompt.compare(postPrompt.size() - speakerCue.size(), speakerCue.size(), speakerCue) == 0)
-                    {
-                        postPrompt.resize(postPrompt.size() - speakerCue.size());
-                        trimEnd(postPrompt);
-                    }
-                    postPrompt += " Reply briefly. End with ACTION: ID if a game action is needed, otherwise ACTION: NONE. IDs: " +
-                        AIPlayAction::GetCompactActionMenu();
                 }
 
                 uint32 currentLength = jsonFill["<pre prompt>"].size() + jsonFill["<context>"].size() + jsonFill["<prompt>"].size() + jsonFill["<post prompt>"].size() + llmContext.size();
@@ -893,12 +848,17 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32
                     [chatReservation = std::move(chatReservation), json, chatTemplate, emoteTemplate, systemTemplate,
                      startPattern, endPattern, deletePattern, splitPattern,
                      botGuid = bot->GetObjectGuid(), ownerGuid = ObjectGuid(HIGHGUID_PLAYER, guid1),
-                     speakerName = bot->GetName(), processForAIPlay, debug]() mutable
+                     speakerName = bot->GetName(), passReplyToAIPlay, debug]() mutable
                     {
                         auto activeChat = std::move(chatReservation);
-                        return ChatReplyAction::GenerateResponsePacketsAIPlay(json, chatTemplate, emoteTemplate,
+                        std::string lastReplyLine;
+                        delayedPackets packets = ChatReplyAction::GenerateResponsePacketsAIChat(json, chatTemplate, emoteTemplate,
                             systemTemplate, startPattern, endPattern, deletePattern, splitPattern,
-                            botGuid, ownerGuid, speakerName, processForAIPlay, debug);
+                            speakerName, debug, &lastReplyLine);
+                        activeChat.reset();
+                        if (passReplyToAIPlay && !lastReplyLine.empty())
+                            AIPlayAction::QueueGeneratedResponse(botGuid, ownerGuid, lastReplyLine);
+                        return packets;
                     });
 
                 ai->SendDelayedPacket(session, std::move(futPackets));

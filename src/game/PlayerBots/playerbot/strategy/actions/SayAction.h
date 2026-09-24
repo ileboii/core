@@ -34,8 +34,8 @@ namespace ai
         static WorldPacket GetPacketTemplate(uint16 op, uint32 type, Unit* sender, Unit* target = nullptr, std::string channelName = "");
         static delayedPackets LinesToPackets(const std::vector<std::string>& lines, WorldPacket packetTemplate, bool debug = false, uint32 MsPerChar = 0, WorldPacket emoteTemplate = WorldPacket(), uint32 timeDiff = 0);
 
-        static delayedPackets GenerateResponsePacketsAIPlay(const std::string json
-            , const WorldPacket chatTemplate, const WorldPacket emoteTemplate, const WorldPacket systemTemplate, const std::string startPattern, const std::string endPattern, const std::string deletePattern, const std::string splitPattern, ObjectGuid botGuid, ObjectGuid ownerGuid, const std::string responseSpeakerName, bool processForAIPlay, bool debug = false);
+        static delayedPackets GenerateResponsePacketsAIChat(const std::string json
+            , const WorldPacket chatTemplate, const WorldPacket emoteTemplate, const WorldPacket systemTemplate, const std::string startPattern, const std::string endPattern, const std::string deletePattern, const std::string splitPattern, const std::string responseSpeakerName, bool debug = false, std::string* lastReplyLine = nullptr);
         static delayedPackets GenerateResponsePackets(const std::string json
             , const WorldPacket chatTemplate, const WorldPacket emoteTemplate, const WorldPacket systemTemplate, const std::string startPattern, const std::string endPattern, const std::string deletePattern, const std::string splitPattern, bool debug = false);
 

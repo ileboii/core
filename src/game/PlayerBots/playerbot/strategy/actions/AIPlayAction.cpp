@@ -357,7 +357,8 @@ namespace
     void CapActionGenerationLength(std::string& json);
     void SetActionTemperature(std::string& json);
 
-    bool BuildActionRequest(PlayerbotAI* ai, const std::string& latestText, std::string& json)
+    bool BuildActionRequest(PlayerbotAI* ai, const std::string& latestText,
+        const std::string& recentPlayerMessage, const std::string& recentChatLine, std::string& json)
     {
         Player* bot = ai ? ai->GetBot() : nullptr;
         AiObjectContext* context = ai ? ai->GetAiObjectContext() : nullptr;
@@ -376,7 +377,7 @@ namespace
         placeholders["<channel name>"] = "while adventuring";
         placeholders["<initial message>"] = latestText.empty() ? "Choose your next action." : latestText;
 
-        std::string previousContext = ai->GetAIPlayContext();
+        std::string previousContext = recentPlayerMessage;
         const size_t maxRecentContext = 512;
         if (previousContext.size() > maxRecentContext)
             previousContext.erase(0, previousContext.size() - maxRecentContext);
@@ -384,10 +385,13 @@ namespace
         std::map<std::string, std::string> jsonFill;
         jsonFill["<pre prompt>"] = "Select one action. Do not roleplay.";
         jsonFill["<context>"] = previousContext;
-        jsonFill["<prompt>"] = latestText.empty() ? "Choose the next useful action from the current situation." : "Recent chat: " + latestText;
+        std::string chatLine = latestText.empty() ? recentChatLine : latestText;
+        jsonFill["<prompt>"] = "Choose the next useful action from the current situation.";
+        if (!chatLine.empty())
+            jsonFill["<prompt>"] += " Last chat reply: " + chatLine + ".";
         const size_t stateLimit = sPlayerbotAIConfig.llmContextLength ?
             std::min<size_t>(420, std::max<size_t>(180, sPlayerbotAIConfig.llmContextLength / 3)) : 420;
-        jsonFill["<prompt>"] += " World: " + AIPlayAction::DescribeWorld(ai, latestText, stateLimit);
+        jsonFill["<prompt>"] += " World: " + AIPlayAction::DescribeWorld(ai, chatLine, stateLimit);
         jsonFill["<post prompt>"] = "IDs: " + AIPlayAction::GetCompactActionMenu() +
             " Reply with one ID only. Use NONE when there is no clear action.";
 
@@ -1066,66 +1070,6 @@ std::string AIPlayAction::ExtractActionIntent(std::string& text)
     return id == "NONE" ? "" : id;
 }
 
-std::string AIPlayAction::ExtractCombinedActionIntent(std::string& text, const std::string& responseSpeakerName)
-{
-    (void)responseSpeakerName;
-    const size_t first = text.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos)
-        return "";
-
-    size_t firstEnd = text.find_first_of("\r\n", first);
-    if (firstEnd == std::string::npos)
-        firstEnd = text.size();
-    const bool hasReply = text.find_first_not_of(" \t\r\n", firstEnd) != std::string::npos;
-    const std::string firstLine = text.substr(first, firstEnd - first);
-    std::string id = ParseAIPlayActionLine(firstLine, hasReply);
-    if (!hasReply && id.empty() && !ParseAIPlayActionLine(firstLine).empty())
-    {
-        text.clear();
-        return "";
-    }
-    if (!id.empty())
-    {
-        size_t eraseEnd = firstEnd;
-        while (eraseEnd < text.size() && (text[eraseEnd] == '\r' || text[eraseEnd] == '\n'))
-            ++eraseEnd;
-        text.erase(0, eraseEnd);
-        return id;
-    }
-
-    const size_t last = text.find_last_not_of(" \t\r\n");
-    const size_t lineBreak = text.find_last_of("\r\n", last);
-    if (lineBreak != std::string::npos)
-    {
-        const size_t lastStart = text.find_first_not_of(" \t", lineBreak + 1);
-        if (lastStart != std::string::npos && lastStart <= last)
-        {
-            id = ParseAIPlayActionLine(text.substr(lastStart, last - lastStart + 1), false);
-            if (!id.empty())
-            {
-                text.erase(lineBreak);
-                const size_t end = text.find_last_not_of(" \t\r\n");
-                if (end != std::string::npos)
-                    text.erase(end + 1);
-                return id;
-            }
-        }
-    }
-
-    const size_t tag = LowerAIPlayText(text).rfind("action:");
-    if (tag == std::string::npos || !tag || !std::isspace(static_cast<unsigned char>(text[tag - 1])))
-        return "";
-    id = ParseAIPlayActionLine(text.substr(tag), false);
-    if (!id.empty())
-    {
-        text.erase(tag);
-        const size_t end = text.find_last_not_of(" \t\r\n");
-        if (end != std::string::npos)
-            text.erase(end + 1);
-    }
-    return id;
-}
-
 void AIPlayAction::StartActionSelection(PlayerbotAI* ai, const std::string& latestText, ObjectGuid ownerGuid)
 {
     if (!ai || ai->aiPlayGenerationPending || !ai->GetBot() || !ai->GetBot()->IsInWorld() ||
@@ -1142,8 +1086,16 @@ void AIPlayAction::StartActionSelection(PlayerbotAI* ai, const std::string& late
 
     try
     {
+        const time_t now = time(nullptr);
+        std::string recentPlayerMessage;
+        if (ai->aiPlayLastPlayerMessageTime && now - ai->aiPlayLastPlayerMessageTime <= 300)
+            recentPlayerMessage = ai->GetAIPlayContext();
+        std::string recentChatLine;
+        if (ai->aiPlayLastChatTime && now - ai->aiPlayLastChatTime <= 300)
+            recentChatLine = ai->aiPlayLastChatLine;
+
         std::string json;
-        if (!BuildActionRequest(ai, latestText, json))
+        if (!BuildActionRequest(ai, latestText, recentPlayerMessage, recentChatLine, json))
         {
             PlayerbotLLMInterface::FinishAIPlayGeneration();
             return;
@@ -1259,14 +1211,10 @@ bool AIPlayAction::ProcessPlayerMessage(PlayerbotAI* ai, uint32 type, ObjectGuid
     if (!addressed && !grouped && !mentioned)
         return false;
 
-    if (!ai->aiPlayContext.empty())
-        ai->aiPlayContext += "\n";
-    ai->aiPlayContext += std::string(player->GetName()) + ": " + text;
-    if (ai->aiPlayContext.size() > 32768)
-        ai->aiPlayContext.erase(0, ai->aiPlayContext.size() - 32768);
+    ai->aiPlayContext = std::string(player->GetName()) + ": " + BriefAIPlayText(text, 240);
+    ai->aiPlayLastPlayerMessageTime = time(nullptr);
 
-    // The following generated bot reply will be classified together with this
-    // player message, so a turn produces at most one selected action.
+    // The chat reply is passed to AI play after its own generation completes.
     return false;
 }
 
@@ -1277,14 +1225,15 @@ bool AIPlayAction::ProcessGeneratedText(PlayerbotAI* ai, const std::string& text
 
     if (appendContext && ai->GetBot() && !text.empty())
     {
-        if (!ai->aiPlayContext.empty())
-            ai->aiPlayContext += "\n";
-        ai->aiPlayContext += std::string(ai->GetBot()->GetName()) + ": " + text;
-        if (ai->aiPlayContext.size() > 32768)
-            ai->aiPlayContext.erase(0, ai->aiPlayContext.size() - 32768);
+        ai->aiPlayLastChatLine = BriefAIPlayText(text, 160);
+        ai->aiPlayLastChatTime = time(nullptr);
     }
 
-    StartActionSelection(ai, text, owner ? owner->GetObjectGuid() : ObjectGuid());
+    const bool wasPending = ai->aiPlayGenerationPending;
+    StartActionSelection(ai, appendContext ? ai->aiPlayLastChatLine : BriefAIPlayText(text, 160),
+        owner ? owner->GetObjectGuid() : ObjectGuid());
+    if (!wasPending && ai->aiPlayGenerationPending)
+        ai->nextAIPlayGenerationTime = time(nullptr) + NextControlInterval();
     return ai->aiPlayGenerationPending;
 }
 
@@ -1296,37 +1245,6 @@ void AIPlayAction::QueueGeneratedResponse(ObjectGuid botGuid, ObjectGuid ownerGu
         if (!bot || !bot->IsInWorld() || !bot->GetPlayerbotAI())
             return;
 
-        Player* owner = ownerGuid.IsEmpty() ? nullptr : sObjectAccessor.FindPlayer(ownerGuid);
-        AIPlayAction::ProcessGeneratedText(bot->GetPlayerbotAI(), text, true, owner);
-    });
-}
-
-void AIPlayAction::QueueCombinedResponse(ObjectGuid botGuid, ObjectGuid ownerGuid,
-    const std::string& replyText, const std::string& commandId)
-{
-    if (botGuid.IsEmpty() || (replyText.empty() && commandId.empty()))
-        return;
-
-    sWorld.GetMessager().AddMessage([botGuid, ownerGuid, replyText, commandId](World*)
-    {
-        Player* bot = sObjectAccessor.FindPlayer(botGuid);
-        if (!bot || !bot->IsInWorld() || !bot->GetPlayerbotAI())
-            return;
-
-        PlayerbotAI* ai = bot->GetPlayerbotAI();
-        if (!ai->HasStrategy("ai play", BotState::BOT_STATE_NON_COMBAT))
-            return;
-
-        if (!replyText.empty())
-        {
-            if (!ai->aiPlayContext.empty())
-                ai->aiPlayContext += "\n";
-            ai->aiPlayContext += std::string(bot->GetName()) + ": " + replyText;
-            if (ai->aiPlayContext.size() > 32768)
-                ai->aiPlayContext.erase(0, ai->aiPlayContext.size() - 32768);
-        }
-
-        if (!commandId.empty() && LowerAIPlayText(commandId) != "none")
-            ExecuteAIPlayCommand(ai, commandId, ownerGuid);
+        bot->GetPlayerbotAI()->QueueAIPlayText(text, false, ownerGuid);
     });
 }
