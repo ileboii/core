@@ -558,10 +558,7 @@ static constexpr float STEP_SIZE = 3.0f;
 bool BuildPathStep(Vector3 const& currentPos, Vector3 const& targetPos, Map const* pMap, std::vector<Vector3>& fullPath, std::vector<Vector3>& checkedPositions, uint32& stepsRemaining, float angle)
 {
     float const currentDistance = Geometry::GetDistance3D(targetPos, currentPos);
-    if (currentDistance < (STEP_SIZE + 1) &&
-        pMap->isInLineOfSight(
-            currentPos.x, currentPos.y, currentPos.z + 0.5f,
-            targetPos.x, targetPos.y, targetPos.z + 0.5f, false, true))
+    if (currentDistance < (STEP_SIZE + 1))
         return true;
 
     if (!stepsRemaining)
@@ -590,12 +587,6 @@ bool BuildPathStep(Vector3 const& currentPos, Vector3 const& targetPos, Map cons
         }
 
         if (skip)
-            continue;
-
-        // The terrain-only fallback must still respect static collision.
-        if (!pMap->isInLineOfSight(
-                currentPos.x, currentPos.y, currentPos.z + 0.5f,
-                newPos.x, newPos.y, newPos.z + 0.5f, false, true))
             continue;
 
         checkedPositions.push_back(newPos);
@@ -635,7 +626,8 @@ void PathInfo::BuildPathWithoutMMaps(Vector3 const& start, Vector3 const& dest)
     }
 
     float totalDistance = Geometry::GetDistance3D(start, dest);
-    if (m_sourceUnit->CanSwim() && destInWater && m_sourceUnit->CanSwimAtPosition(start))
+    if (totalDistance <= STEP_SIZE ||
+        (m_sourceUnit->CanSwim() && destInWater && m_sourceUnit->CanSwimAtPosition(start)))
     {
         BuildShortcut();
         m_type |= PATHFIND_NORMAL;
