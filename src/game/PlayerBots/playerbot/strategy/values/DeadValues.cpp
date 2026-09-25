@@ -59,13 +59,6 @@ GuidPosition GraveyardValue::Calculate()
 
 WorldSafeLocsEntry const* GraveyardValue::GetAnotherAppropriateClosestGraveyard() const
 {
-    // near
-    float distNear = std::numeric_limits<float>::max();
-    WorldSafeLocsEntry const* entryNear = nullptr;
-
-    // far
-    WorldSafeLocsEntry const* entryFar = nullptr;
-
     Corpse* corpse = bot->GetCorpse();
     if (!corpse)
     {
@@ -79,53 +72,8 @@ WorldSafeLocsEntry const* GraveyardValue::GetAnotherAppropriateClosestGraveyard(
         return nullptr;
     }
 
-    uint32 botMapId = corpse->GetMapId();
-    uint32 botZoneId = corpse->GetZoneId();
-
     /* GraveyardMap not accessible in vmangos - return nullptr */
     return nullptr;
-    for (auto mapValues : std::multimap<uint32, GraveYardData>()) /* dead code */
-    {
-        uint32 locId = mapValues.first;
-        GraveYardData const& graveyardData = mapValues.second;
-
-        //skip non-neutral or hostile graveyards
-        if (graveyardData.team != bot->GetTeam() && graveyardData.team != TEAM_NONE)
-            continue;
-
-        WorldSafeLocsEntry const* graveyardCoreEntry = sWorldSafeLocsStore.LookupEntry(graveyardData.safeLocId);
-
-        //skip different maps (no need for other continents)
-        if (graveyardCoreEntry->map_id != botMapId)
-            continue;
-
-        uint32 graveyardZoneId = sTerrainMgr.GetZoneId(graveyardCoreEntry->map_id, graveyardCoreEntry->x, graveyardCoreEntry->y, graveyardCoreEntry->z);
-        auto graveyardAreaEntry = GetAreaEntryByAreaID(graveyardZoneId);
-
-        //skip same zone
-        if (graveyardZoneId == botZoneId)
-            continue;
-
-        if (!graveyardAreaEntry)
-            continue;
-
-        //skip higher level zones
-        if (bot->GetLevel() + 5 < (uint32)graveyardAreaEntry->AreaLevel)
-            continue;
-
-        float dist = WorldPosition(corpse).sqDistance(graveyardCoreEntry);
-
-        if (dist < distNear)
-        {
-            distNear = dist;
-            entryNear = graveyardCoreEntry;
-        }
-    }
-
-    if (entryNear)
-        return entryNear;
-
-    return entryFar;
 }
 
 GuidPosition BestGraveyardValue::Calculate()
