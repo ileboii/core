@@ -27,6 +27,8 @@ namespace ai
             nextPlayerNearbyCheck = other.nextPlayerNearbyCheck;
             cachedPlayerNearby = other.cachedPlayerNearby;
             nextMinimalRepath = other.nextMinimalRepath;
+            nextStuckRecoveryAttempt = other.nextStuckRecoveryAttempt;
+            stuckRecoveryUntil = other.stuckRecoveryUntil;
             moveEvent = Event();
         }
 
@@ -43,6 +45,8 @@ namespace ai
             nextPlayerNearbyCheck = 0;
             cachedPlayerNearby = false;
             nextMinimalRepath = 0;
+            nextStuckRecoveryAttempt = 0;
+            stuckRecoveryUntil = 0;
             moveEvent = Event();
         }
 
@@ -74,6 +78,8 @@ namespace ai
         time_t nextPlayerNearbyCheck = 0;
         bool cachedPlayerNearby = false;
         time_t nextMinimalRepath = 0;
+        time_t nextStuckRecoveryAttempt = 0;
+        time_t stuckRecoveryUntil = 0;
         Event moveEvent;
     };
 

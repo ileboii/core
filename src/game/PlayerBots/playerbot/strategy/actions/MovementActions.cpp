@@ -1208,6 +1208,9 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     float totalDistance = startPosition.distance(endPosition);
     float maxDistChange = totalDistance * 0.1f;
 
+    if (TryDropFromStuckSurface(endPosition))
+        return true;
+
     if (totalDistance < minDist)
     {
         if (lastMove.lastMoveShort.distance(endPosition) < maxDistChange)
@@ -2395,6 +2398,96 @@ bool MovementAction::IsMovingAllowed()
     return ai->CanMove();
 }
 
+bool MovementAction::TryDropFromStuckSurface(const WorldPosition& destination)
+{
+    if (!destination || !bot->IsAlive() || !bot->GetMap() || ai->IsJumping() || bot->IsInWater() ||
+        sServerFacade.IsUnderwater(bot) || bot->IsFlying() || bot->IsTaxiFlying() ||
+        bot->IsMounted() || bot->GetTransport() ||
+        bot->IsNonMeleeSpellCasted(false, false, true) ||
+        destination.getMapId() != bot->GetMapId() || destination.isInWater() || destination.isUnderWater())
+        return false;
+
+    MovementGeneratorType movementType = bot->GetMotionMaster()->GetCurrentMovementGeneratorType();
+    if (movementType != IDLE_MOTION_TYPE && movementType != FOLLOW_MOTION_TYPE &&
+        movementType != CHASE_MOTION_TYPE && movementType != POINT_MOTION_TYPE)
+        return false;
+
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+    time_t now = time(0);
+    if (lastMove.stuckRecoveryUntil > now)
+        return true;
+
+    if (lastMove.nextStuckRecoveryAttempt > now ||
+        AI_VALUE2(uint32, "time since last change", "current position") < 10)
+        return false;
+
+    const TerrainInfo* terrain = bot->GetTerrain();
+    if (!terrain)
+        return false;
+
+    WorldPosition botPosition(bot);
+    float botZ = botPosition.getZ();
+    float terrainZ = terrain->GetHeightStatic(botPosition.getX(), botPosition.getY(), botZ, false);
+    if (terrainZ <= INVALID_HEIGHT || botZ - terrainZ < 1.0f)
+        return false;
+
+    lastMove.nextStuckRecoveryAttempt = now + 3;
+
+    float startAngle = botPosition.getAngleTo(destination);
+    WorldPosition landing;
+    float bestScore = 1.0e30f;
+    float const searchRadii[] = { 2.0f, 3.0f, 4.0f, 5.0f };
+
+    for (float radius : searchRadii)
+    {
+        for (uint32 i = 0; i < 16; ++i)
+        {
+            float angle = startAngle + (M_PI_F / 8.0f) * i;
+            float x = botPosition.getX() + cos(angle) * radius;
+            float y = botPosition.getY() + sin(angle) * radius;
+            float z = bot->GetMap()->GetHeight(x, y, botZ + 1.0f);
+
+            if (z <= INVALID_HEIGHT)
+                z = terrain->GetHeightStatic(x, y, botZ, false);
+            else if (z >= botZ - 1.0f)
+                continue;
+
+            if (z <= INVALID_HEIGHT || z >= botZ - 1.0f || botZ - z > 12.0f)
+                continue;
+
+            bot->UpdateAllowedPositionZ(x, y, z);
+            if (z >= botZ - 1.0f || botZ - z > 12.0f)
+                continue;
+
+            WorldPosition candidate(botPosition.getMapId(), x, y, z, botPosition.getO());
+            if (candidate.isInWater() || candidate.isUnderWater())
+                continue;
+
+            float score = candidate.fDist(destination) + radius * 0.25f;
+            if (score < bestScore)
+            {
+                bestScore = score;
+                landing = candidate;
+            }
+        }
+
+        if (landing)
+            break;
+    }
+
+    if (!landing)
+        return false;
+
+    lastMove.nextStuckRecoveryAttempt = now + 15;
+    lastMove.stuckRecoveryUntil = now + 4;
+
+    bot->SetFallInformation(botZ);
+    bot->GetMotionMaster()->Clear(false);
+    bot->GetMotionMaster()->MovePoint(0, landing.getX(), landing.getY(), landing.getZ(), MOVE_FALLING | MOVE_STRAIGHT_PATH);
+    ai->TellDebug(ai->GetMaster(), "Stuck above terrain; moving off the surface.", "debug stuck");
+    return true;
+}
+
 bool MovementAction::Follow(Unit* target, float distance)
 {
     if (!distance)
@@ -2625,6 +2718,9 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
                 return true;
         }
     }
+
+    if (TryDropFromStuckSurface(tarPos))
+        return true;
 
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
     {
@@ -2868,6 +2964,9 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
         if (tryJump)
             return true;
     }
+
+    if (TryDropFromStuckSurface(endPosition))
+        return true;
 
     if (!endPosition.isValid()) return false;
     if (angle > 20) angle = 0;
