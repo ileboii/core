@@ -2638,19 +2638,27 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
 
                 if (incremental || !progressiveGear)
                 {
-                    // sort items based on stat value, ilvl or quality
-                    std::sort(ids.begin(), ids.end(), [specId](int a, int b)
+                    ids.erase(std::remove_if(ids.begin(), ids.end(),
+                        [](uint32 itemId)
                         {
-                            uint32 baseCompareA = (sRandomItemMgr.GetStatWeight(a, specId) + sRandomItemMgr.GetBestRandomEnchantStatWeight(a, specId)) * 1000;
-                            uint32 baseCompareB = (sRandomItemMgr.GetStatWeight(b, specId) + sRandomItemMgr.GetBestRandomEnchantStatWeight(b, specId)) * 1000;
-                            if (baseCompareA < baseCompareB)
-                                return true;
+                            return !sObjectMgr.GetItemPrototype(itemId);
+                        }), ids.end());
 
+                    // sort items based on stat value, ilvl or quality
+                    std::sort(ids.begin(), ids.end(), [specId](uint32 a, uint32 b)
+                        {
                             ItemPrototype const* proto1 = sObjectMgr.GetItemPrototype(a);
                             ItemPrototype const* proto2 = sObjectMgr.GetItemPrototype(b);
 
-                            baseCompareA += proto1->Quality * proto1->ItemLevel;
-                            baseCompareB += proto2->Quality * proto2->ItemLevel;
+                            uint64 baseCompareA =
+                                (uint64)sRandomItemMgr.GetStatWeight(a, specId) +
+                                sRandomItemMgr.GetBestRandomEnchantStatWeight(a, specId);
+                            uint64 baseCompareB =
+                                (uint64)sRandomItemMgr.GetStatWeight(b, specId) +
+                                sRandomItemMgr.GetBestRandomEnchantStatWeight(b, specId);
+
+                            baseCompareA = baseCompareA * 1000 + (uint64)proto1->Quality * proto1->ItemLevel;
+                            baseCompareB = baseCompareB * 1000 + (uint64)proto2->Quality * proto2->ItemLevel;
 
                             return baseCompareA < baseCompareB;
                         });
