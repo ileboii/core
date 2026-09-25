@@ -64,6 +64,33 @@
 
 using namespace ai;
 
+static bool IsOffensiveUnitSpellOnSelf(SpellEntry const* spellInfo, Unit* target, Unit* caster)
+{
+    if (!spellInfo || target != caster)
+        return false;
+
+    bool hasExplicitUnitTarget = false;
+    bool hasExplicitNegativeTarget = false;
+
+    for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (!spellInfo->Effect[i])
+            continue;
+
+        uint32 targetA = spellInfo->EffectImplicitTargetA[i];
+        uint32 targetB = spellInfo->EffectImplicitTargetB[i];
+
+        if (Spells::IsExplicitlySelectedUnitTarget(targetA) || Spells::IsExplicitlySelectedUnitTarget(targetB))
+            hasExplicitUnitTarget = true;
+
+        if (Spells::IsExplicitNegativeTarget(targetA) || Spells::IsExplicitNegativeTarget(targetB))
+            hasExplicitNegativeTarget = true;
+    }
+
+    return hasExplicitUnitTarget &&
+           (hasExplicitNegativeTarget || !spellInfo->IsPositiveSpell(caster, target));
+}
+
 std::vector<std::string>& split(const std::string &s, char delim, std::vector<std::string> &elems);
 std::vector<std::string> split(const std::string &s, char delim);
 char * strstri (std::string str1, std::string str2);
@@ -4285,6 +4312,15 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
         return false;
     }
 
+    SpellEntry const *spellInfo = sServerFacade.LookupSpellInfo(spellid);
+    if (IsOffensiveUnitSpellOnSelf(spellInfo, target ? target : bot, bot))
+    {
+        if (checkResult)
+            *checkResult = SPELL_FAILED_TARGET_FRIENDLY;
+
+        return false;
+    }
+
     Pet* pet = bot->GetPet();
     if (pet && pet->HasSpell(spellid) && pet->IsSpellReady(spellid))
     {
@@ -4334,7 +4370,6 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
         return false;
     }
 
-	SpellEntry const *spellInfo = sServerFacade.LookupSpellInfo(spellid);
 	if (!spellInfo)
     {
         if (checkResult)
@@ -4769,6 +4804,10 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     if (!target)
         target = bot;
 
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
+    if (IsOffensiveUnitSpellOnSelf(pSpellInfo, target, bot))
+        return false;
+
     Pet* pet = bot->GetPet();
     if (pet && pet->HasSpell(spellId))
     {
@@ -4817,7 +4856,6 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         return false;
     }
 
-    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
     Spell *spell = new Spell(bot, pSpellInfo, false);
 
     SpellCastTargets targets;
