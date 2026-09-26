@@ -28,6 +28,11 @@ Unit* TargetValue::FindTarget(FindTargetStrategy* strategy)
 
 bool FindNonCcTargetStrategy::IsCcTarget(Unit* attacker)
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (context->GetValue<std::string>("rti")->Get() == "none" &&
+        context->GetValue<std::string>("rti cc")->Get() == "none")
+        return false;
+
     Group* group = ai->GetBot()->GetGroup();
     if (group)
     {
@@ -40,23 +45,15 @@ bool FindNonCcTargetStrategy::IsCcTarget(Unit* attacker)
 
             if (player->GetPlayerbotAI())
             {
-                if (PAI_VALUE(Unit*,"rti cc target") == attacker)
-                    return true;
-
                 std::string rti = PAI_VALUE(std::string,"rti cc");
-                int index = RtiTargetValue::GetRtiIndex(rti);
-                if (index != -1)
+                for (int index : RtiTargetValue::GetRtiIndices(rti))
                 {
-                    uint64 guid = group->GetTargetWithIcon((RaidTargetIcon)index);
+                    ObjectGuid guid = group->GetTargetWithIcon((RaidTargetIcon)index);
                     if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
                         return true;
                 }
             }
         }
-
-        uint64 guid = group->GetTargetWithIcon((RaidTargetIcon)4);
-        if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
-            return true;
     }
 
     return false;

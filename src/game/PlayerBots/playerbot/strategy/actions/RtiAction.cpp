@@ -11,12 +11,13 @@ bool RtiAction::Execute(Event& event)
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     std::string text = event.getParam();
     std::string type = "rti";
-    if (text.find("cc ") == 0)
+    if (text == "cc" || text.find("cc ") == 0)
     {
         type = "rti cc";
-        text = text.substr(3);
+        text = text == "cc" ? "?" : text.substr(3);
     }
-    else if (text.empty() || text == "?")
+
+    if (type == "rti" && (text.empty() || text == "?"))
     {
         std::ostringstream outRti; outRti << "rti" << ": ";
         AppendRti(outRti, "rti");
@@ -28,7 +29,23 @@ bool RtiAction::Execute(Event& event)
         return true;
     }
 
-    context->GetValue<std::string>(type)->Set(text);
+    if (text == "?")
+    {
+        std::ostringstream out; out << type << ": ";
+        AppendRti(out, type);
+        ai->TellPlayer(requester, out);
+        return true;
+    }
+
+    std::vector<int> indices;
+    std::string normalized;
+    if (!RtiTargetValue::ParseOrder(text, indices, &normalized))
+    {
+        ai->TellError(requester, "Use a comma-separated order of unique icons (star, circle, diamond, triangle, moon, square, cross, skull), or none");
+        return false;
+    }
+
+    context->GetValue<std::string>(type)->Set(normalized);
     std::ostringstream out; out << type << " set to: ";
     AppendRti(out, type);
     ai->TellPlayer(requester, out);
@@ -83,15 +100,11 @@ bool MarkRtiAction::Execute(Event& event)
 
     if (!target) return false;
 
-    std::string rti = AI_VALUE(std::string, "rti");
+    std::vector<int> indices = RtiTargetValue::GetRtiIndices(AI_VALUE(std::string, "rti"));
+    if (indices.empty())
+        return false;
 
-    // Add the default rti if the bot is setup to ignore rti targets
-    if (rti == "none")
-    {
-        rti = "skull";
-    }
-
-    int index = RtiTargetValue::GetRtiIndex(rti);
+    int index = indices.front();
 #ifndef MANGOSBOT_TWO
     group->SetTargetIcon(index, target->GetObjectGuid());
 #else
@@ -99,4 +112,3 @@ bool MarkRtiAction::Execute(Event& event)
 #endif
     return true;
 }
-

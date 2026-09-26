@@ -105,8 +105,8 @@ void PossibleAttackTargetsValue::RemoveNonThreating(std::list<ObjectGuid>& targe
 
 bool PossibleAttackTargetsValue::HasIgnoreCCRti(Unit* target, Player* player)
 {
-    Group* group = player->GetGroup();
-    return group && (group->GetTargetWithIcon((RaidTargetIcon)7) == target->GetObjectGuid());
+    PlayerbotAI* botAI = player->GetPlayerbotAI();
+    return botAI && botAI->GetAiObjectContext()->GetValue<Unit*>("rti target")->Get() == target;
 }
 
 bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)

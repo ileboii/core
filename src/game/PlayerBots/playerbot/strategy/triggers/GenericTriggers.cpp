@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/AoeValues.h"
 #include "playerbot/strategy/values/Stances.h"
+#include "playerbot/strategy/values/RtiTargetValue.h"
 
 #include <regex>
 
@@ -611,7 +612,10 @@ bool HasCcTargetTrigger::IsActive()
     uint32 spellid = AI_VALUE2(uint32, "spell id", getName());
     if (spellid && sServerFacade.IsSpellReady(bot, spellid))
     {
-        return AI_VALUE2(Unit*, "cc target", getName()) && !AI_VALUE2(Unit*, "current cc target", getName());
+        Unit* target = AI_VALUE2(Unit*, "cc target", getName());
+        if (RtiTargetValue::GetRtiIndices(AI_VALUE(std::string, "rti cc")).size() > 1)
+            return target && !ai->HasAura(getName(), target);
+        return target && !AI_VALUE2(Unit*, "current cc target", getName());
     }
 
     return false;

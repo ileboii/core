@@ -3,6 +3,7 @@
 #include "AttackersValue.h"
 #include "PossibleTargetsValue.h"
 #include "EnemyPlayerValue.h"
+#include "RtiTargetValue.h"
 #include "BattleGroundAV.h"
 
 using namespace ai;
@@ -55,7 +56,8 @@ std::list<ObjectGuid> AttackersValue::Calculate()
         }
     }
 
-    if (ai->HasStrategy("focus rti targets", BotState::BOT_STATE_COMBAT))
+    if (ai->HasStrategy("focus rti targets", BotState::BOT_STATE_COMBAT) &&
+        !RtiTargetValue::GetRtiIndices(AI_VALUE(std::string, "rti")).empty())
     {
         Unit* rtiTarget = AI_VALUE(Unit*, "rti target");
 

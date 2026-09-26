@@ -13,33 +13,8 @@ namespace ai
 
         virtual bool IsActive() override
 		{
-            if (AI_VALUE(Unit*, "rti target"))
-            {
-                return false;
-            }
-            else
-            {
-                // Check for the default rti if the bot is setup to ignore rti targets
-                std::string rti = AI_VALUE(std::string, "rti");
-                if (rti == "none")
-                {
-                    Group* group = bot->GetGroup();
-                    if (group)
-                    {
-                        const ObjectGuid guid = group->GetTargetWithIcon((RaidTargetIcon)RtiTargetValue::GetRtiIndex("skull"));
-                        if (!guid.IsEmpty())
-                        {
-                            Unit* unit = ai->GetUnit(ObjectGuid(guid));
-                            if (unit && !sServerFacade.UnitIsDead(unit) && bot->IsWithinDistInMap(unit, sPlayerbotAIConfig.sightDistance, false))
-                            {
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-
-            return true;
+            return !RtiTargetValue::GetRtiIndices(AI_VALUE(std::string, "rti")).empty() &&
+                !AI_VALUE(Unit*, "rti target");
         }
     };
 }

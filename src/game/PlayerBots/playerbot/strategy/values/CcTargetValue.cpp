@@ -4,6 +4,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Action.h"
+#include "RtiTargetValue.h"
 
 using namespace ai;
 
@@ -14,6 +15,14 @@ public:
     {
         this->spell = spell;
         maxDistance = 0;
+        Group* group = ai->GetBot()->GetGroup();
+        if (group)
+        {
+            AiObjectContext* context = ai->GetAiObjectContext();
+            for (int index : RtiTargetValue::GetRtiIndices(AI_VALUE(std::string, "rti cc")))
+                markedTargets.push_back(group->GetTargetWithIcon((RaidTargetIcon)index));
+        }
+        bestMark = markedTargets.size();
     }
 
 public:
@@ -26,16 +35,31 @@ public:
         if (!ai->CanCastSpell(spell, creature, true, nullptr, false, true))
             return;
 
-        if (AI_VALUE(Unit*,"rti cc target") == creature)
-        {
-            result = creature;
+        if (markedTargets.size() > 1 &&
+            (ai->HasAura(spell, creature) ||
+             (spell == "polymorph" && (ai->HasAura("polymorph: pig", creature) || ai->HasAura("polymorph: turtle", creature)))))
             return;
+
+        for (size_t rank = 0; rank < markedTargets.size(); ++rank)
+        {
+            if (markedTargets[rank] && markedTargets[rank] == creature->GetObjectGuid())
+            {
+                if (rank < bestMark)
+                {
+                    result = creature;
+                    bestMark = rank;
+                }
+                return;
+            }
         }
+
+        if (bestMark < markedTargets.size())
+            return;
 
         if (AI_VALUE(Unit*,"current target") == creature)
             return;
 
-        if (AI_VALUE(Unit*,"rti target") == creature)
+        if (!markedTargets.empty() && AI_VALUE(Unit*,"rti target") == creature)
             return;
 
         uint8 health = creature->GetHealthPercent();
@@ -93,31 +117,36 @@ public:
 private:
     std::string spell;
     float maxDistance;
+    std::vector<ObjectGuid> markedTargets;
+    size_t bestMark;
 };
 
 Unit* CcTargetValue::Calculate()
 {
-    std::list<ObjectGuid> possible = AI_VALUE(std::list<ObjectGuid>,"possible targets no los");
-
-    for (std::list<ObjectGuid>::iterator i = possible.begin(); i != possible.end(); ++i)
+    if (RtiTargetValue::GetRtiIndices(AI_VALUE(std::string, "rti cc")).size() < 2)
     {
-        ObjectGuid guid = *i;
-        Unit* add = ai->GetUnit(guid);
-        if (!add)
-            continue;
+        std::list<ObjectGuid> possible = AI_VALUE(std::list<ObjectGuid>,"possible targets no los");
 
-        if (!ai->IsSafe(add))
-            continue;
-
-        if (ai->HasMyAura(qualifier, add))
-            return NULL;
-
-        if (qualifier == "polymorph")
+        for (std::list<ObjectGuid>::iterator i = possible.begin(); i != possible.end(); ++i)
         {
-            if (ai->HasMyAura("polymorph: pig", add))
+            ObjectGuid guid = *i;
+            Unit* add = ai->GetUnit(guid);
+            if (!add)
+                continue;
+
+            if (!ai->IsSafe(add))
+                continue;
+
+            if (ai->HasMyAura(qualifier, add))
                 return NULL;
-            if (ai->HasMyAura("polymorph: turtle", add))
-                return NULL;
+
+            if (qualifier == "polymorph")
+            {
+                if (ai->HasMyAura("polymorph: pig", add))
+                    return NULL;
+                if (ai->HasMyAura("polymorph: turtle", add))
+                    return NULL;
+            }
         }
     }
 
