@@ -753,9 +753,9 @@ for (auto closeGameObjectGuid : (*context->GetValue<std::list<ObjectGuid>>("clos
             if (!friendlyPlayer->IsAlive())
                 continue;
 
-            // Only playerbots participate in the election.
+            // Questers never capture AV flags, so they must not reserve this slot.
             PlayerbotAI* friendlyAI = friendlyPlayer->GetPlayerbotAI();
-            if (!friendlyAI || friendlyAI->IsRealPlayer())
+            if (!friendlyAI || friendlyAI->IsRealPlayer() || friendlyAI->IsAvQuester())
                 continue;
 
             // Only bots close enough to actually capture THIS banner count.
@@ -784,10 +784,9 @@ for (auto closeGameObjectGuid : (*context->GetValue<std::list<ObjectGuid>>("clos
         if (!spellInfo)
             return false;
 
-        Spell* spell = new Spell(bot, spellInfo, false);
-        spell->m_targets.setGOTarget(go);
-        spell->prepare(spell->m_targets);
-        ai->WaitForSpellCast(spell);
+        // Keep this objective if the capture cast is rejected so the bot can retry.
+        if (!ai->CastSpell(SPELL_CAPTURE_BANNER, go))
+            return false;
 
         resetObjective();
 

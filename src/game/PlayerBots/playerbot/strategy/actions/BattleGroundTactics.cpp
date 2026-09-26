@@ -2144,7 +2144,7 @@ std::vector<BattleBotPath*> const vPaths_AV =
 {
     &vPath_AV_Horde_Cave_to_Tower_Point_Crossroad,
     &vPath_AV_Tower_Point_Crossroads_to_Tower_Point_Bottom,
-    //&vPath_AV_TowerPoint_Bottom_to_Tower_Point_Flag,
+    &vPath_AV_TowerPoint_Bottom_to_Tower_Point_Flag,
     &vPath_AV_Tower_Point_Bottom_to_Frostwolf_Graveyard_Flag,
     &vPath_AV_Frostwolf_Graveyard_to_Frostwolf_Graveyard_Flag,
     &vPath_AV_Tower_Point_Crossroads_to_Iceblood_Graveyard_Flag,
@@ -2206,6 +2206,7 @@ static bool IsAvQuesterForbiddenPath(BattleBotPath const* path)
     return
         // Horde tower capture branches.
         path == &vPath_AV_Horde_Base_First_Crossroads_to_East_Frostwolf_Tower_Flag || path == &vPath_AV_Horde_Base_First_Crossroads_to_West_Frostwolf_Tower_Flag ||
+        path == &vPath_AV_TowerPoint_Bottom_to_Tower_Point_Flag ||
 
         // Horde base combat objectives.
         path == &vPath_AV_Horde_Base_Second_Crossroads_to_Horde_Base_Entrance_DrekThar || path == &vPath_AV_Horde_Base_Second_Crossroads_to_Horde_Base_DrekThar1 || path == &vPath_AV_Horde_Base_Second_Crossroads_to_Horde_Base_DrekThar2 || path == &vPath_AV_Horde_Base_Second_Crossroads_to_Horde_Base_Graveyard_Flag ||
