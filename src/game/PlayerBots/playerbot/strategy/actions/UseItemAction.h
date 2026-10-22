@@ -674,7 +674,7 @@ namespace ai
                 {
                     ai->StopMoving();
                     SetDuration(sPlayerbotAIConfig.globalCoolDown);
-                    return false;
+                    return true;
                 }
 
                 bot->SetStandState(UNIT_STAND_STATE_SIT);
@@ -712,7 +712,22 @@ namespace ai
 
         bool isUseful() override
         {
-            return UseAction::isUseful() && AI_VALUE(bool, "should drink");
+            if (!UseAction::isUseful() || !AI_VALUE(bool, "should drink"))
+                return false;
+
+            if (ai->IsHeal(bot))
+            {
+                if (bot->GetHealthPercent() <= sPlayerbotAIConfig.criticalHealth)
+                    return false;
+
+                Unit* target = AI_VALUE(Unit*, "party member to heal");
+                if (target && !target->IsDead() && target->IsInWorld() &&
+                    target->GetMapId() == bot->GetMapId() &&
+                    target->GetHealthPercent() <= sPlayerbotAIConfig.criticalHealth)
+                    return false;
+            }
+
+            return true;
         }
 
         bool isPossible() override
