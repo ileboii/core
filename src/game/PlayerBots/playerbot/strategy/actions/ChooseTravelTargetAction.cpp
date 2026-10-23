@@ -25,6 +25,9 @@ inline std::string GetTravelPurposeName(std::string purpose)
 
 bool ChooseTravelTargetAction::Execute(Event& event)
 {
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
+        return false;
+
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
     if(travelTarget->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE)
@@ -471,6 +474,9 @@ DestinationList ChooseTravelTargetAction::FindDestination(PlayerTravelInfo info,
 
 bool ChooseGroupTravelTargetAction::Execute(Event& event)
 {
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
+        return false;
+
     std::vector<ObjectGuid> groupPlayers;
 
     Group* group = bot->GetGroup();
@@ -708,6 +714,9 @@ bool ResetTargetAction::isUseful()
 
 bool RequestTravelTargetAction::Execute(Event& event)
 {
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
+        return false;
+
     TravelDestinationPurpose actionPurpose = TravelDestinationPurpose(stoi(getQualifier()));
 
     WorldPosition center = event.getOwner() ? event.getOwner() : (GetMaster() ? GetMaster() : bot);
@@ -790,6 +799,9 @@ bool RequestTravelTargetAction::isAllowed() const
 
 bool RequestNamedTravelTargetAction::Execute(Event& event)
 {
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
+        return false;
+
     std::string travelName = getQualifier();
 
     WorldPosition center = event.getOwner() ? event.getOwner() : (GetMaster() ? GetMaster() : bot);
@@ -1341,6 +1353,9 @@ bool RequestNamedTravelTargetAction::isAllowed() const
 
 bool RequestQuestTravelTargetAction::Execute(Event& event)
 {
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
+        return false;
+
     WorldPosition center = event.getOwner() ? event.getOwner() : (GetMaster() ? GetMaster() : bot);
 
     ai->TellDebug(ai->GetMaster(), "Getting new destination ranges for travel quest", "debug travel");

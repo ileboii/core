@@ -13,6 +13,9 @@ using namespace ai;
 
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
+    if (bot->GetGroup() && !ai->IsGroupLeader())
+        return false;
+
     TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
 
     if (target->GetStatus() == TravelStatus::TRAVEL_STATUS_READY)
@@ -226,6 +229,9 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
 bool MoveToTravelTargetAction::isUseful()
 {
+    if (bot->GetGroup() && !ai->IsGroupLeader())
+        return false;
+
     if (ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT))
         return false;
 
@@ -264,9 +270,6 @@ bool MoveToTravelTargetAction::isUseful()
                 return false;
         }
     }
-
-    if (bot->GetGroup() && !ai->IsGroupLeader() && !travelTarget->IsForced())
-        return false;
 
     WorldPosition travelPos(*travelTarget->GetPosition());
 

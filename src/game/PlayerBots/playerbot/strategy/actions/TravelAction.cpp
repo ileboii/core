@@ -15,6 +15,9 @@ using namespace MaNGOS;
 
 bool TravelAction::Execute(Event& event)
 {    
+    if (bot->GetGroup() && !ai->IsGroupLeader())
+        return false;
+
     TravelTarget * target = AI_VALUE(TravelTarget *, "travel target");
     
     target->CheckStatus();     
@@ -26,12 +29,11 @@ bool TravelAction::Execute(Event& event)
 
 bool TravelAction::isUseful()
 {
-    if (!AI_VALUE(bool,"travel target active"))
+    if (bot->GetGroup() && !ai->IsGroupLeader())
         return false;
 
-    if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
-        if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
-            return false;
+    if (!AI_VALUE(bool,"travel target active"))
+        return false;
 
     if (sServerFacade.isMoving(bot))
         return false;

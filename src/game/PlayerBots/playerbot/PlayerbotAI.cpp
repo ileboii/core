@@ -6557,6 +6557,9 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
 
 bool PlayerbotAI::AllowActivity(ActivityType activityType, bool checkNow)
 {
+    if (activityType == TRAVEL_ACTIVITY && bot->GetGroup() && !IsGroupLeader())
+        return false;
+
     if (!allowActiveCheckTimer[activityType])
         allowActiveCheckTimer[activityType] = time(NULL);
 
