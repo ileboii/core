@@ -41,6 +41,7 @@
 #include "playerbot/TravelMgr.h"
 #include <iomanip>
 #include <float.h>
+#include <cmath>
 #include <algorithm>
 #include <random>
 
@@ -54,6 +55,23 @@ using namespace MaNGOS;
 
 namespace
 {
+    bool PrepareTeleportLocation(WorldLocation& location)
+    {
+        if (!MapManager::IsValidMapCoord(location.mapId, location.x, location.y, location.z, location.o))
+            return false;
+
+        TerrainInfo* terrain = sTerrainMgr.LoadTerrain(location.mapId);
+        if (!terrain)
+            return false;
+
+        float ground = terrain->GetHeightStatic(location.x, location.y, location.z);
+        if (!std::isfinite(ground) || ground <= INVALID_HEIGHT || std::abs(ground - location.z) > 10.0f)
+            return false;
+
+        location.z = ground + 0.05f;
+        return true;
+    }
+
     bool IsTeleportLocationAllowed(Player* bot, uint32 zoneId, uint32 areaId)
     {
         if (!bot)
@@ -839,17 +857,21 @@ bool RandomPlayerbotMgr::FindContinentTeleportLocation(Player* bot, uint32 mapId
             if (candidate.mapId != mapId)
                 continue;
 
+            WorldLocation destination = candidate;
+            if (!PrepareTeleportLocation(destination))
+                continue;
+
             uint32 candidateZoneId = 0;
             uint32 candidateAreaId = 0;
-            sTerrainMgr.GetZoneAndAreaId(candidateZoneId, candidateAreaId, candidate.mapId,
-                                         candidate.x, candidate.y, candidate.z);
+            sTerrainMgr.GetZoneAndAreaId(candidateZoneId, candidateAreaId, destination.mapId,
+                                         destination.x, destination.y, destination.z);
 
             if (candidateZoneId != zoneId || !IsTeleportLocationAllowed(bot, candidateZoneId, candidateAreaId))
                 continue;
 
             ++matches;
             if (urand(1, matches) == 1)
-                location = candidate;
+                location = destination;
         }
 
         return matches != 0;
@@ -2964,6 +2986,12 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
 
             float x = loc.x + (attemtps > 0 ? urand(0, sPlayerbotAIConfig.grindDistance) - sPlayerbotAIConfig.grindDistance / 2 : 0);
             float y = loc.y + (attemtps > 0 ? urand(0, sPlayerbotAIConfig.grindDistance) - sPlayerbotAIConfig.grindDistance / 2 : 0);
+
+            loc.x = x;
+            loc.y = y;
+            if (!PrepareTeleportLocation(loc))
+                continue;
+
             float z = loc.z;
 
             uint32 areaId = sTerrainMgr.GetAreaId(loc.mapId, x, y, z);
@@ -2977,19 +3005,6 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
                 continue;
 #endif
 
-            if (attemtps > 0)
-            {
-                // Only validate height for offset attempts; first attempt uses cached creature spawn z directly
-                TerrainInfo* terrain = sTerrainMgr.LoadTerrain(loc.mapId);
-                if (!terrain)
-                    continue;
-
-                float ground = terrain->GetHeightStatic(x, y, z + 0.5f);
-                if (ground <= INVALID_HEIGHT)
-                    continue;
-
-                z = 0.05f + ground;
-            }
             sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Random teleporting bot %s to %s %f,%f,%f (%u/%zu locations)",
                 bot->GetName(), area->Name, x, y, z, attemtps, tlocs.size());
 

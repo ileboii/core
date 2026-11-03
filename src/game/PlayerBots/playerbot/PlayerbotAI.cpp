@@ -2,6 +2,7 @@
 #include "Spells/SpellEntry.h"
 #include "playerbot/playerbot.h"
 #include <stdarg.h>
+#include <cmath>
 #include <iomanip>
 #include <random>
 #include <chrono>
@@ -10,6 +11,8 @@
 #include "playerbot/AiFactory.h"
 
 #include "MovementGenerator.h"
+#include "MoveMap.h"
+#include "MoveMapSharedDefines.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
@@ -326,6 +329,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 masterGuid = ObjectGuid();
         }
     }
+
+    if (RecoverFromUnderground(elapsed))
+        return;
+
     if(aiInternalUpdateDelay > elapsed)
     {
         aiInternalUpdateDelay -= elapsed;
@@ -677,6 +684,95 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
         YieldAIInternalThread(min);
     }
+}
+
+bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
+{
+    if (undergroundCheckDelay > elapsed)
+    {
+        undergroundCheckDelay -= elapsed;
+        return false;
+    }
+
+    undergroundCheckDelay = 5000;
+
+    if (IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() || !bot->GetMap() ||
+        bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->IsFlying() ||
+        bot->GetTransport() || IsInVehicle() || IsJumping() || bot->IsInWater())
+    {
+        undergroundDetected = false;
+        return false;
+    }
+
+    Map* map = bot->GetMap();
+    float x = bot->GetPositionX();
+    float y = bot->GetPositionY();
+    float z = bot->GetPositionZ();
+    float ground = map->GetHeight(x, y, z);
+
+    if (!std::isfinite(ground) || ground <= INVALID_HEIGHT || z >= ground - 1.0f)
+    {
+        undergroundDetected = false;
+        return false;
+    }
+
+    dtNavMeshQuery const* query = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMeshQuery(bot->GetMapId());
+    if (!query)
+    {
+        undergroundDetected = false;
+        return false;
+    }
+
+    dtQueryFilter filter;
+    filter.setIncludeFlags(NAV_GROUND);
+
+    float point[3] = { y, z, x };
+    float extents[3] = { 1.0f, 1.0f, 1.0f };
+    float closest[3] = {};
+    dtPolyRef polyRef = INVALID_POLYREF;
+
+    // A nearby walkable floor can be inside a cave below the terrain surface.
+    if (dtStatusSucceed(query->findNearestPoly(point, extents, &filter, &polyRef, closest)) &&
+        polyRef != INVALID_POLYREF && std::abs(closest[1] - z) <= 1.0f)
+    {
+        undergroundDetected = false;
+        return false;
+    }
+
+    if (!undergroundDetected)
+    {
+        undergroundDetected = true;
+        return false;
+    }
+
+    point[1] = ground;
+    extents[0] = extents[2] = 2.0f;
+    extents[1] = 3.0f;
+    filter.setExcludeFlags(NAV_STEEP_SLOPES);
+    polyRef = INVALID_POLYREF;
+
+    if (dtStatusFailed(query->findNearestPoly(point, extents, &filter, &polyRef, closest)) ||
+        polyRef == INVALID_POLYREF)
+        return false;
+
+    float landingZ = map->GetHeight(closest[2], closest[0], closest[1]);
+    if (!std::isfinite(landingZ) || landingZ <= INVALID_HEIGHT ||
+        std::abs(landingZ - closest[1]) > 1.0f || landingZ <= z + 1.0f)
+        return false;
+
+    if (!bot->TeleportTo(bot->GetMapId(), closest[2], closest[0], landingZ + 0.05f,
+                         bot->GetOrientation(), TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET))
+        return false;
+
+    StopMoving();
+    GetLastMovement().clear();
+    ResetAIInternalUpdateDelay();
+    undergroundDetected = false;
+    TellDebug(GetMaster(), "Recovered from an underground position.", "debug stuck");
+    sLog.Out(LOG_BASIC, LOG_LVL_DETAIL,
+        "Playerbot %s: underground recovery on map %u from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f",
+        bot->GetName(), bot->GetMapId(), x, y, z, closest[2], closest[0], landingZ + 0.05f);
+    return true;
 }
 
 bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)

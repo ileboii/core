@@ -714,6 +714,7 @@ public:
 
 private:
     friend class ai::AIPlayAction;
+    bool RecoverFromUnderground(uint32 elapsed);
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
     void HandleBotOutgoingPacketInternal(const WorldPacket& packet);
@@ -762,6 +763,8 @@ protected:
     uint32 jumpTime;
     bool fallAfterJump;
     uint32 faceTargetUpdateDelay;
+    uint32 undergroundCheckDelay = 0;
+    bool undergroundDetected = false;
     bool isPlayerFriend = false;
     bool isMovingToTransport = false;
     bool shouldLogOut = false;
