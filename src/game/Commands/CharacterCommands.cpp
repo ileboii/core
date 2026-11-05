@@ -1440,35 +1440,6 @@ bool ChatHandler::GetDeletedCharacterInfoList(DeletedInfoList& foundList, bool u
 }
 
 /**
- * Generate WHERE guids list by deleted info in way preventing return too long where list for existed query string length limit.
- *
- * @param itr          a reference to an deleted info list iterator, it updated in function for possible next function call if list to long
- * @param itr_end      a reference to an deleted info list iterator end()
- * @return             returns generated where list string in form: 'guid IN (gui1, guid2, ...)'
- */
-std::string ChatHandler::GenerateDeletedCharacterGUIDsWhereStr(DeletedInfoList::const_iterator& itr, DeletedInfoList::const_iterator const& itr_end)
-{
-    std::ostringstream wherestr;
-    wherestr << "guid IN ('";
-    for(; itr != itr_end; ++itr)
-    {
-        wherestr << itr->lowguid;
-
-        if (wherestr.str().size() > MAX_QUERY_LEN - 50)     // near to max query
-        {
-            ++itr;
-            break;
-        }
-
-        DeletedInfoList::const_iterator itr2 = itr;
-        if (++itr2 != itr_end)
-            wherestr << "','";
-    }
-    wherestr << "')";
-    return wherestr.str();
-}
-
-/**
  * Shows all deleted characters which matches the given search string, expected non empty list
  *
  * @see ChatHandler::HandleCharacterDeletedListCommand
@@ -2936,6 +2907,32 @@ bool ChatHandler::HandleLearnAllItemsCommand(char* args)
     }
 
     SendSysMessage("Learned all available spells from items.");
+    return true;
+}
+
+bool ChatHandler::HandleLearnAllQuestsCommand(char* args)
+{
+    Player* pPlayer = m_session->GetPlayer();
+
+    for (auto const& itr : sObjectMgr.GetQuestTemplates())
+    {
+        Quest const* pQuest = itr.second.get();
+        if (!pQuest)
+            continue;
+
+        if (pQuest->GetMinLevel() > pPlayer->GetLevel())
+            continue;
+
+        if (pQuest->GetRequiredClasses() != pPlayer->GetClassMask())
+            continue;
+
+        if (pQuest->GetRequiredRaces() && !(pQuest->GetRequiredRaces() & pPlayer->GetRaceMask()))
+            continue;
+
+        pPlayer->LearnQuestRewardedSpells(pQuest);
+    }
+
+    SendSysMessage("Learned all available spells from quests.");
     return true;
 }
 
