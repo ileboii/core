@@ -1,6 +1,7 @@
 #include "Config/Config.h"
 
 #include "playerbot/playerbot.h"
+#include <regex>
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "strategy/values/LastMovementValue.h"
@@ -23,6 +24,10 @@
 
 #include "BattleGround.h"
 #include "BattleGroundMgr.h"
+#ifdef GenerateBotTests
+#include "strategy/tests/TestRegistry.h"
+#include "strategy/tests/TravelProbe.h"
+#endif
 #include "ChannelMgr.h"
 #include "GuildMgr.h"
 // WorldState.h not in vmangos
@@ -645,6 +650,20 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     sMemoryMonitor.LogCount(sConfig.GetStringDefault("LogsDir", "") + "/" + "memory.csv");
 #endif
 
+#ifdef GenerateBotTests
+    if (sPlayerbotAIConfig.startupRunTestsPending)
+    {
+        sPlayerbotAIConfig.startupRunTestsPending = false;
+
+        for (const std::string& runTestParam : sPlayerbotAIConfig.startupRunTests)
+        {
+            std::list<std::string> messages = HandlePlayerbotCommand("runtest " + runTestParam, nullptr, SEC_PLAYER);
+            for (const std::string& message : messages)
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[Config RunTest] %s", message.c_str());
+        }
+    }
+#endif
+
     if (!sPlayerbotAIConfig.randomBotAutologin || !sPlayerbotAIConfig.enabled)
         return;
 
@@ -723,7 +742,6 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
         {
             if (ProcessBot(bot))
                 updateBots--;
-
             if (!updateBots)
                 break;
         }
@@ -777,6 +795,11 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     //Ping character database.
     // AsyncPQuery ping not compatible with vmangos
+
+#ifdef GenerateBotTests
+    if (!minimal)
+        UpdatePendingTests(elapsed);
+#endif
 }
 
 void RandomPlayerbotMgr::UpdateRemoteBotActivityCap()
@@ -2496,7 +2519,6 @@ void RandomPlayerbotMgr::MovePlayerBot(uint32 guid, PlayerbotHolder* newHolder)
 
     {
         std::unique_lock<std::shared_mutex> lock(m_playersMutex);
-        players[guid] = this->GetPlayerBot(guid);
     }
     PlayerbotHolder::MovePlayerBot(guid, newHolder);
 }
@@ -2510,6 +2532,27 @@ bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
     }
 
     PlayerbotAI* ai = player ? player->GetPlayerbotAI() : NULL;
+
+#ifdef GenerateBotTests
+    if (player && ai)
+    {
+        bool isTestProtected = false;
+        AiObjectContext* ctx = ai->GetAiObjectContext();
+        if (ctx && ctx->GetValue<bool>("manual bool", "is running test")->Get())
+            isTestProtected = true;
+        else if (Group* group = player->GetGroup())
+        {
+            Player* leader = sObjectMgr.GetPlayer(group->GetLeaderGuid());
+            PlayerbotAI* leaderAi = leader ? leader->GetPlayerbotAI() : NULL;
+            AiObjectContext* leaderCtx = leaderAi ? leaderAi->GetAiObjectContext() : NULL;
+            if (leaderCtx && leaderCtx->GetValue<bool>("manual bool", "is running test")->Get())
+                isTestProtected = true;
+        }
+
+        if (isTestProtected)
+            return false;
+    }
+#endif
 
     bool botsAllowedInWorld = !sPlayerbotAIConfig.randomBotLoginWithPlayer || (!players.empty() && sWorld.GetActiveSessionCount() > 0);
 
@@ -3801,6 +3844,10 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* handler, cha
     handlers["clean map"] = &RandomPlayerbotMgr::HandleConsoleCleanMap;
     handlers["login debug"] = &RandomPlayerbotMgr::HandleConsoleLoginDebug;
     handlers["cpu"] = &RandomPlayerbotMgr::HandleConsoleCpu;
+#ifdef GenerateBotTests
+    handlers["travelsample"] = &RandomPlayerbotMgr::HandleConsoleTravelSample;
+    handlers["traveltrace"] = &RandomPlayerbotMgr::HandleConsoleTravelTrace;
+#endif
 
     for (auto& [prefix, consoleHandler] : handlers)
     {
@@ -3990,6 +4037,18 @@ void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
 void RandomPlayerbotMgr::OnBotLoginInternal(Player * const bot)
 {
     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "%u/%d Bot %s logged in", GetPlayerbotsAmount(), sRandomPlayerbotMgr.GetMaxAllowedBotCount(), bot->GetName());
+
+#ifdef GenerateBotTests
+    uint32 botGuid = bot->GetGUIDLow();
+    if (GetEventValue(botGuid, "test"))
+    {
+        std::string testName = GetEventData(botGuid, "test");
+        testName = std::regex_replace(testName, std::regex("\'"), "'");
+        TestRegistry::StartTest(bot->GetPlayerbotAI(), testName);
+
+        sRandomPlayerbotMgr.SetValue(botGuid, "test", 0);
+    }
+#endif
 	//if (loginProgressBar && playerBots.size() < sRandomPlayerbotMgr.GetMaxAllowedBotCount()) { loginProgressBar->step(); }
 	//if (loginProgressBar && playerBots.size() >= sRandomPlayerbotMgr.GetMaxAllowedBotCount() - 1) {
     //if (loginProgressBar && playerBots.size() + 1 >= sRandomPlayerbotMgr.GetMaxAllowedBotCount()) {
@@ -4041,7 +4100,6 @@ void RandomPlayerbotMgr::OnPlayerLogin(Player* player)
             std::unique_lock<std::shared_mutex> lock(m_playersMutex);
             players[player->GetGUIDLow()] = player;
         }
-        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Including non-random bot player %s into random bot update", player->GetName());
     }
 }
 
@@ -4059,7 +4117,6 @@ void RandomPlayerbotMgr::OnBotLoginRegistration(Player* player)
             std::unique_lock<std::shared_mutex> lock(m_playersMutex);
             players[player->GetGUIDLow()] = player;
         }
-        sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Including non-random bot player %s into random bot update", player->GetName());
     }
 }
 

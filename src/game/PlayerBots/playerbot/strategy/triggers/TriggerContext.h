@@ -22,6 +22,10 @@
 #include "GlyphTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
+#ifdef GenerateBotTests
+#include "../tests/TestTriggers.h"
+#endif
+
 namespace ai
 {
     class TriggerContext : public NamedObjectContext<Trigger>
@@ -337,6 +341,10 @@ namespace ai
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+
+#ifdef GenerateBotTests
+            creators["test ready"] = [](PlayerbotAI* ai) { return new TestReadyTrigger(ai); };
+#endif
         }
     };
 };

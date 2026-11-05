@@ -461,6 +461,46 @@ void RandomPlayerbotFactory::CreateRandomBots()
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Random bot characters deleted");
     }
 
+    {
+            auto temporarybots = CharacterDatabase.PQuery("SELECT characters.guid, characters.account FROM ai_playerbot_random_bots JOIN characters ON (characters.guid = ai_playerbot_random_bots.bot AND characters.name = ai_playerbot_random_bots.data) WHERE ai_playerbot_random_bots.event = 'temporary'");
+
+        if (temporarybots)
+        {
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Deleting temporary bots");
+
+            do
+            {
+                Field* fields = temporarybots->Fetch();
+                uint32 guid = fields[0].GetUInt32();
+                uint32 accountId = fields[1].GetUInt32();
+
+                CharacterDatabase.PExecute("DELETE FROM ai_playerbot_random_bots WHERE bot = %u", guid);
+                Player::DeleteFromDB(ObjectGuid(HIGHGUID_PLAYER, guid), accountId, true, true);
+
+                if (sAccountMgr.GetCharactersCount(accountId) == 0)
+                    sAccountMgr.DeleteAccount(accountId);
+            } while (temporarybots->NextRow());
+        }
+
+        CharacterDatabase.Execute("DELETE FROM ai_playerbot_random_bots WHERE ai_playerbot_random_bots.event = 'temporary'");
+
+        auto temporaryAccounts = LoginDatabase.PQuery("SELECT id FROM account WHERE username like '%s%' and id >= %u", sPlayerbotAIConfig.randomBotAccountPrefix.c_str(), sPlayerbotAIConfig.randomBotAccountCount);
+
+        if (temporaryAccounts)
+        {
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Deleting temporary empty bot accounts");
+
+            do
+            {
+                Field* fields = temporaryAccounts->Fetch();
+                uint32 accountId = fields[0].GetUInt32();
+
+                if (sAccountMgr.GetCharactersCount(accountId) == 0)
+                    sAccountMgr.DeleteAccount(accountId);
+            } while (temporaryAccounts->NextRow());
+        }
+    }
+
     int totalAccCount = sPlayerbotAIConfig.randomBotAccountCount;
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Creating random bot accounts...");
 

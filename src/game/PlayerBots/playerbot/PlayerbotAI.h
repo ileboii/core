@@ -281,6 +281,7 @@ enum class ActivePiorityType : uint8
     IS_REAL_PLAYER = 0,
     HAS_REAL_PLAYER_MASTER = 1,
     IN_GROUP_WITH_REAL_PLAYER,
+    IS_RUNNING_TEST,
     IN_BATTLEGROUND,
     IN_INSTANCE,
     VISIBLE_FOR_PLAYER,
@@ -629,6 +630,7 @@ public:
     bool ChannelHasRealPlayer(std::string channelName);
 
 
+    PlayerbotHolder* GetHolder() const;
     ActivePiorityType GetPriorityType();
     std::pair<uint32,uint32> GetPriorityBracket(ActivePiorityType type);
     bool AllowActive(ActivityType activityType);

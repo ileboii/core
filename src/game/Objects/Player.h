@@ -1098,8 +1098,6 @@ class Player final: public Unit
         uint32 m_ingametime;
         QuestStatusMap mQuestStatus;
         void AdjustQuestReqItemCount(Quest const* pQuest, QuestStatusData& questStatusData);
-        bool CanGiveQuestSourceItemIfNeed(Quest const* pQuest, ItemPosCountVec* dest = nullptr) const;
-        void GiveQuestSourceItemIfNeed(Quest const* pQuest);
 
         uint16 FindQuestSlot(uint32 questId) const;
         uint32 GetQuestSlotQuestId(uint16 slot) const { return GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET); }
@@ -1134,6 +1132,8 @@ class Player final: public Unit
         bool CanRewardQuest(Quest const* pQuest, bool msg) const;
         bool CanRewardQuest(Quest const* pQuest, uint32 reward, bool msg) const;
         void AddQuest(Quest const* pQuest, Object* questGiver);
+        bool CanGiveQuestSourceItemIfNeed(Quest const* pQuest, ItemPosCountVec* dest = nullptr) const;
+        void GiveQuestSourceItemIfNeed(Quest const* pQuest);
         void FullQuestComplete(uint32 questId); // Equivalent to .quest complete
         void CompleteQuest(uint32 questId);
         void RemoveQuest(uint32 questId);

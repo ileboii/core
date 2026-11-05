@@ -40,7 +40,7 @@ static std::vector<std::string> GetConfigValues(Config const& cfg, const std::st
     while (std::getline(file, line))
     {
         // Skip empty lines and comments
-        size_t start = line.find_first_not_of(" \t");
+        size_t start = line.find_first_not_of(" 	");
         if (start == std::string::npos || line[start] == '#' || line[start] == '[')
             continue;
 
@@ -50,7 +50,7 @@ static std::vector<std::string> GetConfigValues(Config const& cfg, const std::st
 
         // Extract key name (trimmed)
         std::string key = line.substr(start, eqPos - start);
-        size_t keyEnd = key.find_last_not_of(" \t");
+        size_t keyEnd = key.find_last_not_of(" 	");
         if (keyEnd != std::string::npos)
             key = key.substr(0, keyEnd + 1);
 
@@ -338,6 +338,36 @@ bool PlayerbotAIConfig::Initialize()
         loginCriteria.push_back({ "logoff,classrace,level,online" });
         loginCriteria.push_back({ "logoff,classrace,level" });
         loginCriteria.push_back({ "logoff,classrace" });
+
+#ifdef GenerateBotTests
+    startupRunTests.clear();
+    startupRunTestsPending = false;
+
+    auto trimCopy = [](std::string const& value) -> std::string
+    {
+        size_t begin = value.find_first_not_of("\t\r\n");
+        if (begin == std::string::npos)
+            return "";
+
+        size_t end = value.find_last_not_of("\t\r\n");
+        return value.substr(begin, end - begin + 1);
+    };
+
+    for (uint32 i = 1; i <= 32; ++i)
+    {
+        std::string key = "AiPlayerbot.RunTest." + std::to_string(i) + ".runtest";
+        if (!config.IsSet(key.c_str()))
+            continue;
+
+        std::string runTestParam = trimCopy(config.GetStringDefault(key.c_str(), ""));
+        if (!runTestParam.empty())
+            startupRunTests.push_back(runTestParam);
+    }
+
+    startupRunTestsPending = !startupRunTests.empty();
+    if (startupRunTestsPending)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loaded %u startup runtest entries from config", static_cast<uint32>(startupRunTests.size()));
+#endif
     }
     
 
