@@ -2519,6 +2519,7 @@ void RandomPlayerbotMgr::MovePlayerBot(uint32 guid, PlayerbotHolder* newHolder)
 
     {
         std::unique_lock<std::shared_mutex> lock(m_playersMutex);
+        players[guid] = this->GetPlayerBot(guid);
     }
     PlayerbotHolder::MovePlayerBot(guid, newHolder);
 }
@@ -5502,6 +5503,36 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleLoginDebug(std::string p
 }
 
 
+#ifdef GenerateBotTests
+std::list<std::string> RandomPlayerbotMgr::HandleConsoleTravelSample(std::string param)
+{
+    std::list<std::string> messages;
+
+    std::vector<std::string> parts = Qualified::getMultiQualifiers(param, " ");
+    if (parts.empty())
+    {
+        messages.push_back("usage: travelsample <bot> <levels> <purposes> [runs]");
+        return messages;
+    }
+
+    Player* bot = sObjectAccessor.FindPlayerByName(parts[0].c_str());
+    if (!bot || !bot->GetPlayerbotAI())
+    {
+        messages.push_back("travelsample: bot not found: " + parts[0]);
+        return messages;
+    }
+
+    size_t nameLen = parts[0].size();
+    std::string rest = param.size() > nameLen + 1 ? param.substr(nameLen + 1) : "";
+    return TravelProbe::HandleTravelSample(bot, rest);
+}
+
+std::list<std::string> RandomPlayerbotMgr::HandleConsoleTravelTrace(std::string param)
+{
+    return TravelProbe::HandleTravelTrace(param);
+}
+#endif
+
 uint32 RandomPlayerbotMgr::GetOrCreateAccount(Player* master, std::string& error)
 {
     uint32 maxCharsPerAccount = 9;
@@ -5540,7 +5571,9 @@ uint32 RandomPlayerbotMgr::GetOrCreateAccount(Player* master, std::string& error
             else
                 password = accountName;
 
+            LoginDatabase.BeginTransaction();
             AccountOpResult result = sAccountMgr.CreateAccount(accountName, password);
+            LoginDatabase.CommitTransactionDirect();
 
             if (result == AOR_OK)
             {

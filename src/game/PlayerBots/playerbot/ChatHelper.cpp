@@ -6,8 +6,22 @@
 #include <numeric>
 #include <iomanip>
 #include <regex>
+#include <algorithm>
 
 using namespace ai;
+
+static std::string NormalizeChatToken(const std::string& text)
+{
+    std::string normalized = text;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    std::replace(normalized.begin(), normalized.end(), '_', ' ');
+    std::replace(normalized.begin(), normalized.end(), '-', ' ');
+    size_t first = normalized.find_first_not_of(' ');
+    if (first == std::string::npos)
+        return "";
+    size_t last = normalized.find_last_not_of(' ');
+    return normalized.substr(first, last - first + 1);
+}
 
 std::map<std::string, uint32> ChatHelper::consumableSubClasses;
 std::map<std::string, uint32> ChatHelper::tradeSubClasses;
@@ -1040,13 +1054,15 @@ std::string ChatHelper::formatTeam(Team team)
 
 uint32 ChatHelper::parseClass(const std::string& text)
 {
+    std::string normalized = NormalizeChatToken(text);
+
     for (auto& [classId, className] : classes)
-        if ((_stricmp(className.c_str(), text.c_str()) == 0))
+        if (NormalizeChatToken(className) == normalized)
             return classId;
 
-    if (Qualified::isValidNumberString(text))
+    if (Qualified::isValidNumberString(normalized))
     {
-        uint32 id = static_cast<uint32>(stoi(text));
+        uint32 id = static_cast<uint32>(stoi(normalized));
         if (classes.count(id))
             return id;
     }
@@ -1061,13 +1077,15 @@ std::string ChatHelper::formatClass(uint8 cls)
 
 uint32 ChatHelper::parseRace(const std::string& text)
 {
+    std::string normalized = NormalizeChatToken(text);
+
     for (auto& [raceId, raceName] : races)
-        if ((_stricmp(raceName.c_str(), text.c_str()) == 0))
+        if (NormalizeChatToken(raceName) == normalized)
             return raceId;
 
-    if (Qualified::isValidNumberString(text))
+    if (Qualified::isValidNumberString(normalized))
     {
-        uint32 id = static_cast<uint32>(stoi(text));
+        uint32 id = static_cast<uint32>(stoi(normalized));
         if (races.count(id))
             return id;
     }

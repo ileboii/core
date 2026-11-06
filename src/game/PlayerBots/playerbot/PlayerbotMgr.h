@@ -2,6 +2,7 @@
 #define _PLAYERBOTMGR_H
 
 #include "Common.h"
+#include "PlayerbotAIAware.h"
 #include "PlayerbotAIBase.h"
 #include "ObjectGuid.h"
 #include "Database/DatabaseEnv.h"
@@ -69,6 +70,8 @@ public:
     void DepositTestResult(const std::string& testName, const std::string& result);
     void UpdatePendingTests(uint32 elapsed);
     void QueueWatchReport();
+    void QueueBotDelete(ObjectGuid guid);
+    std::vector<ObjectGuid> pendingBotDeletes;
     std::mutex testResultsMutex;
     std::vector<PendingTest> pendingTests;
     std::vector<PendingTest> testResults;

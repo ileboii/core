@@ -484,7 +484,7 @@ void RandomPlayerbotFactory::CreateRandomBots()
 
         CharacterDatabase.Execute("DELETE FROM ai_playerbot_random_bots WHERE ai_playerbot_random_bots.event = 'temporary'");
 
-        auto temporaryAccounts = LoginDatabase.PQuery("SELECT id FROM account WHERE username like '%s%' and id >= %u", sPlayerbotAIConfig.randomBotAccountPrefix.c_str(), sPlayerbotAIConfig.randomBotAccountCount);
+        auto temporaryAccounts = LoginDatabase.PQuery("SELECT id FROM account WHERE username like '%s%%' and id >= %u", sPlayerbotAIConfig.randomBotAccountPrefix.c_str(), sPlayerbotAIConfig.randomBotAccountCount);
 
         if (temporaryAccounts)
         {

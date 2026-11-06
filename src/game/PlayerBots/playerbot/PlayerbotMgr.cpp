@@ -555,7 +555,7 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
         else
             bot->GetPlayerbotAI()->SetPlayerFriend(false);
 
-        if (sPlayerbotAIConfig.instantRandomize && !sPlayerbotAIConfig.disableRandomLevels && !bot->GetTotalPlayedTime())
+        if (sPlayerbotAIConfig.instantRandomize && !sPlayerbotAIConfig.disableRandomLevels && !bot->GetTotalPlayedTime() && !sPlayerbotAIConfig.IsFreeAltBot(bot))
         {
             sRandomPlayerbotMgr.InstaRandomize(bot);
         }
@@ -2056,35 +2056,22 @@ std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::
     WorldSession* botSession = new WorldSession(accountId, std::shared_ptr<WorldSocket>(), SEC_PLAYER, 0, LOCALE_enUS);
 
 
-    Player* newBot = new Player(botSession);
-    if (!newBot->Create(sObjectMgr.GeneratePlayerLowGuid(), name, race, cls, gender, skin, face, hairStyle, hairColor, facialHair))
+    uint32 botGuid = sObjectMgr.GeneratePlayerLowGuid();
+    Player::SelectRandomAppearance(race, gender, hairStyle, hairColor, face, facialHair, skin);
+    if (!Player::SaveNewPlayer(botSession, botGuid, name, race, cls, gender, skin, face, hairStyle, hairColor, facialHair))
     {
         delete botSession;
-        delete newBot;
         messages.push_back("Failed to create character");
         return messages;
     }
 
-    sObjectAccessor.AddObject(newBot);
-
-    uint32 botGuid = newBot->GetGUIDLow();
-
     if (level > 1)
     {
-        newBot->SetLevel(level);
-        newBot->SetUInt32Value(PLAYER_XP, 0);
-        newBot->InitStatsForLevel(true);
-        newBot->InitTaxiNodes();
-        newBot->InitTalentForLevel();
-        newBot->LearnDefaultSpells();
-
-        std::ostringstream out;
-        ChangeTalentsAction::AutoSelectTalents(newBot, &out, role);
-
+        CharacterDatabase.BeginTransaction(botGuid);
+        CharacterDatabase.PExecute("UPDATE characters SET level = %u WHERE guid = %u", level, botGuid);
+        CharacterDatabase.CommitTransaction();
         sRandomPlayerbotMgr.SetValue(botGuid, "create levelup", 1);
     }
-    else
-        newBot->SetLevel(1);
 
     sRandomPlayerbotMgr.SetValue(botGuid, "create group", 1, groupWith);
     sRandomPlayerbotMgr.SetValue(botGuid, "create gear", 1, gear);
@@ -2100,17 +2087,13 @@ std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::
 
     if (master)
     {
-        newBot->SetMap(master->GetMap());
-        newBot->SetPosition(master->GetPositionX(), master->GetPositionY(), master->GetPositionZ(), master->GetOrientation());
+        CharacterDatabase.BeginTransaction(botGuid);
+        CharacterDatabase.PExecute("UPDATE characters SET map = %u, position_x = %f, position_y = %f, position_z = %f, orientation = %f WHERE guid = %u", master->GetMapId(), master->GetPositionX(), master->GetPositionY(), master->GetPositionZ(), master->GetOrientation(), botGuid);
+        CharacterDatabase.CommitTransaction();
     }
-
-    newBot->SaveToDB();
 
     messages.push_back("Bot created: " + name);
 
-    botSession->LogoutPlayer(true);
-    sObjectAccessor.RemoveObject(newBot);
-    delete newBot;
     delete botSession;
 
     if (autoAdd)
@@ -2442,8 +2425,23 @@ std::list<std::string> PlayerbotHolder::HandleRunTest(Player* master, const std:
     return messages;
 }
 
+void PlayerbotHolder::QueueBotDelete(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(testResultsMutex);
+    pendingBotDeletes.push_back(guid);
+}
+
 void PlayerbotHolder::UpdatePendingTests(uint32 elapsed)
 {
+    std::vector<ObjectGuid> botsToDelete;
+    {
+        std::lock_guard<std::mutex> lock(testResultsMutex);
+        botsToDelete.swap(pendingBotDeletes);
+    }
+
+    for (ObjectGuid const& guid : botsToDelete)
+        DeleteBot(guid, true);
+
     std::lock_guard<std::mutex> lock(testResultsMutex);
 
     QueueWatchReport();

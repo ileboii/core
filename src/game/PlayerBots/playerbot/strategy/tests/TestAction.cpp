@@ -403,8 +403,10 @@ void TestAction::ReportResult()
 
         LogToConsole(logLine);
 
+#ifdef GenerateBotTests
         if (ai->GetHolder())
-            ai->GetHolder()->DeleteBot(bot->GetObjectGuid(), false);        
+            ai->GetHolder()->QueueBotDelete(bot->GetObjectGuid());
+#endif
     }
 }
 

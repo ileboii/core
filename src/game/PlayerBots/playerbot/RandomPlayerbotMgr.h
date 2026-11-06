@@ -2,6 +2,7 @@
 #define _RandomPlayerbotMgr_H
 
 #include "Common.h"
+#include "PlayerbotAIAware.h"
 #include "PlayerbotAIBase.h"
 #include "PlayerbotMgr.h"
 #include "playerbot/PlayerbotAIConfig.h"
