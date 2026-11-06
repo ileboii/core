@@ -4076,8 +4076,9 @@ Player* RandomPlayerbotMgr::GetRandomPlayer()
     if (players.empty())
         return NULL;
 
-    uint32 index = urand(0, players.size() - 1);
-    return players[index];
+    PlayerBotMap::const_iterator it = players.begin();
+    std::advance(it, urand(0, players.size() - 1));
+    return it->second;
 }
 
 Player* RandomPlayerbotMgr::GetPlayer(uint32 playerGuid)

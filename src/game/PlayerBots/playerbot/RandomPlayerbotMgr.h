@@ -107,7 +107,14 @@ public:
         Player* GetRandomPlayer();
         PlayerBotMap& GetPlayers() { return players; };
         // Thread-safe snapshot of real player map for use from map update threads (Continents.Instanciate sub-maps).
-        PlayerBotMap GetPlayersSnapshot() { std::shared_lock<std::shared_mutex> lock(m_playersMutex); return players; }
+        PlayerBotMap GetPlayersSnapshot()
+        {
+            PlayerBotMap subset;
+            std::shared_lock<std::shared_mutex> lock(m_playersMutex);
+            for (auto& p : players)
+                subset[p.first] = p.second;
+            return subset;
+        }
         bool HasPlayers() { std::shared_lock<std::shared_mutex> lock(m_playersMutex); return !players.empty(); }
         uint32 GetPlayersCount() { std::shared_lock<std::shared_mutex> lock(m_playersMutex); return players.size(); }
         std::shared_mutex& GetPlayersMutex() { return m_playersMutex; }
