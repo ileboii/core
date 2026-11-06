@@ -4,6 +4,9 @@
 #include "DebugAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include <playerbot/TravelNode.h>
+#ifdef GenerateBotTests
+#include "playerbot/strategy/tests/TestRegistry.h"
+#endif
 #include "ChooseTravelTargetAction.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/actions/RpgSubActions.h"
@@ -1312,6 +1315,44 @@ bool DebugAction::HandleTest(Event& event, Player* requester, const std::string&
     {
         param = text.substr(5);
     }
+
+    if (param.empty())
+    {
+        ai->TellPlayer(requester, "=== debug test ===");
+        ai->TellPlayer(requester, "Usage: debug test <command>");
+        ai->TellPlayer(requester, "");
+        ai->TellPlayer(requester, "  locations          - List all test locations");
+        ai->TellPlayer(requester, "  locate <name>      - Test location resolution");
+        ai->TellPlayer(requester, "  [clear expired]  - Clear expired AI values");
+        return true;
+    }
+
+#ifdef GenerateBotTests
+    if (param == "locations")
+    {
+        ai->TellPlayer(requester, "=== Test Locations ===");
+        auto tests = TestRegistry::GetAvailableTests();
+        ai->TellPlayer(requester, "Available tests: " + std::to_string(tests.size()));
+        return true;
+    }
+
+    if (param.find("locate ") == 0)
+    {
+        std::string locationName = param.substr(7);
+        GuidPosition loc;
+        if (TestRegistry::ParseLocation(locationName, loc))
+        {
+            std::ostringstream out;
+            out << locationName << " -> map=" << loc.mapId << " pos=(" << std::fixed << std::setprecision(2) << loc.x << ", " << loc.y << ", " << loc.z << ")";
+            ai->TellPlayer(requester, out.str());
+        }
+        else
+        {
+            ai->TellPlayer(requester, "Failed to resolve location: " + locationName);
+        }
+        return true;
+    }
+#endif
 
     ai->GetAiObjectContext()->ClearExpiredValues(param, 10);
     return true;

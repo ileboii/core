@@ -7,6 +7,9 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#ifdef GenerateBotTests
+#include "playerbot/strategy/tests/TravelProbe.h"
+#endif
 #include "GuildMgr.h"
 #include <iomanip>
 
@@ -163,6 +166,10 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
 //This should at some point be rewritten to be denser or perhaps logic moved to ->getTitle()
 void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget)
 {
+#ifdef GenerateBotTests
+    TravelProbe::ReportFlip(bot, newTarget, oldTarget);
+#endif
+
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     AiObjectContext* context = ai->GetAiObjectContext();
 
@@ -1459,6 +1466,10 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
 
 bool RequestQuestTravelTargetAction::isAllowed() const
 {
+#ifdef GenerateBotTests
+    if (AI_VALUE2(bool, "manual bool", "is running test"))
+        return true;
+#endif
     if (AI_VALUE(bool, "should get money"))
         return urand(1, 100) < 90;
     else

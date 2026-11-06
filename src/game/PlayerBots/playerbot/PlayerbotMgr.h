@@ -2,11 +2,14 @@
 #define _PLAYERBOTMGR_H
 
 #include "Common.h"
+#include "PlayerbotAIAware.h"
 #include "PlayerbotAIBase.h"
 #include "ObjectGuid.h"
 #include "Database/DatabaseEnv.h"
 #include "SharedDefines.h"
 #include <shared_mutex>
+#include <mutex>
+#include <vector>
 
 
 class WorldPacket;
@@ -47,6 +50,32 @@ public:
     std::string ListBots(Player* master, const std::string param);
     PlayerBotMap& GetAllBots() { return playerBots; }
     uint32 GetPlayerbotsAmount() const;
+    bool DeleteBot(ObjectGuid guid, bool allowInstant = true);
+
+#ifdef GenerateBotTests
+    std::list<std::string> HandleRunTest(Player* master, const std::string param, AccountTypes security);
+
+    struct PendingTest
+    {
+        std::string testName;
+        std::string result;
+        bool pending;
+        bool completed;
+        uint32 expectedBotSpawnCount = 1;
+        uint8 retry = 0;
+        uint32 gateSkips = 0;
+        time_t started = 0;
+    };
+
+    void DepositTestResult(const std::string& testName, const std::string& result);
+    void UpdatePendingTests(uint32 elapsed);
+    void QueueWatchReport();
+    void QueueBotDelete(ObjectGuid guid);
+    std::vector<ObjectGuid> pendingBotDeletes;
+    std::mutex testResultsMutex;
+    std::vector<PendingTest> pendingTests;
+    std::vector<PendingTest> testResults;
+#endif
 
     static std::string GetCommandTexts(const std::string& command);
     static std::unordered_map<std::string, std::string> GetCommandTexts();
@@ -82,6 +111,9 @@ private:
     std::string HandleBotC(Player* bot, Player* master, const std::string param);
     std::string HandleConsoleWhisper(Player* bot, Player* master, const std::string param);
     std::string HandleConsoleCmd(Player* bot, Player* master, const std::string param);
+#ifdef GenerateBotTests
+    std::string HandleBotTest(Player* bot, Player* master, const std::string param);
+#endif
     std::string HandleBotDo(Player* bot, Player* master, const std::string param);
     std::string HandleBotRecord(Player* bot, Player* master, const std::string param);
     std::string HandleBotRead(Player* bot, Player* master, const std::string param);

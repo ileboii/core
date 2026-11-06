@@ -367,6 +367,8 @@ public:
     uint32 loginBotsNearPlayerRange;
     std::vector<std::string> defaultLoginCriteria;
     std::vector<std::vector<std::string>> loginCriteria;
+    std::vector<std::string> startupRunTests;
+    bool startupRunTestsPending = false;
 
     bool jumpInBg;
     bool jumpWithPlayer;

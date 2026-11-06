@@ -81,6 +81,10 @@
 #include "KarazhanDungeonActions.h"
 #include "NaxxramasDungeonActions.h"
 
+#ifdef GenerateBotTests
+#include "../tests/TestAction.h"
+#endif
+
 namespace ai
 {
     class ActionContext : public NamedObjectContext<Action>
@@ -404,6 +408,10 @@ namespace ai
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
+
+#ifdef GenerateBotTests
+            creators["test"] = [](PlayerbotAI* ai) { return new TestAction(ai); };
+#endif
         }    
     };
 };

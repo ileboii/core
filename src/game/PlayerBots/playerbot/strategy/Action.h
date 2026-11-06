@@ -59,6 +59,8 @@ namespace ai
     class Action : public AiNamedObject
 	{
 	public:
+        virtual void Reset() {}
+
         Action(PlayerbotAI* ai, std::string name = "action", uint32 duration = sPlayerbotAIConfig.reactDelay) : AiNamedObject(ai, name), verbose(false), duration(duration) {}
         virtual ~Action(void) {}
 
@@ -72,7 +74,6 @@ namespace ai
         virtual NextAction** getContinuers() { return NULL; }
         virtual ActionThreatType getThreatType() { return ActionThreatType::ACTION_THREAT_NONE; }
         void Update() {}  //Nonfunctional see AiObjectContext::Update() to enable.
-        void Reset() {}
         virtual Unit* GetTarget();
         virtual Value<Unit*>* GetTargetValue();
         virtual std::string GetTargetName() { return "self target"; }
