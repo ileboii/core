@@ -576,7 +576,7 @@ void PlayerbotFactory::InitPet()
 
     if (!pet)
     {
-        Map* map = bot->GetMap();
+        Map* map = bot->FindMap();
         if (!map)
             return;
 
@@ -693,7 +693,7 @@ void PlayerbotFactory::InitPet()
 
 void PlayerbotFactory::InitPetSpells(Pet* initializedPet)
 {
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     if (!map)
         return;
 

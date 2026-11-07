@@ -1,0 +1,89 @@
+#pragma once
+
+#include <string>
+#include "TestContext.h"
+
+class Player;
+class PlayerbotAI;
+
+namespace MaNGOS
+{
+    class CreatureByEntryInRangeCheck
+    {
+        public:
+            CreatureByEntryInRangeCheck(WorldObject const* obj, float range, uint32 entry, bool wantAlive) :
+                i_obj(obj), i_range(range), i_entry(entry), i_wantAlive(wantAlive) {}
+            WorldObject const& GetFocusObject() const { return *i_obj; }
+            bool operator()(Creature* u)
+            {
+                if (u->IsAlive() != i_wantAlive)
+                    return false;
+                if (u->IsPet() || u->IsTotem())
+                    return false;
+                if (i_entry && u->GetEntry() != i_entry)
+                    return false;
+                return i_obj->IsWithinDistInMap(u, i_range);
+            }
+        private:
+            WorldObject const* i_obj;
+            float i_range;
+            uint32 i_entry;
+            bool i_wantAlive;
+    };
+}
+
+namespace ai
+{
+    class TestContext;
+
+    // Summed XP total (level floor + current XP) over all in-world group members, or just the bot
+    // when ungrouped. Monotonic per member; callers measure the delta against a captured baseline.
+    uint32 GetPartyXpTotal(Player* bot);
+
+    class TextComponent
+    {
+    public:
+        virtual bool Matches(const std::string& monitorStr) const { return monitorStr.find(GetName()) == 0; }
+        uint32 GetNameSize() const { return GetName().size() + 1; }
+    protected:
+        static TestResult TrySplitOnce(const std::string& input, const std::string& delimiter,
+            std::string& left, std::string& right, std::string& message,
+            const std::string& componentName, bool allowEmptyRight = false);
+        static TestResult TryExtractBetween(const std::string& input, const std::string& beginDelimiter,
+            const std::string& endDelimiter, std::string& value, std::string& message,
+            const std::string& componentName);
+        static TestResult TryParseComparisonValue(const std::string& input, std::string& valueName, std::string& op, std::string& valueToCompareTo,
+            std::string& message, const std::string& componentName);
+        static TestResult TryParseUInt32Strict(const std::string& input, uint32& outValue,
+            std::string& message, const std::string& componentName);
+        static TestResult TryParseUInt64Strict(const std::string& input, uint64& outValue,
+            std::string& message, const std::string& componentName);
+        static TestResult TryParseFloatStrict(const std::string& input, float& outValue,
+            std::string& message, const std::string& componentName);
+        virtual std::string GetName() const = 0;
+    };
+
+    class TestMonitor : public TextComponent
+    {
+    public:
+        virtual TestResult Check(const std::string& monitorStr, Player* bot, TestContext& ctx, std::string& message) const;
+    protected:
+        virtual bool IsConditionMet(const std::string& monitorStr, Player* bot, TestContext& ctx) const = 0;
+    };
+
+    class TestCommand : public TextComponent
+    {
+    public:
+        virtual TestResult Execute(const std::string& params, Player* bot, PlayerbotAI* ai, TestContext& ctx, std::string& message) = 0;
+    };
+
+    class TestRequire : public TestCommand
+    {
+    public:
+    };
+
+    class TestCleanup : public TestCommand
+    {
+    public:
+    };
+}

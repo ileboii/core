@@ -2858,6 +2858,18 @@ bool PlayerbotAI::HasStrategy(const std::string& name, BotState type)
 
 void PlayerbotAI::ResetStrategies(bool autoLoad)
 {
+#ifdef GenerateBotTests
+    std::map<uint8, std::vector<std::string>> testStrategies;
+    for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
+    {
+        for (std::string_view strat : engines[i]->GetStrategies())
+        {
+            if (strat.rfind("test::", 0) == 0)
+                testStrategies[i].push_back(std::string(strat));
+        }
+    }
+#endif
+
     for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         engines[i]->initMode = true;
@@ -2871,6 +2883,14 @@ void PlayerbotAI::ResetStrategies(bool autoLoad)
 
     if (autoLoad && HasPlayerRelation())
         sPlayerbotDbStore.Load(this);
+
+#ifdef GenerateBotTests
+    for (auto& [state, strats] : testStrategies)
+    {
+        for (const auto& strat : strats)
+            engines[state]->addStrategy(strat);
+    }
+#endif
 
     StanceValue* stanceValue = (StanceValue*)aiObjectContext->GetValue<Stance*>("stance");
 
@@ -6365,8 +6385,21 @@ enum ActivityType
 
 */
 
+PlayerbotHolder* PlayerbotAI::GetHolder() const
+{
+    if (sRandomPlayerbotMgr.IsRandomBot(bot))
+        return &sRandomPlayerbotMgr;
+
+    return bot->GetPlayerbotMgr();
+}
+
 ActivePiorityType PlayerbotAI::GetPriorityType()
 {
+#ifdef GenerateBotTests
+    AiObjectContext* context = GetAiObjectContext();
+    if (AI_VALUE2(bool, "manual bool", "is running test"))
+        return ActivePiorityType::IS_RUNNING_TEST;
+#endif
     //First priority - priorities disabled or has player master. Always active.
     if (sPlayerbotAIConfig.disableActivityPriorities || HasRealPlayerMaster())
         return ActivePiorityType::HAS_REAL_PLAYER_MASTER;
@@ -6531,6 +6564,7 @@ std::pair<uint32, uint32> PlayerbotAI::GetPriorityBracket(ActivePiorityType type
     case ActivePiorityType::IN_GROUP_WITH_REAL_PLAYER:
     case ActivePiorityType::VISIBLE_FOR_PLAYER:
     case ActivePiorityType::IN_BATTLEGROUND:
+    case ActivePiorityType::IS_RUNNING_TEST:
         return { 0,0 };
     case ActivePiorityType::IN_INSTANCE:
         return { 0,5 };
@@ -6588,6 +6622,7 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
         case ActivePiorityType::VISIBLE_FOR_PLAYER:
         case ActivePiorityType::IN_COMBAT:
         case ActivePiorityType::NEARBY_PLAYER:
+        case ActivePiorityType::IS_RUNNING_TEST:
             return true;
             break;
         case ActivePiorityType::IS_ALWAYS_ACTIVE:
