@@ -1288,6 +1288,58 @@ void RandomPlayerbotMgr::LoginFreeBots()
                     sRandomPlayerbotMgr.SetValue(botGuid, "create group", 0);
                 }
 
+                if (sRandomPlayerbotMgr.GetValue(botGuid, "create gear"))
+                {
+                    std::string gear = sRandomPlayerbotMgr.GetData(botGuid, "create gear");
+                    if (gear == "empty")
+                    {
+                        for (uint8 slot = 0; slot < EQUIPMENT_SLOT_END; ++slot)
+                        {
+                            player->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+                        }
+                    }
+                    else if (gear == "green" || gear == "uncommon")
+                    {
+                        PlayerbotFactory factory(player, player->GetLevel(), ITEM_QUALITY_UNCOMMON);
+                        factory.EquipGear();
+                    }
+                    else if (gear == "blue" || gear == "rare")
+                    {
+                        PlayerbotFactory factory(player, player->GetLevel(), ITEM_QUALITY_RARE);
+                        factory.EquipGear();
+                    }
+                    else if (gear == "purple" || gear == "epic")
+                    {
+                        PlayerbotFactory factory(player, player->GetLevel(), ITEM_QUALITY_EPIC);
+                        factory.EquipGear();
+                    }
+                    else if (gear == "upgrade")
+                    {
+                        PlayerbotFactory factory(player, player->GetLevel(), ITEM_QUALITY_NORMAL);
+                        factory.UpgradeGear(false);
+                    }
+                    else if (gear == "sync")
+                    {
+                        PlayerbotFactory factory(player, player->GetLevel(), ITEM_QUALITY_NORMAL);
+                        factory.UpgradeGear(true);
+                    }
+                    else if (gear == "best")
+                    {
+                        PlayerbotFactory factory(player, player->GetLevel());
+                        factory.EquipGearBest();
+                    }
+                    else if (gear == "partial")
+                    {
+                        PlayerbotFactory factory(player, player->GetLevel());
+                        factory.EquipGearPartialUpgrade();
+                    }
+                    else
+                    {
+                        PlayerbotFactory factory(player, player->GetLevel());
+                        factory.EquipGear();
+                    }
+                }
+
                 BotAlwaysOnline always = BotAlwaysOnline(sRandomPlayerbotMgr.GetValue(botGuid, "always"));
                 if (always != BotAlwaysOnline::ACTIVE)
                     botsToRemove.push_back({accountId, botGuid});
