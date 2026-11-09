@@ -51,6 +51,8 @@ public:
     PlayerBotMap& GetAllBots() { return playerBots; }
     uint32 GetPlayerbotsAmount() const;
     bool DeleteBot(ObjectGuid guid, bool allowInstant = true);
+    void CreateBot(Player* master, const std::string param, std::list<std::string>& messages, ObjectGuid& guid);
+    std::list<std::string> HandleGroup(Player* master, const std::string param, AccountTypes security);
 
 #ifdef GenerateBotTests
     std::list<std::string> HandleRunTest(Player* master, const std::string param, AccountTypes security);
@@ -104,7 +106,6 @@ private:
     std::list<std::string> HandleRaid(Player* master, const std::string param, AccountTypes security);
     std::list<std::string> HandleRaidLeader(Player* master, const std::string param, AccountTypes security);
     std::list<std::string> HandleCreate(Player* master, const std::string param, AccountTypes security);
-    std::list<std::string> HandleGroup(Player* master, const std::string param, AccountTypes security);
 
     std::string HandleBotAlways(Player* bot, Player* master, const std::string param);
     std::string HandleBotDebug(Player* bot, Player* master, const std::string param);

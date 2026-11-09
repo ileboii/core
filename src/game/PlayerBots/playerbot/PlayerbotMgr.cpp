@@ -1941,10 +1941,8 @@ std::string PlayerbotHolder::HandleBotTest(Player* bot, Player* master, const st
 }
 #endif
 
-std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::string param, AccountTypes security)
+void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::list<std::string>& messages, ObjectGuid& guid)
 {
-    std::list<std::string> messages;
-
     // Allow null master for RA/console usage
     // Player* master can be null when called via .rndbot commands
 
@@ -2005,7 +2003,7 @@ std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::
     if (accountId == 0)
     {
         messages.push_back(error);
-        return messages;
+        return;
     }
 
     uint32 maxCharsPerAccount = 9;
@@ -2016,7 +2014,7 @@ std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::
     if (sAccountMgr.GetCharactersCount(accountId) >= maxCharsPerAccount)
     {
         messages.push_back("Account has max characters");
-        return messages;
+        return;
     }
 
     uint8 skin = 0, face = 0, hairStyle = 0, hairColor = 0, facialHair = 0;
@@ -2027,7 +2025,7 @@ std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::
         if (result)
         {
             messages.push_back("Name already exists");
-            return messages;
+            return;
         }
     }
 
@@ -2057,12 +2055,13 @@ std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::
 
 
     uint32 botGuid = sObjectMgr.GeneratePlayerLowGuid();
+    guid = ObjectGuid(HIGHGUID_PLAYER, botGuid);
     Player::SelectRandomAppearance(race, gender, hairStyle, hairColor, face, facialHair, skin);
     if (!Player::SaveNewPlayer(botSession, botGuid, name, race, cls, gender, skin, face, hairStyle, hairColor, facialHair))
     {
         delete botSession;
         messages.push_back("Failed to create character");
-        return messages;
+        return;
     }
 
     if (level > 1)
@@ -2105,9 +2104,18 @@ std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::
     {
         messages.push_back("Use '.rndbot add " + name + "' to bring this bot online");
     }
+}
+
+std::list<std::string> PlayerbotHolder::HandleCreate(Player* master, const std::string param, AccountTypes security)
+{
+    std::list<std::string> messages;
+    ObjectGuid guid;
+
+    CreateBot(master, param, messages, guid);
 
     return messages;
 }
+
 std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::string param, AccountTypes security)
 {
     std::list<std::string> messages;

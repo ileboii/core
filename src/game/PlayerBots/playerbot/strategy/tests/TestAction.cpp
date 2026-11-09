@@ -15,6 +15,8 @@
 #include "MonitorQuest.h"
 #include "CommandSetup.h"
 #include "CommandFlow.h"
+#include "CommandParty.h"
+#include "CleanupParty.h"
 #include "CommandDebug.h"
 #include "CommandQuest.h"
 #include "RequireState.h"
@@ -35,6 +37,7 @@ TestAction::TestAction(PlayerbotAI* ai, std::string name)
     RegisterCommands();
     RegisterMonitors();
     commands.push_back(std::make_unique<RequireEquip>());
+    commands.push_back(std::make_unique<CleanupParty>());
     TestRegistry::GetAvailableTests();
 }
 
@@ -55,6 +58,10 @@ void TestAction::RegisterCommands()
     commands.push_back(std::make_unique<CommandKillFocus>());
     commands.push_back(std::make_unique<CommandAwaitFocusCorpse>());
     commands.push_back(std::make_unique<CommandSetupClearMobs>());
+    commands.push_back(std::make_unique<CommandPartySpawnBot>());
+    commands.push_back(std::make_unique<CommandPartyDespawnBot>());
+    commands.push_back(std::make_unique<CommandPartyForm>());
+    commands.push_back(std::make_unique<CommandPartySpawnGroup>());
     commands.push_back(std::make_unique<CommandFlowObserve>());
     commands.push_back(std::make_unique<CommandFlowMonitor>());
     commands.push_back(std::make_unique<CommandFlowWaitGroup>());
