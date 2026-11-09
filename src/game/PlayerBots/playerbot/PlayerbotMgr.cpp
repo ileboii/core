@@ -2055,7 +2055,6 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
 
 
     uint32 botGuid = sObjectMgr.GeneratePlayerLowGuid();
-    guid = ObjectGuid(HIGHGUID_PLAYER, botGuid);
     Player::SelectRandomAppearance(race, gender, hairStyle, hairColor, face, facialHair, skin);
     if (!Player::SaveNewPlayer(botSession, botGuid, name, race, cls, gender, skin, face, hairStyle, hairColor, facialHair))
     {
@@ -2063,6 +2062,8 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
         messages.push_back("Failed to create character");
         return;
     }
+
+    guid = ObjectGuid(HIGHGUID_PLAYER, botGuid);
 
     if (level > 1)
     {
@@ -2132,6 +2133,23 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
     BotRoles masterRole = AiFactory::GetPlayerRoles(master);
     uint8 groupSize = 5;
     uint8 currentGroupSize = 1;
+
+    std::string passThroughParam;
+    std::vector<std::string> args = Qualified::getMultiQualifiers(param, " ");
+    for (const auto& arg : args)
+    {
+        size_t eqPos = arg.find('=');
+        if (eqPos == std::string::npos)
+            continue;
+
+        std::string key = arg.substr(0, eqPos);
+        std::string value = arg.substr(eqPos + 1);
+
+        if (key == "size" && Qualified::isValidNumberString(value))
+            groupSize = stoi(value);
+        else
+            passThroughParam += key + "=" + value + " ";
+    }
 
     std::map<uint8, std::map<uint8, uint8>> allowedClassNr;
     allowedClassNr[0][BOT_ROLE_TANK] = 1;
@@ -2205,7 +2223,7 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
         }
 
         std::ostringstream paramStr;
-        paramStr << "level=" << masterLevel << " class=" << ChatHelper::formatClass(cls) << " group=" << master->GetName();
+        paramStr << "level=" << masterLevel << " class=" << ChatHelper::formatClass(cls) << " group=" << master->GetName() << " " << passThroughParam;
 
         auto result = HandleCreate(master, paramStr.str(), security);
         messages.splice(messages.end(), result);
