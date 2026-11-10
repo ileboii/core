@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <deque>
 #include <map>
+#include <optional>
 
 class Player;
 class PlayerbotMgr;
@@ -646,6 +647,8 @@ public:
     AiObjectContext* GetAiObjectContext() { return aiObjectContext; }
     void SetAiObjectContext(AiObjectContext* aiObjectContext) { this->aiObjectContext = aiObjectContext; m_cachedLastMovement = nullptr; }
     ai::LastMovement& GetLastMovement();
+    bool CanAttemptMountAt(WorldPosition const& position) const;
+    void RecordMountAttempt();
     ChatHelper* GetChatHelper() { return &chatHelper; }
     bool IsOpposing(Player* player);
     static bool IsOpposing(uint8 race1, uint8 race2);
@@ -717,6 +720,8 @@ public:
 private:
     friend class ai::AIPlayAction;
     bool RecoverFromUnderground(uint32 elapsed);
+    bool RecoverFromBuildingModel(uint32 elapsed, bool minimal);
+    bool HasRecentMountAttempt(WorldPosition const& position, uint32 interval) const;
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
     void HandleBotOutgoingPacketInternal(const WorldPacket& packet);
@@ -767,6 +772,13 @@ protected:
     uint32 faceTargetUpdateDelay;
     uint32 undergroundCheckDelay = 0;
     bool undergroundDetected = false;
+    uint32 buildingRecoveryCheckDelay = 0;
+    uint32 buildingRecoveryInstanceId = 0;
+    std::optional<WorldPosition> previousBuildingPosition;
+    bool buildingBlocksMount = false;
+    std::optional<WorldPosition> lastMountAttemptPosition;
+    uint32 lastMountAttemptTime = 0;
+    uint32 lastMountAttemptInstanceId = 0;
     bool isPlayerFriend = false;
     bool isMovingToTransport = false;
     bool shouldLogOut = false;

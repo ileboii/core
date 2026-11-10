@@ -13,6 +13,9 @@
 #include "MovementGenerator.h"
 #include "MoveMap.h"
 #include "MoveMapSharedDefines.h"
+#include "PathFinder.h"
+#include "VMapFactory.h"
+#include "Detour/Include/DetourCommon.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
@@ -20,6 +23,7 @@
 #include "Bag.h"
 #include "SpellEntry.h"
 #include "strategy/values/LastMovementValue.h"
+#include "strategy/values/MountValues.h"
 #include "strategy/actions/LogLevelAction.h"
 #include "strategy/actions/SayAction.h"
 #include "strategy/actions/AIPlayAction.h"
@@ -330,7 +334,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         }
     }
 
-    if (RecoverFromUnderground(elapsed))
+    if (RecoverFromUnderground(elapsed) || RecoverFromBuildingModel(elapsed, minimal))
         return;
 
     if(aiInternalUpdateDelay > elapsed)
@@ -772,6 +776,249 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL,
         "Playerbot %s: underground recovery on map %u from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f",
         bot->GetName(), bot->GetMapId(), x, y, z, closest[2], closest[0], landingZ + 0.05f);
+    return true;
+}
+
+bool PlayerbotAI::HasRecentMountAttempt(WorldPosition const& position, uint32 interval) const
+{
+    return lastMountAttemptPosition && lastMountAttemptInstanceId == bot->GetInstanceId() &&
+        lastMountAttemptPosition->mapId == position.mapId && lastMountAttemptPosition->IsWithinDist(position, 1.0f) &&
+        WorldTimer::getMSTimeDiffToNow(lastMountAttemptTime) < interval;
+}
+
+bool PlayerbotAI::CanAttemptMountAt(WorldPosition const& position) const
+{
+    if (buildingBlocksMount && previousBuildingPosition && buildingRecoveryInstanceId == bot->GetInstanceId() &&
+        previousBuildingPosition->mapId == position.mapId && previousBuildingPosition->IsWithinDist(position, 1.0f))
+        return false;
+
+    return bot->IsMounted() || !HasRecentMountAttempt(position, 8000);
+}
+
+void PlayerbotAI::RecordMountAttempt()
+{
+    lastMountAttemptPosition.emplace(bot);
+    lastMountAttemptTime = WorldTimer::getMSTime();
+    lastMountAttemptInstanceId = bot->GetInstanceId();
+}
+
+static bool IsRecoverySegmentClear(Map const& map, Vector3 const& start, Vector3 const& end)
+{
+    return MaNGOS::IsValidMapCoord(start.x, start.y, start.z + 0.5f) &&
+        MaNGOS::IsValidMapCoord(end.x, end.y, end.z + 0.5f) &&
+        map.isInLineOfSight(start.x, start.y, start.z + 0.5f, end.x, end.y, end.z + 0.5f, false, false);
+}
+
+static bool CanWalkToRecoveryPoint(Player const& bot, Vector3 const& start, Vector3 const& landing, bool straight)
+{
+    PathFinder path(&bot);
+    path.ExcludeSteepSlopes();
+    path.setUseStrightPath(straight);
+    path.calculate(start, landing);
+    auto const& points = path.getPath();
+    if ((path.getPathType() != PATHFIND_NORMAL && path.getPathType() != PATHFIND_INCOMPLETE) ||
+        points.size() < 2 || (points.front() - start).squaredLength() > 1.0f ||
+        (path.getActualEndPosition() - landing).squaredLength() > 0.25f)
+        return false;
+
+    Map const& map = *bot.GetMap();
+    Vector3 previous = start;
+    for (size_t i = 1; i < points.size(); ++i)
+    {
+        if (!IsRecoverySegmentClear(map, previous, points[i]))
+            return false;
+        previous = points[i];
+    }
+    return IsRecoverySegmentClear(map, previous, landing);
+}
+
+class BuildingRecoveryPolygons final : public dtPolyQuery
+{
+public:
+    void process(dtMeshTile const*, dtPoly**, dtPolyRef* refs, int count) override
+    {
+        polygons.insert(polygons.end(), refs, refs + count);
+    }
+
+    std::vector<dtPolyRef> polygons;
+};
+
+bool PlayerbotAI::RecoverFromBuildingModel(uint32 elapsed, bool minimal)
+{
+    if (buildingRecoveryCheckDelay > elapsed)
+    {
+        buildingRecoveryCheckDelay -= elapsed;
+        return false;
+    }
+    buildingRecoveryCheckDelay = 5000;
+    buildingBlocksMount = false;
+
+    if (minimal || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() || !bot->GetMap() ||
+        bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->IsFlying() || bot->GetTransport() ||
+        IsInVehicle() || IsJumping() || bot->IsHovering() || bot->IsInWater())
+    {
+        previousBuildingPosition.reset();
+        return false;
+    }
+
+    WorldPosition const position(bot);
+    Map const& map = *bot->GetMap();
+    bool const stationary = previousBuildingPosition && buildingRecoveryInstanceId == map.GetInstanceId() &&
+        previousBuildingPosition->mapId == position.mapId && previousBuildingPosition->IsWithinDist(position, 1.0f);
+    previousBuildingPosition = position;
+    buildingRecoveryInstanceId = map.GetInstanceId();
+    if (!stationary || !position.isValid() || !MaNGOS::IsValidMapCoord(position.x, position.y, position.z + 0.75f))
+        return false;
+
+    auto const* vmaps = VMAP::VMapFactory::createOrGetVMapManager();
+    dtNavMeshQuery const* query = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMeshQuery(position.mapId);
+    if (!query || !vmaps->isLineOfSightCalcEnabled())
+        return false;
+
+    Vector3 const start = position.getVector3();
+    TerrainInfo const& terrain = *map.GetTerrain();
+    float const point[] = { start.y, start.z, start.x }; // Detour uses Y, Z, X.
+    bool const embedded = vmaps->isUnderModel(position.mapId, start.x, start.y, start.z + 0.25f) ||
+        vmaps->isUnderModel(position.mapId, start.x, start.y, start.z + 0.75f) ||
+        !map.isInLineOfSight(start.x, start.y, start.z + 0.1f, start.x, start.y, start.z + 0.75f, false, false);
+    bool const indoors = !terrain.IsOutdoors(start.x, start.y, start.z);
+    buildingBlocksMount = embedded;
+    if (!embedded)
+    {
+        if (!indoors)
+            return false;
+
+        // An indoor floor can be a disconnected pocket. Check exits only when the bot is trying to move.
+        auto const motion = bot->GetMotionMaster()->GetCurrentMovementGeneratorType();
+        LastMovement const& movement = GetLastMovement();
+        bool const moveRequested = movement.lastMoveShort && movement.lastMoveShort.mapId == position.mapId &&
+            !movement.lastMoveShort.IsWithinDist(position, 1.0f);
+        if (!moveRequested && motion != POINT_MOTION_TYPE && motion != FOLLOW_MOTION_TYPE && motion != CHASE_MOTION_TYPE &&
+            !HasRecentMountAttempt(position, 20000) && !aiObjectContext->GetValue<bool>("travel target traveling")->Get())
+            return false;
+
+        dtNavMesh const* mesh = query->getAttachedNavMesh();
+        int tileX, tileY;
+        mesh->calcTileLoc(point, &tileX, &tileY);
+        if (!mesh->getTileAt(tileX, tileY, 0))
+            return false;
+    }
+
+    constexpr float radius = 24.0f;
+    constexpr float heightRange = 3.0f;
+    float const bounds[] = { radius, heightRange, radius };
+    dtQueryFilter filter;
+    filter.setIncludeFlags(NAV_GROUND);
+    filter.setExcludeFlags(NAV_STEEP_SLOPES);
+    BuildingRecoveryPolygons nearby;
+    if (dtStatusFailed(query->queryPolygons(point, bounds, &filter, &nearby)))
+        return false;
+
+    std::optional<Vector3> landing;
+    float bestScore = 0.0f;
+    bool hasExit = false;
+    bool foundExterior = false;
+    auto consider = [&](float const* candidate)
+    {
+        float const x = candidate[2], y = candidate[0], meshZ = candidate[1];
+        float const dx = x - start.x, dy = y - start.y;
+        float const distanceSq = dx * dx + dy * dy;
+        if (distanceSq > radius * radius || std::abs(meshZ - start.z) > heightRange ||
+            !MaNGOS::IsValidMapCoord(x, y, meshZ - 1.0f))
+            return false;
+
+        float const ground = map.GetHeight(x, y, meshZ - 1.0f);
+        float const z = ground + 0.05f;
+        float const dz = z - start.z;
+        float const score = distanceSq + 16.0f * dz * dz;
+        float const head = z + std::max(bot->GetCollisionHeight(), 0.5f);
+        constexpr float clearance = 0.35f;
+        if (!std::isfinite(ground) || ground <= INVALID_HEIGHT || std::abs(ground - meshZ) > 1.0f ||
+            std::abs(dz) > heightRange || distanceSq + dz * dz < 0.0625f ||
+            !MaNGOS::IsValidMapCoord(x - clearance, y - clearance, z) || !MaNGOS::IsValidMapCoord(x + clearance, y + clearance, head))
+            return false;
+
+        bool const exterior = !indoors || terrain.IsOutdoors(x, y, z);
+        if ((!exterior && (!embedded || foundExterior)) || terrain.IsInWater(x, y, z) ||
+            vmaps->isUnderModel(position.mapId, x, y, z + 0.5f) ||
+            !map.isInLineOfSight(x, y, z, x, y, head, true, false) ||
+            !map.isInLineOfSight(x - clearance, y, z + 0.5f, x + clearance, y, z + 0.5f, true, false) ||
+            !map.isInLineOfSight(x, y - clearance, z + 0.5f, x, y + clearance, z + 0.5f, true, false))
+            return false;
+
+        // An indoor polygon may itself be isolated. Prefer a verified exterior when one is nearby.
+        if (exterior && !foundExterior)
+        {
+            foundExterior = true;
+            hasExit = false;
+            landing.reset();
+        }
+        if (hasExit)
+            return true;
+
+        Vector3 const candidatePosition(x, y, z);
+        // An existing route through a doorway still counts if a dynamic door is closed.
+        hasExit = CanWalkToRecoveryPoint(*bot, start, candidatePosition, false) ||
+            (indoors && CanWalkToRecoveryPoint(*bot, start, candidatePosition, true));
+        if (!hasExit && (!landing || score < bestScore) &&
+            map.CheckDynamicTreeLoS(start.x, start.y, start.z + 0.5f, x, y, z + 0.5f, false))
+        {
+            landing = candidatePosition;
+            bestScore = score;
+        }
+        return true;
+    };
+
+    for (dtPolyRef polyRef : nearby.polygons)
+    {
+        float closest[3];
+        if (dtStatusFailed(query->closestPointOnPoly(polyRef, point, closest, nullptr)))
+            continue;
+        if (!consider(closest))
+        {
+            // An edge may touch the wall. Also try a point inside the polygon.
+            dtMeshTile const* tile;
+            dtPoly const* poly;
+            if (dtStatusFailed(query->getAttachedNavMesh()->getTileAndPolyByRef(polyRef, &tile, &poly)))
+                continue;
+            float center[3] = {};
+            for (int vertex = 0; vertex < poly->vertCount; ++vertex)
+                dtVadd(center, center, &tile->verts[poly->verts[vertex] * 3]);
+            dtVscale(center, center, 1.0f / poly->vertCount);
+            float const distance = dtVdist2D(closest, center);
+            if (distance > 0.05f)
+            {
+                float inset[3];
+                dtVlerp(inset, closest, center, std::min(0.75f / distance, 1.0f));
+                if (dtStatusSucceed(query->closestPointOnPoly(polyRef, inset, closest, nullptr)))
+                    consider(closest);
+            }
+        }
+
+        if (hasExit && foundExterior)
+            return false;
+    }
+
+    if (hasExit || !landing)
+        return false;
+
+    buildingBlocksMount = true;
+    if (Spell const* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+    {
+        if (MountValue::GetSpeed(spell->m_spellInfo->Id))
+            bot->InterruptSpell(CURRENT_GENERIC_SPELL);
+    }
+    StopMoving();
+    if (!bot->TeleportTo(position.mapId, landing->x, landing->y, landing->z, position.o,
+                         TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET))
+        return false;
+
+    GetLastMovement().clear();
+    ResetAIInternalUpdateDelay();
+    buildingBlocksMount = false;
+    previousBuildingPosition.reset();
+    lastMountAttemptPosition.reset();
+    TellDebug(GetMaster(), "Recovered from inside a building model.", "debug stuck");
     return true;
 }
 

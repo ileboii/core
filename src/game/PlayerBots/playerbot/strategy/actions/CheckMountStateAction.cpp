@@ -5,6 +5,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/MountValues.h"
 #include "BattleGroundWS.h"
+#include "MoveSpline.h"
 #include "playerbot/TravelMgr.h"
 
 using namespace ai;
@@ -259,11 +260,15 @@ bool CheckMountStateAction::isUseful()
     if (!bot->IsInWorld())
         return false;
 
-    bool isOutdoor = bot->GetMap()->GetTerrain()->IsOutdoors(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
-    if (!isOutdoor)
+    if (bot->IsTaxiFlying())
         return false;
 
-    if (bot->IsTaxiFlying())
+    if (bot->IsMounted())
+    {
+        if (!bot->GetTerrain()->IsOutdoors(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+            return false;
+    }
+    else if (bot->IsBeingTeleported() || bot->IsNonMeleeSpellCasted(false, false, true) || !CanMountHere())
         return false;
 
     if (bot->GetClass() == CLASS_ROGUE && bot->InBattleGround() && (ai->HasAura("stealth", bot) || ai->HasAura("sprint", bot)))
@@ -391,8 +396,26 @@ float CheckMountStateAction::GetAttackDistance() const
     return 35.0f;
 }
 
+bool CheckMountStateAction::CanMountHere() const
+{
+    WorldPosition position(bot);
+    if (!bot->GetTransport() && !bot->movespline->Finalized() && !bot->movespline->GetTransportGuid())
+    {
+        auto const current = bot->movespline->ComputePosition();
+        position.x = current.x;
+        position.y = current.y;
+        position.z = current.z;
+    }
+
+    return position.isValid() && ai->CanAttemptMountAt(position) &&
+        bot->GetTerrain()->IsOutdoors(position.x, position.y, position.z);
+}
+
 bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
 {
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsNonMeleeSpellCasted(false, false, true) || !CanMountHere())
+        return false;
+
     bool canFly = CanFly();   
 
     uint32 currentSpeed = AI_VALUE2(uint32, "current mount speed", "self target");
@@ -434,6 +457,7 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
     std::shuffle(mountList.begin(), mountList.end(), std::mt19937{std::random_device{}()});
     std::sort(mountList.begin(), mountList.end(), [canFly](MountValue i, MountValue j) {return i.GetSpeed(canFly) > j.GetSpeed(canFly); });
 
+    bool attemptedMount = false;
     for (auto& mount : mountList)
     {
         if (mount.GetSpeed(canFly) > maxSpeed)
@@ -464,17 +488,6 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
             return UnMount();
         }
 
-        ai->RemoveShapeshift();
-
-        bool wasMoving = sServerFacade.isMoving(bot);
-
-        if (wasMoving)
-        {
-            ai->StopMoving();
-        }
-
-        bool didMount = false;
-
         if (!mount.IsValidLocation(bot))
         {
             if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
@@ -482,6 +495,27 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
             continue;
         }
 
+        if (!mount.IsItem() && !ai->HasSpell(mount.GetSpellId()))
+        {
+            if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
+                ai->TellPlayerNoFacing(requester, "Bot does not have this mount spell.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+            continue;
+        }
+
+        if (sServerFacade.isMoving(bot))
+        {
+            ai->StopMoving();
+            // Stopping the spline can advance the bot across an indoor boundary.
+            if (!CanMountHere())
+            {
+                ai->RecordMountAttempt();
+                return false;
+            }
+        }
+
+        ai->RemoveShapeshift();
+        attemptedMount = true;
+        bool didMount = false;
         if (mount.IsItem())
         {
             if (false /* GetItemByEntry not in vmangos */)
@@ -504,12 +538,6 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
         }
         else
         {
-            if (!ai->HasSpell(mount.GetSpellId()))
-            {
-                if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
-                    ai->TellPlayerNoFacing(requester, "Bot does not have this mount spell.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
-                continue;
-            }
             uint32 castDuration;
             if (ai->CastSpell(mount.GetSpellId(), bot, nullptr, true, &castDuration))
             {
@@ -526,11 +554,7 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
 
         if (didMount)
         {
-            if (wasMoving)
-            {
-                ai->HandleCommand(CHAT_MSG_WHISPER, "queue do check mount state", *bot);
-                ai->TellDebug(requester, "was moving trying to mount again.", "debug mount");
-            }
+            ai->RecordMountAttempt();
 
             if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
                 ai->TellPlayerNoFacing(requester, "Mounting.");
@@ -539,6 +563,8 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
         }
     }
 
+    if (attemptedMount)
+        ai->RecordMountAttempt();
     return false;
 }
 
