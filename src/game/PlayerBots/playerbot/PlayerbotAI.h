@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <deque>
 #include <map>
+#include <optional>
 
 class Player;
 class PlayerbotMgr;
@@ -716,7 +717,7 @@ public:
 
 private:
     friend class ai::AIPlayAction;
-    bool RecoverFromUnderground(uint32 elapsed);
+    bool RecoverFromInvalidPosition(uint32 elapsed, bool minimal);
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
     void HandleBotOutgoingPacketInternal(const WorldPacket& packet);
@@ -765,8 +766,10 @@ protected:
     uint32 jumpTime;
     bool fallAfterJump;
     uint32 faceTargetUpdateDelay;
-    uint32 undergroundCheckDelay = 0;
+    uint32 positionRecoveryCheckDelay = 0;
     bool undergroundDetected = false;
+    std::optional<WorldPosition> previousRecoveryPosition;
+    uint32 previousRecoveryInstanceId = 0;
     bool isPlayerFriend = false;
     bool isMovingToTransport = false;
     bool shouldLogOut = false;

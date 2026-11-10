@@ -13,6 +13,7 @@
 #include "MovementGenerator.h"
 #include "MoveMap.h"
 #include "MoveMapSharedDefines.h"
+#include "VMapFactory.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
@@ -330,7 +331,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         }
     }
 
-    if (RecoverFromUnderground(elapsed))
+    if (RecoverFromInvalidPosition(elapsed, minimal))
         return;
 
     if(aiInternalUpdateDelay > elapsed)
@@ -686,37 +687,140 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     }
 }
 
-bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
+static bool HasStandingClearance(Map const& map, WorldPosition const& position, float height, bool checkDynamic)
 {
-    if (undergroundCheckDelay > elapsed)
+    constexpr float radius = 0.35f;
+    float const x = position.x;
+    float const y = position.y;
+    float const feet = position.z + 0.05f;
+    float const middle = position.z + 0.5f;
+    float const top = position.z + std::max(height, 0.5f);
+    return MaNGOS::IsValidMapCoord(x - radius, y - radius, feet) &&
+        MaNGOS::IsValidMapCoord(x + radius, y + radius, top) &&
+        map.isInLineOfSight(x, y, feet, x, y, top, checkDynamic, false) &&
+        map.isInLineOfSight(x - radius, y, middle, x + radius, y, middle, checkDynamic, false) &&
+        map.isInLineOfSight(x, y - radius, middle, x, y + radius, middle, checkDynamic, false);
+}
+
+static std::optional<WorldPosition> FindModelRecoveryLanding(Map const& map, dtNavMeshQuery const& query,
+                                                             WorldPosition const& position, float collisionHeight)
+{
+    auto const* vmaps = VMAP::VMapFactory::createOrGetVMapManager();
+    if (!vmaps->isLineOfSightCalcEnabled() ||
+        (!vmaps->isUnderModel(position.mapId, position.x, position.y, position.z + 0.5f) &&
+            HasStandingClearance(map, position, 0.75f, false)))
+        return std::nullopt;
+
+    constexpr float searchRadius = 8.0f;
+    constexpr float maxHeightDifference = 1.5f;
+    float const point[] = { position.y, position.z, position.x }; // Detour uses Y, Z, X.
+    float const extents[] = { searchRadius, maxHeightDifference, searchRadius };
+    dtQueryFilter filter;
+    filter.setIncludeFlags(NAV_GROUND);
+    filter.setExcludeFlags(NAV_STEEP_SLOPES);
+
+    dtPolyRef polys[32];
+    int count = 0;
+    if (dtStatusFailed(query.queryPolygons(point, extents, &filter, polys, &count, 32)))
+        return std::nullopt;
+
+    std::optional<WorldPosition> bestLanding;
+    float bestDistanceSq = searchRadius * searchRadius;
+    for (int i = 0; i < count; ++i)
     {
-        undergroundCheckDelay -= elapsed;
+        float closest[3];
+        if (dtStatusFailed(query.closestPointOnPoly(polys[i], point, closest, nullptr)))
+            continue;
+
+        WorldPosition landing(position.mapId, closest[2], closest[0], closest[1], position.o);
+        float const distanceSq = position.sqDistance2d(landing);
+        if (!landing.isValid() || distanceSq >= bestDistanceSq || std::abs(landing.z - position.z) > maxHeightDifference)
+            continue;
+
+        float const ground = map.GetHeight(landing.x, landing.y, landing.z);
+        if (!std::isfinite(ground) || ground <= INVALID_HEIGHT || std::abs(ground - landing.z) > 1.0f ||
+            std::abs(ground - position.z) > maxHeightDifference)
+            continue;
+
+        landing.z = ground + 0.05f;
+        if (map.GetTerrain()->IsInWater(landing.x, landing.y, landing.z) ||
+            vmaps->isUnderModel(landing.mapId, landing.x, landing.y, landing.z + 0.5f) ||
+            !HasStandingClearance(map, landing, collisionHeight, true) ||
+            !map.CheckDynamicTreeLoS(position.x, position.y, position.z + 0.5f, landing.x, landing.y, landing.z + 0.5f, false))
+            continue;
+
+        bestLanding = landing;
+        bestDistanceSq = distanceSq;
+    }
+
+    return bestLanding;
+}
+
+static std::optional<WorldPosition> FindUndergroundRecoveryLanding(Map const& map, dtNavMeshQuery const& query,
+                                                                   WorldPosition const& position, float ground)
+{
+    float const point[] = { position.y, ground, position.x };
+    float const extents[] = { 2.0f, 3.0f, 2.0f };
+    dtQueryFilter filter;
+    filter.setIncludeFlags(NAV_GROUND);
+    filter.setExcludeFlags(NAV_STEEP_SLOPES);
+
+    float closest[3];
+    dtPolyRef poly = INVALID_POLYREF;
+    if (dtStatusFailed(query.findNearestPoly(point, extents, &filter, &poly, closest)) || poly == INVALID_POLYREF)
+        return std::nullopt;
+
+    float const landingZ = map.GetHeight(closest[2], closest[0], closest[1]);
+    if (!std::isfinite(landingZ) || landingZ <= INVALID_HEIGHT ||
+        std::abs(landingZ - closest[1]) > 1.0f || landingZ <= position.z + 1.0f)
+        return std::nullopt;
+
+    return WorldPosition(position.mapId, closest[2], closest[0], landingZ + 0.05f, position.o);
+}
+
+bool PlayerbotAI::RecoverFromInvalidPosition(uint32 elapsed, bool minimal)
+{
+    if (positionRecoveryCheckDelay > elapsed)
+    {
+        positionRecoveryCheckDelay -= elapsed;
         return false;
     }
 
-    undergroundCheckDelay = 5000;
+    positionRecoveryCheckDelay = 5000;
 
-    if (IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() || !bot->GetMap() ||
+    if (minimal || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() || !bot->GetMap() ||
         bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->IsFlying() ||
-        bot->GetTransport() || IsInVehicle() || IsJumping() || bot->IsInWater())
+        bot->GetTransport() || IsInVehicle() || IsJumping() || bot->IsInWater() || !AllowActivity(ALL_ACTIVITY))
     {
         undergroundDetected = false;
+        previousRecoveryPosition.reset();
         return false;
     }
 
     Map* map = bot->GetMap();
-    float x = bot->GetPositionX();
-    float y = bot->GetPositionY();
-    float z = bot->GetPositionZ();
-    float ground = map->GetHeight(x, y, z);
+    WorldPosition const position(bot);
+    if (!position.isValid())
+    {
+        undergroundDetected = false;
+        previousRecoveryPosition.reset();
+        return false;
+    }
 
-    if (!std::isfinite(ground) || ground <= INVALID_HEIGHT || z >= ground - 1.0f)
+    bool const stationary = previousRecoveryPosition && previousRecoveryPosition->mapId == position.mapId &&
+        previousRecoveryInstanceId == map->GetInstanceId() && previousRecoveryPosition->IsWithinDist(position, 0.25f);
+    previousRecoveryPosition = position;
+    previousRecoveryInstanceId = map->GetInstanceId();
+
+    float const ground = map->GetHeight(position.x, position.y, position.z);
+    bool const belowGround = std::isfinite(ground) && ground > INVALID_HEIGHT && position.z < ground - 1.0f;
+    bool const canRecoverFromModel = stationary && !bot->IsFalling() && !bot->IsHovering() && !bot->IsWaterWalking();
+    if (!belowGround && !canRecoverFromModel)
     {
         undergroundDetected = false;
         return false;
     }
 
-    dtNavMeshQuery const* query = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMeshQuery(bot->GetMapId());
+    dtNavMeshQuery const* query = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMeshQuery(position.mapId);
     if (!query)
     {
         undergroundDetected = false;
@@ -726,52 +830,61 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
     dtQueryFilter filter;
     filter.setIncludeFlags(NAV_GROUND);
 
-    float point[3] = { y, z, x };
-    float extents[3] = { 1.0f, 1.0f, 1.0f };
+    float const point[] = { position.y, position.z, position.x };
+    constexpr float floorTolerance = 0.35f;
+    float const searchWidth = belowGround ? 1.0f : floorTolerance;
+    float const extents[] = { searchWidth, 1.0f, searchWidth };
     float closest[3] = {};
     dtPolyRef polyRef = INVALID_POLYREF;
 
-    // A nearby walkable floor can be inside a cave below the terrain surface.
-    if (dtStatusSucceed(query->findNearestPoly(point, extents, &filter, &polyRef, closest)) &&
-        polyRef != INVALID_POLYREF && std::abs(closest[1] - z) <= 1.0f)
+    if (dtStatusFailed(query->findNearestPoly(point, extents, &filter, &polyRef, closest)))
     {
         undergroundDetected = false;
         return false;
     }
 
-    if (!undergroundDetected)
+    // A nearby walkable floor can be inside a cave below the terrain surface.
+    bool const hasNearbyFloor = polyRef != INVALID_POLYREF && std::abs(closest[1] - position.z) <= 1.0f;
+    if (hasNearbyFloor && std::abs(closest[0] - position.y) <= floorTolerance &&
+        std::abs(closest[2] - position.x) <= floorTolerance)
     {
-        undergroundDetected = true;
+        undergroundDetected = false;
         return false;
     }
 
-    point[1] = ground;
-    extents[0] = extents[2] = 2.0f;
-    extents[1] = 3.0f;
-    filter.setExcludeFlags(NAV_STEEP_SLOPES);
-    polyRef = INVALID_POLYREF;
+    std::optional<WorldPosition> landing;
+    bool const wasUnderground = undergroundDetected;
+    undergroundDetected = belowGround && !hasNearbyFloor;
+    if (wasUnderground && undergroundDetected)
+        landing = FindUndergroundRecoveryLanding(*map, *query, position, ground);
 
-    if (dtStatusFailed(query->findNearestPoly(point, extents, &filter, &polyRef, closest)) ||
-        polyRef == INVALID_POLYREF)
-        return false;
+    bool const recoveredFromUnderground = landing.has_value();
+    if (!landing && canRecoverFromModel)
+    {
+        // Require a loaded tile before treating a gap in the mesh as solid geometry.
+        dtNavMesh const* mesh = query->getAttachedNavMesh();
+        int tileX, tileY;
+        mesh->calcTileLoc(point, &tileX, &tileY);
+        if (!mesh->getTileAt(tileX, tileY, 0))
+            return false;
 
-    float landingZ = map->GetHeight(closest[2], closest[0], closest[1]);
-    if (!std::isfinite(landingZ) || landingZ <= INVALID_HEIGHT ||
-        std::abs(landingZ - closest[1]) > 1.0f || landingZ <= z + 1.0f)
-        return false;
+        landing = FindModelRecoveryLanding(*map, *query, position, bot->GetCollisionHeight());
+    }
 
-    if (!bot->TeleportTo(bot->GetMapId(), closest[2], closest[0], landingZ + 0.05f,
-                         bot->GetOrientation(), TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET))
+    if (!landing || !bot->TeleportTo(*landing, TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET))
         return false;
 
     StopMoving();
     GetLastMovement().clear();
     ResetAIInternalUpdateDelay();
     undergroundDetected = false;
-    TellDebug(GetMaster(), "Recovered from an underground position.", "debug stuck");
+    previousRecoveryPosition.reset();
+    TellDebug(GetMaster(), recoveredFromUnderground ? "Recovered from an underground position." :
+        "Recovered from inside a collision model.", "debug stuck");
     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL,
-        "Playerbot %s: underground recovery on map %u from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f",
-        bot->GetName(), bot->GetMapId(), x, y, z, closest[2], closest[0], landingZ + 0.05f);
+        "Playerbot %s: %s recovery on map %u from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f",
+        bot->GetName(), recoveredFromUnderground ? "underground" : "collision model", position.mapId,
+        position.x, position.y, position.z, landing->x, landing->y, landing->z);
     return true;
 }
 

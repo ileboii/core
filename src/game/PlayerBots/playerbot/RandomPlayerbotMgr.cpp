@@ -74,7 +74,7 @@ namespace
             return false;
 
         location.z = ground + 0.05f;
-        return WorldPosition(location).isOnWalkableGround();
+        return true;
     }
 
     bool IsTeleportLocationAllowed(Player* bot, uint32 zoneId, uint32 areaId)

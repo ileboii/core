@@ -67,6 +67,19 @@ namespace
             map.isInLineOfSight(start.x, start.y, start.z + 0.5f, end.x, end.y, end.z + 0.5f, true, false);
     }
 
+    bool ShouldUseMinimalMove(PlayerbotAI* ai)
+    {
+        return sPlayerbotAIConfig.enableMinimalMove && !ai->AllowActivity(ALL_ACTIVITY);
+    }
+
+    bool TeleportToMinimalWalkPoint(Player* bot, WorldPosition const& landing)
+    {
+        if (!landing || !landing.isValid() || landing.getMapId() != bot->GetMapId() || bot->GetTransport())
+            return false;
+
+        return WorldPosition(bot).IsWithinDist(landing, 0.1f) || bot->TeleportTo(landing);
+    }
+
     bool TeleportToTravelLanding(Player* bot, WorldPosition landing, bool requireWalkPath = true)
     {
         if (!landing || !MapManager::IsValidMapCoord(landing))
@@ -590,7 +603,7 @@ bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition d
 
 bool MovementAction::MinimalMove(PlayerbotAI* ai)
 {
-    if (!sPlayerbotAIConfig.enableMinimalMove)
+    if (!sPlayerbotAIConfig.enableMinimalMove || ai->IsActivityAllowedCached(ALL_ACTIVITY))
         return false;
 
     Player* bot = ai->GetBot();
@@ -632,7 +645,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
             return discardPath();
 
         if (nextStep->point.sqDistance(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
-            return TeleportToTravelLanding(bot, nextStep->point) || discardPath();
+            return TeleportToMinimalWalkPoint(bot, nextStep->point) || discardPath();
 
         if (!UseTaxi(ai, nextStep->entry, false))
             return true;
@@ -665,7 +678,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
             auto afterTransport = std::next(exitStep);
 
             if (afterTransport == path.end() || !afterTransport->isWalkable() ||
-                !TeleportToTravelLanding(bot, afterTransport->point, false))
+                !afterTransport->point || !bot->TeleportTo(afterTransport->point))
                 return discardPath();
 
             lastMove.lastPath.cutTo(*afterTransport, false);
@@ -700,7 +713,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
         }
 
         auto landing = std::next(nextStep);
-        if (landing != path.end() && (!landing->isWalkable() || !TeleportToTravelLanding(bot, landing->point, false)))
+        if (landing != path.end() && (!landing->isWalkable() || !landing->point || !bot->TeleportTo(landing->point)))
             return discardPath();
 
         lastMove.lastPath.cutTo(*nextStep, true);
@@ -717,15 +730,15 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
         if (nextStep->type != PathNodeType::NODE_TELEPORT &&
             nextStep->point.sqDistance(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
-            return TeleportToTravelLanding(bot, nextStep->point) || discardPath();
+            return TeleportToMinimalWalkPoint(bot, nextStep->point) || discardPath();
 
-        if (!TeleportToTravelLanding(bot, exitStep->point, false))
+        if (!exitStep->point || !bot->TeleportTo(exitStep->point))
         {
             auto afterExit = std::next(exitStep);
             if (afterExit == path.end() || !afterExit->isWalkable() ||
                 afterExit->point.getMapId() != exitStep->point.getMapId() ||
                 !afterExit->point.IsWithinDist(exitStep->point, INTERACTION_DISTANCE) ||
-                !TeleportToTravelLanding(bot, afterExit->point, false))
+                !afterExit->point || !bot->TeleportTo(afterExit->point))
                 return discardPath();
         }
 
@@ -750,7 +763,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
             return true;
     }
 
-    if (!TeleportToTravelLanding(bot, nextStep->point))
+    if (!TeleportToMinimalWalkPoint(bot, nextStep->point))
         return discardPath();
 
     if (std::next(nextStep) == path.end())
@@ -971,7 +984,9 @@ MovementAction::PathHandleResult MovementAction::HandlePathNodeType(
             AI_VALUE(LastMovement&, "last area trigger").lastAreaTrigger = entry;
         else
         {
-            if (TeleportToTravelLanding(bot, movePosition, false))
+            bool const moved = ShouldUseMinimalMove(ai) ?
+                movePosition && bot->TeleportTo(movePosition) : TeleportToTravelLanding(bot, movePosition, false);
+            if (moved)
                 return PathHandleResult::ReturnTrue;
 
             lastMove.lastPath.clear();
@@ -1451,7 +1466,9 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     {
         WorldPosition landing(movePosition);
         landing.o = startPosition.getAngleTo(movePosition);
-        if (TeleportToTravelLanding(bot, landing))
+        bool const moved = ShouldUseMinimalMove(ai) ?
+            TeleportToMinimalWalkPoint(bot, landing) : TeleportToTravelLanding(bot, landing);
+        if (moved)
         {
             lastMove.nextTeleport = time(nullptr) + (time_t)MoveDelay(startPosition.distance(movePosition));
             return true;
@@ -2508,7 +2525,8 @@ bool MovementAction::TryDropFromStuckSurface(const WorldPosition& destination)
         sServerFacade.IsUnderwater(bot) || bot->IsFlying() || bot->IsTaxiFlying() ||
         bot->IsMounted() || bot->GetTransport() ||
         bot->IsNonMeleeSpellCasted(false, false, true) ||
-        destination.getMapId() != bot->GetMapId() || destination.isInWater() || destination.isUnderWater())
+        destination.getMapId() != bot->GetMapId() || !ai->AllowActivity(ALL_ACTIVITY) ||
+        destination.isInWater() || destination.isUnderWater())
         return false;
 
     MovementGeneratorType movementType = bot->GetMotionMaster()->GetCurrentMovementGeneratorType();
