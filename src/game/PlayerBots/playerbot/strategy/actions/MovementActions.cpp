@@ -23,6 +23,15 @@ using namespace ai;
 
 namespace
 {
+    bool TeleportToWalkablePoint(Player* bot, WorldPosition destination)
+    {
+        if (!destination.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()))
+            return false;
+
+        destination.z += 0.05f;
+        return bot->TeleportTo(destination);
+    }
+
     Creature* GetAvCaptainCombatTarget(Player* bot)
     {
         if (!bot || !bot->InBattleGround())
@@ -551,11 +560,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
     if (nextStep->type == PathNodeType::NODE_FLIGHTPATH)
     {
         if (nextStep->point.sqDistance(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
-        {
-            bot->TeleportTo(nextStep->point);
-
-            return true;
-        }
+            return TeleportToWalkablePoint(bot, nextStep->point);
 
         bool didTaxi = UseTaxi(ai, nextStep->entry, false);
 
@@ -669,7 +674,11 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
             return true;
     }
 
-    bot->TeleportTo(nextStep->point);
+    if (!TeleportToWalkablePoint(bot, nextStep->point))
+    {
+        lastMove.lastPath.clear();
+        return false;
+    }
 
     if (std::next(nextStep) == path.end())
     {
@@ -1357,13 +1366,13 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
 
     if (totalDistance > maxDist && !detailedMove && !naturalTravel && !ai->HasPlayerNearby(movePosition))
     {
-        time_t now = time(0);
-        lastMove.nextTeleport = now + (time_t)MoveDelay(startPosition.distance(movePosition));
-        return bot->TeleportTo(movePosition.getMapId(),
-            movePosition.getX(),
-            movePosition.getY(),
-            movePosition.getZ(),
-            startPosition.getAngleTo(movePosition));
+        WorldPosition destination(movePosition);
+        destination.o = startPosition.getAngleTo(movePosition);
+        if (TeleportToWalkablePoint(bot, destination))
+        {
+            lastMove.nextTeleport = time(0) + (time_t)MoveDelay(startPosition.distance(movePosition));
+            return true;
+        }
     }
 
     bool masterWalking = false;
@@ -2475,7 +2484,8 @@ bool MovementAction::TryDropFromStuckSurface(const WorldPosition& destination)
             break;
     }
 
-    if (!landing)
+    if (!landing || !bot->GetMap()->isInLineOfSight(botPosition.x, botPosition.y, botPosition.z + 0.5f,
+                                                  landing.x, landing.y, landing.z + 0.5f, true, false))
         return false;
 
     lastMove.nextStuckRecoveryAttempt = now + 15;

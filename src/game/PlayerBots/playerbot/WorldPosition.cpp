@@ -1160,7 +1160,11 @@ std::vector<WorldPosition> WorldPosition::getPathFromPath(const std::vector<Worl
 
 bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 instanceId)
 {
-    MANGOS_ASSERT(std::isfinite(x) && std::isfinite(y) && std::isfinite(z));
+    if (!isValid())
+        return false;
+
+    // Loading the terrain tile also loads its navmesh.
+    getTerrain()->GetHeightStatic(x, y, z, false);
 
     MMAP::MMapManager* mmap = MMAP::MMapFactory::createOrGetMMapManager();
 
@@ -1168,11 +1172,12 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
 
     dtNavMeshQuery const* query = mmap->GetNavMeshQuery(getMapId());
 
-    MANGOS_ASSERT(query && query->getAttachedNavMesh());
+    if (!query || !query->getAttachedNavMesh())
+        return false;
 
     float curPoint[VERTEX_SIZE] = {y, z, x };
     float extend[VERTEX_SIZE] = { maxRange, maxHeight, maxRange };
-    float newPoint[VERTEX_SIZE];
+    float newPoint[VERTEX_SIZE] = {};
 
     dtQueryFilter filter;
     dtPolyRef polyRef = INVALID_POLYREF;
@@ -1189,11 +1194,16 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
 
     dtStatus dtResult = query->findNearestPoly(curPoint, extend, &filter, &polyRef, newPoint);
 
+    if (dtStatusFailed(dtResult) || polyRef == INVALID_POLYREF ||
+        std::abs(newPoint[1] - z) > maxHeight ||
+        std::abs(newPoint[2] - x) > maxRange || std::abs(newPoint[0] - y) > maxRange)
+        return false;
+
     y = newPoint[0];
     z = newPoint[1];
     x = newPoint[2];
 
-    return dtStatusSucceed(dtResult) && polyRef != INVALID_POLYREF;
+    return true;
 }
 
 bool WorldPosition::GetReachableRandomPointOnGround(const Player* bot, const float radius, const bool randomRange) 

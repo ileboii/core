@@ -73,7 +73,13 @@ namespace
         if (!std::isfinite(ground) || ground <= INVALID_HEIGHT || std::abs(ground - location.z) > 10.0f)
             return false;
 
-        location.z = ground + 0.05f;
+        WorldPosition destination(location);
+        if (!destination.ClosestCorrectPoint(1.0f, 1.0f))
+            return false;
+
+        location.x = destination.x;
+        location.y = destination.y;
+        location.z = destination.z + 0.05f;
         return true;
     }
 
@@ -3036,6 +3042,8 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
             if (!PrepareTeleportLocation(loc))
                 continue;
 
+            x = loc.x;
+            y = loc.y;
             float z = loc.z;
 
             uint32 areaId = sTerrainMgr.GetAreaId(loc.mapId, x, y, z);
@@ -3052,6 +3060,9 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
             sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Random teleporting bot %s to %s %f,%f,%f (%u/%zu locations)",
                 bot->GetName(), area->Name, x, y, z, attemtps, tlocs.size());
 
+            if (!bot->TeleportTo(loc.mapId, x, y, z, 0))
+                continue;
+
             if (bot->IsTaxiFlying())
                 bot->GetMotionMaster()->MovementExpired();
 
@@ -3059,7 +3070,6 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
                 bot->SetHomebindToLocation(loc, area->Id);
 
             bot->GetMotionMaster()->Clear();
-            bot->TeleportTo(loc.mapId, x, y, z, 0);
             bot->SendHeartBeat();
             bot->GetPlayerbotAI()->Reset(true);
 
@@ -3068,7 +3078,7 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
                 for (GroupReference* gref = bot->GetGroup()->GetFirstMember(); gref; gref = gref->next())
                 {
                     Player* member = gref->getSource();
-                    PlayerbotAI* ai = bot->GetPlayerbotAI();
+                    PlayerbotAI* ai = member ? member->GetPlayerbotAI() : nullptr;
                     if (ai && bot != member)
                     {
                         if (member->IsTaxiFlying())
@@ -3409,25 +3419,18 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot)
     MaNGOS::UnitListSearcher<MaNGOS::AnyUnitInObjectRangeCheck> searcher(targets, u_check);
     Cell::VisitAllObjects(bot, searcher, range);
 
-    if (!targets.empty())
+    for (Unit* unit : targets)
     {
-        for (std::list<Unit *>::iterator i = targets.begin(); i != targets.end(); ++i)
-        {
-            Unit* unit = *i;
-            bot->SetPosition(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), 0);
-            FleeManager manager(bot, sPlayerbotAIConfig.sightDistance, 0, true);
-            float rx, ry, rz;
-            if (manager.CalculateDestination(&rx, &ry, &rz))
-            {
-                WorldLocation loc(bot->GetMapId(), rx, ry, rz);
-                locs.push_back(loc);
-            }
-        }
+        FleeManager manager(bot, sPlayerbotAIConfig.sightDistance, 0, true, WorldPosition(unit));
+        float x, y, z;
+        if (manager.CalculateDestination(&x, &y, &z))
+            locs.emplace_back(bot->GetMapId(), x, y, z);
     }
-    else
-    {
+
+    if (locs.empty())
         RandomTeleportForLevel(bot, true);
-    }
+    else
+        RandomTeleport(bot, locs);
 
     pmo.reset();
 
