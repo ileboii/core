@@ -20,7 +20,6 @@
 #include "GridMap.h"
 #include "Creature.h"
 #include "PathFinder.h"
-#include "Player.h"
 #include "Log.h"
 #include "Map.h"
 #include "Transport.h"
@@ -87,9 +86,6 @@ bool PathInfo::calculate(Vector3 const& start, Vector3 dest, bool forceDest, boo
     else if (!(m_navMeshQuery = mmap->GetNavMeshQuery(m_sourceUnit->GetMapId())))
     {
         BuildPathWithoutMMaps(start, dest);
-        // Bot ground movement must be able to distinguish the terrain-only fallback from a mesh path.
-        if ((m_type & PATHFIND_NORMAL) && m_sourceUnit->IsPlayer() && m_sourceUnit->ToPlayer()->GetPlayerbotAI())
-            m_type |= PATHFIND_NOT_USING_PATH;
         return true;
     }
 

@@ -231,7 +231,6 @@ namespace ai
         float getVisibilityDistance() { return getMap(0) ? getMap(0)->GetVisibilityDistance() : (isOverworld() ? World::GetMaxVisibleDistanceOnContinents() : World::GetMaxVisibleDistanceInInstances()); }
 
         bool IsInStaticLineOfSight(WorldPosition pos, float heightMod = 0.5f) const;
-        bool isOnWalkableGround() const;
         bool IsInLineOfSight(WorldPosition pos, float heightMod = 0.5f) const { return mapId == pos.mapId && getMap(getFirstInstanceId()) && getMap(getFirstInstanceId())->isInLineOfSight(x, y, z + heightMod, pos.x, pos.y, pos.z + heightMod, true); }
         bool GetHitPosition(WorldPosition& pos) { return false; /* vmangos Map has no GetHitPosition */ };
 

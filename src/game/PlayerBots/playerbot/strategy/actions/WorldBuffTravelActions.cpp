@@ -330,7 +330,7 @@ bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 de
         {
             float x, y, z;
             unit->GetContactPoint(bot, x, y, z, INTERACTION_DISTANCE - 1.0f);
-            bot->GetMotionMaster()->MovePoint(0, x, y, z, MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES);
+            bot->GetMotionMaster()->MovePoint(0, x, y, z);
             return false;
         }
 

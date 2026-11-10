@@ -60,80 +60,6 @@ namespace
     }
 
     bool ShouldLockAvCaptainRoom(Player* bot) { return GetAvCaptainCombatTarget(bot) != nullptr; }
-
-    bool IsMovementSegmentClear(Map const& map, Vector3 const& start, Vector3 const& end)
-    {
-        return MaNGOS::IsValidMapCoord(start.x, start.y, start.z) && MaNGOS::IsValidMapCoord(end.x, end.y, end.z) &&
-            map.isInLineOfSight(start.x, start.y, start.z + 0.5f, end.x, end.y, end.z + 0.5f, true, false);
-    }
-
-    bool TeleportToTravelLanding(Player* bot, WorldPosition landing, bool requireWalkPath = true)
-    {
-        if (!landing || !MapManager::IsValidMapCoord(landing))
-            return false;
-
-        Map const* map = bot->GetMap();
-        bool const sameMap = landing.getMapId() == bot->GetMapId();
-        WorldPosition const start(bot);
-        if (requireWalkPath && (!sameMap || !start.isValid() || bot->GetTransport()))
-            return false;
-
-        if (requireWalkPath && start.IsWithinDist(landing, 0.1f))
-            return true;
-
-        TerrainInfo const* terrain = sameMap ? map->GetTerrain() : sTerrainMgr.LoadTerrain(landing.getMapId());
-        if (!terrain)
-            return false;
-
-        float const ground = sameMap ? map->GetHeight(landing.x, landing.y, landing.z) :
-            terrain->GetHeightStatic(landing.x, landing.y, landing.z);
-        if (!std::isfinite(ground) || ground <= INVALID_HEIGHT || std::abs(ground - landing.z) > 1.0f)
-            return false;
-
-        landing.z = ground + 0.05f;
-        if (!landing.isOnWalkableGround())
-            return false;
-
-        if (requireWalkPath)
-        {
-            PathFinder path(bot);
-            path.ExcludeSteepSlopes();
-            path.calculate(start.getVector3(), landing.getVector3());
-            if (path.getPathType() != PATHFIND_NORMAL || path.getPath().size() < 2 ||
-                (path.getActualEndPosition() - landing.getVector3()).squaredLength() > 1.0f)
-                return false;
-
-            // Use the path around corners, and check doors or other collision along that path.
-            Vector3 previous = start.getVector3();
-            for (Vector3 const& point : path.getPath())
-            {
-                if (!IsMovementSegmentClear(*map, previous, point))
-                    return false;
-                previous = point;
-            }
-
-            if (!IsMovementSegmentClear(*map, previous, landing.getVector3()))
-                return false;
-        }
-
-        return bot->TeleportTo(landing);
-    }
-
-    bool IsFallPathClear(Map const& map, Vector3 const& start, Vector3 const& end)
-    {
-        Vector3 const offset = end - start;
-        Vector3 previous = start;
-        for (uint32 step = 1; step <= 8; ++step)
-        {
-            // Short falls accelerate vertically while the spline moves linearly in XY.
-            float const t = step / 8.0f;
-            Vector3 const point(start.x + offset.x * t, start.y + offset.y * t, start.z + offset.z * t * t);
-            if (!IsMovementSegmentClear(map, previous, point))
-                return false;
-            previous = point;
-        }
-        return true;
-    }
 }
 
 void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float o, uint32 entry, bool important)
@@ -617,25 +543,21 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
     auto nextStep = path.begin();
 
-    auto discardPath = [&lastMove]()
-    {
-        lastMove.lastPath.clear();
-        return false;
-    };
+    bool doDelay = true;
 
     uint32 const minimalWalkChunkMs = std::max<uint32>(sPlayerbotAIConfig.passiveDelay, 20000u);
 
     //Taxi handling: Start taxi and remove path until it ends.
     if (nextStep->type == PathNodeType::NODE_FLIGHTPATH)
     {
-        if (nextStep->point.getMapId() != bot->GetMapId())
-            return discardPath();
-
         if (nextStep->point.sqDistance(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
-            return TeleportToTravelLanding(bot, nextStep->point) || discardPath();
+        {
+            bot->TeleportTo(nextStep->point);
 
-        if (!UseTaxi(ai, nextStep->entry, false))
             return true;
+        }
+
+        bool didTaxi = UseTaxi(ai, nextStep->entry, false);
 
         for (auto& step : path)
         {
@@ -656,19 +578,24 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
         {
             auto exitStep = nextStep;
 
-            while (std::next(exitStep) != path.end() && std::next(exitStep)->type == PathNodeType::NODE_TRANSPORT &&
-                std::next(exitStep)->entry == nextStep->entry)
+            while (std::next(exitStep) != path.end() && std::next(exitStep)->type == PathNodeType::NODE_TRANSPORT)
             {
                 ++exitStep;
             }
 
             auto afterTransport = std::next(exitStep);
 
-            if (afterTransport == path.end() || !afterTransport->isWalkable() ||
-                !TeleportToTravelLanding(bot, afterTransport->point, false))
-                return discardPath();
+            if (afterTransport == path.end())
+            {
+                lastMove.lastPath.clear();
+                return true;
+            }
 
-            lastMove.lastPath.cutTo(*afterTransport, false);
+            PathNodePoint destination = *afterTransport;
+
+            lastMove.lastPath.cutTo(destination, false);
+
+            bot->TeleportTo(destination.point);
 
             lastMove.nextTeleport = now + std::max<time_t>(1, sPlayerbotAIConfig.passiveDelay / 1000);
 
@@ -699,39 +626,31 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
             return true;
         }
 
-        auto landing = std::next(nextStep);
-        if (landing != path.end() && (!landing->isWalkable() || !TeleportToTravelLanding(bot, landing->point, false)))
-            return discardPath();
-
         lastMove.lastPath.cutTo(*nextStep, true);
+
+        nextStep = path.begin();
+
+        bot->TeleportTo(nextStep->point);
+
         return true;
     }
 
-    // A portal or teleport spell is an explicit pair of entry and exit nodes.
+    //Skip over stuff we don't walk.
     if (!nextStep->isWalkable())
     {
-        auto exitStep = std::next(nextStep);
-        if (exitStep == path.end() || exitStep->type != nextStep->type || exitStep->entry != nextStep->entry ||
-            nextStep->point.getMapId() != bot->GetMapId())
-            return discardPath();
+        auto it = std::find_if(std::next(nextStep), path.end(), [](const auto& step) {
+            return step.isWalkable();
+        });
 
-        if (nextStep->type != PathNodeType::NODE_TELEPORT &&
-            nextStep->point.sqDistance(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
-            return TeleportToTravelLanding(bot, nextStep->point) || discardPath();
-
-        if (!TeleportToTravelLanding(bot, exitStep->point, false))
+        if (it != path.end())
         {
-            auto afterExit = std::next(exitStep);
-            if (afterExit == path.end() || !afterExit->isWalkable() ||
-                afterExit->point.getMapId() != exitStep->point.getMapId() ||
-                !afterExit->point.IsWithinDist(exitStep->point, INTERACTION_DISTANCE) ||
-                !TeleportToTravelLanding(bot, afterExit->point, false))
-                return discardPath();
+            nextStep = it;
+            doDelay = true;
         }
-
-        lastMove.lastPath.cutTo(*exitStep, true);
-        return true;
     }
+
+    if (!nextStep->isWalkable())
+        return false;
 
     {
         bool playerNearby;
@@ -750,8 +669,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
             return true;
     }
 
-    if (!TeleportToTravelLanding(bot, nextStep->point))
-        return discardPath();
+    bot->TeleportTo(nextStep->point);
 
     if (std::next(nextStep) == path.end())
     {
@@ -763,8 +681,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
     for (auto it = std::next(nextStep); it != path.end(); ++it)
     {
-        if (it->point.getMapId() == nextStep->point.getMapId())
-            time += (nextStep->point.distance(it->point) / bot->GetSpeed(MOVE_RUN)) * 1000;
+        time += (nextStep->point.distance(it->point) / bot->GetSpeed(MOVE_RUN)) * 1000;
 
         nextStep = it;
 
@@ -788,7 +705,7 @@ bool MovementAction::WaitForTransport()
 
     GenericTransport* transport = bot->GetTransport();
 
-    if (!transport || transport->GetEntry() != lastMove.lastTransportEntry || lastMove.lastPath.empty() || lastMove.lastPath.getPath().front().type != PathNodeType::NODE_TRANSPORT || lastMove.lastPath.getPath().front().entry != lastMove.lastTransportEntry)
+    if (!transport || transport->GetEntry() != lastMove.lastTransportEntry || lastMove.lastPath.getPath().front().type != PathNodeType::NODE_TRANSPORT || lastMove.lastPath.getPath().front().entry != lastMove.lastTransportEntry)
     {
         lastMove.lastTransportEntry = 0;
         return false;
@@ -877,9 +794,6 @@ bool MovementAction::ResolveMovePath(
     // Used when TravelNodeMap produced nothing and the target is still far.
     if (outMovePath.empty() && outMovePosition.distance(startPosition) > maxDist)
     {
-        if (outMovePosition.getMapId() != startPosition.getMapId())
-            return false;
-
         PathFinder pathfinder(mover);
 
         if (mover && mover->IsPlayer())
@@ -889,7 +803,7 @@ bool MovementAction::ResolveMovePath(
 
         PathType const pathType = pathfinder.getPathType();
 
-        if (pathType & (PATHFIND_NOPATH | PATHFIND_NOT_USING_PATH | PATHFIND_SHORTCUT | PATHFIND_DEST_FORCED))
+        if (pathType & (PATHFIND_NOPATH | PATHFIND_NOT_USING_PATH))
             return false;
 
         const PointsArray& points = pathfinder.getPath();
@@ -970,13 +884,7 @@ MovementAction::PathHandleResult MovementAction::HandlePathNodeType(
         if (entry)
             AI_VALUE(LastMovement&, "last area trigger").lastAreaTrigger = entry;
         else
-        {
-            if (TeleportToTravelLanding(bot, movePosition, false))
-                return PathHandleResult::ReturnTrue;
-
-            lastMove.lastPath.clear();
-            return PathHandleResult::ReturnFalse;
-        }
+            return bot->TeleportTo(movePosition.getMapId(), movePosition.getX(), movePosition.getY(), movePosition.getZ(), movePosition.getO(), 0) ? PathHandleResult::ReturnTrue : PathHandleResult::ReturnFalse;
     }
 
     if (pathType == TravelNodePathType::transport)
@@ -1449,25 +1357,13 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
 
     if (totalDistance > maxDist && !detailedMove && !naturalTravel && !ai->HasPlayerNearby(movePosition))
     {
-        WorldPosition landing(movePosition);
-        landing.o = startPosition.getAngleTo(movePosition);
-        if (TeleportToTravelLanding(bot, landing))
-        {
-            lastMove.nextTeleport = time(nullptr) + (time_t)MoveDelay(startPosition.distance(movePosition));
-            return true;
-        }
-
-        lastMove.lastPath.clear();
-    }
-
-    if (!generatePath && !bot->IsFlying() && !isVehicle && !bot->GetTransport())
-    {
-        bool const clear = IsMovementSegmentClear(*bot->GetMap(), startPosition.getVector3(), movePosition.getVector3());
-        if (noPath && !clear)
-            return false;
-
-        // Swim to another point in the water directly if collision allows it.
-        generatePath = !noPath && (!clear || !bot->CanSwimAtPosition(movePosition.getVector3()));
+        time_t now = time(0);
+        lastMove.nextTeleport = now + (time_t)MoveDelay(startPosition.distance(movePosition));
+        return bot->TeleportTo(movePosition.getMapId(),
+            movePosition.getX(),
+            movePosition.getY(),
+            movePosition.getZ(),
+            startPosition.getAngleTo(movePosition));
     }
 
     bool masterWalking = false;
@@ -2568,8 +2464,7 @@ bool MovementAction::TryDropFromStuckSurface(const WorldPosition& destination)
                 continue;
 
             float score = candidate.fDist(destination) + radius * 0.25f;
-            if (score < bestScore && candidate.isOnWalkableGround() &&
-                IsFallPathClear(*bot->GetMap(), botPosition.getVector3(), candidate.getVector3()))
+            if (score < bestScore)
             {
                 bestScore = score;
                 landing = candidate;
