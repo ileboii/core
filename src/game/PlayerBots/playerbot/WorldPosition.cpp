@@ -1158,6 +1158,33 @@ std::vector<WorldPosition> WorldPosition::getPathFromPath(const std::vector<Worl
     return fullPath;
 }
 
+bool WorldPosition::isOnWalkableGround() const
+{
+    if (!isValid())
+        return false;
+
+    dtNavMeshQuery const* query = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMeshQuery(mapId);
+    if (!query)
+        return false;
+
+    dtQueryFilter filter;
+    filter.setIncludeFlags(NAV_GROUND);
+    filter.setExcludeFlags(NAV_STEEP_SLOPES);
+
+    constexpr float horizontalTolerance = 0.1f;
+    constexpr float heightTolerance = 1.0f;
+    float const point[] = { y, z, x };
+    float const extents[] = { horizontalTolerance, heightTolerance, horizontalTolerance };
+    float closest[3] = {};
+    dtPolyRef poly = INVALID_POLYREF;
+    if (dtStatusFailed(query->findNearestPoly(point, extents, &filter, &poly, closest)) || poly == INVALID_POLYREF)
+        return false;
+
+    float const dx = closest[2] - x;
+    float const dy = closest[0] - y;
+    return dx * dx + dy * dy <= horizontalTolerance * horizontalTolerance && std::abs(closest[1] - z) <= heightTolerance;
+}
+
 bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 instanceId)
 {
     MANGOS_ASSERT(std::isfinite(x) && std::isfinite(y) && std::isfinite(z));

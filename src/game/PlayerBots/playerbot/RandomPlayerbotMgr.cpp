@@ -74,7 +74,7 @@ namespace
             return false;
 
         location.z = ground + 0.05f;
-        return true;
+        return WorldPosition(location).isOnWalkableGround();
     }
 
     bool IsTeleportLocationAllowed(Player* bot, uint32 zoneId, uint32 areaId)
@@ -3055,11 +3055,13 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
             if (bot->IsTaxiFlying())
                 bot->GetMotionMaster()->MovementExpired();
 
+            bot->GetMotionMaster()->Clear();
+            if (!bot->TeleportTo(loc.mapId, x, y, z, 0))
+                continue;
+
             if (hearth)
                 bot->SetHomebindToLocation(loc, area->Id);
 
-            bot->GetMotionMaster()->Clear();
-            bot->TeleportTo(loc.mapId, x, y, z, 0);
             bot->SendHeartBeat();
             bot->GetPlayerbotAI()->Reset(true);
 
@@ -3068,27 +3070,28 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
                 for (GroupReference* gref = bot->GetGroup()->GetFirstMember(); gref; gref = gref->next())
                 {
                     Player* member = gref->getSource();
-                    PlayerbotAI* ai = bot->GetPlayerbotAI();
-                    if (ai && bot != member)
-                    {
-                        if (member->IsTaxiFlying())
-                            member->GetMotionMaster()->MovementExpired();
-                        if (hearth)
-                            member->SetHomebindToLocation(loc, area->Id);
+                    if (!member || member == bot || member->IsBeingTeleported() || !member->GetPlayerbotAI())
+                        continue;
 
-                        member->GetMotionMaster()->Clear();
-                        member->TeleportTo(loc.mapId, x, y, z, 0);
-                        member->SendHeartBeat();
-                        member->GetPlayerbotAI()->Reset(true);
-                    }
+                    if (member->IsTaxiFlying())
+                        member->GetMotionMaster()->MovementExpired();
 
+                    member->GetMotionMaster()->Clear();
+                    if (!member->TeleportTo(loc.mapId, x, y, z, 0))
+                        continue;
+
+                    if (hearth)
+                        member->SetHomebindToLocation(loc, area->Id);
+
+                    member->SendHeartBeat();
+                    member->GetPlayerbotAI()->Reset(true);
                 }
             }
             return;
         }
     }
 
-    sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Cannot teleport bot %s (level %u) - Loss (all %zu candidates failed map/area/height validation)", bot->GetName(), bot->GetLevel(), tlocs.size());
+    sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Cannot teleport bot %s (level %u) - Loss (no safe destination among %zu candidates)", bot->GetName(), bot->GetLevel(), tlocs.size());
 }
 
 std::vector<std::pair<uint32, uint32>> RandomPlayerbotMgr::RpgLocationsNear(WorldLocation pos, const std::map<uint32, std::map<uint32, std::vector<std::string>>>& areaNames, uint32 radius)
@@ -3409,25 +3412,18 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot)
     MaNGOS::UnitListSearcher<MaNGOS::AnyUnitInObjectRangeCheck> searcher(targets, u_check);
     Cell::VisitAllObjects(bot, searcher, range);
 
-    if (!targets.empty())
+    for (Unit* unit : targets)
     {
-        for (std::list<Unit *>::iterator i = targets.begin(); i != targets.end(); ++i)
-        {
-            Unit* unit = *i;
-            bot->SetPosition(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), 0);
-            FleeManager manager(bot, sPlayerbotAIConfig.sightDistance, 0, true);
-            float rx, ry, rz;
-            if (manager.CalculateDestination(&rx, &ry, &rz))
-            {
-                WorldLocation loc(bot->GetMapId(), rx, ry, rz);
-                locs.push_back(loc);
-            }
-        }
+        FleeManager manager(bot, sPlayerbotAIConfig.sightDistance, 0, false, WorldPosition(unit));
+        float x, y, z;
+        if (manager.CalculateDestination(&x, &y, &z))
+            locs.emplace_back(bot->GetMapId(), x, y, z);
     }
-    else
-    {
+
+    if (locs.empty())
         RandomTeleportForLevel(bot, true);
-    }
+    else
+        RandomTeleport(bot, locs, false, false);
 
     pmo.reset();
 
