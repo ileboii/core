@@ -539,6 +539,12 @@ class BattleGroundAV : public BattleGround
 
         static BattleGroundAVTeamIndex GetAVTeamIndexByTeamId(Team team) { return BattleGroundAVTeamIndex(GetTeamIndexByTeamId(team)); }
         void HandleCommand(Player* player, ChatHandler* handler, char* args) override;
+
+        uint8 GetAvNodeState(uint8 node) const { return uint8(m_nodes[node].state); }
+        uint8 GetAvNodeOwner(uint8 node) const { return uint8(m_nodes[node].owner); }
+        uint8 GetAvNodeTotalOwner(uint8 node) const { return uint8(m_nodes[node].totalOwner); }
+        bool GetAvNodeTower(uint8 node) const { return m_nodes[node].tower; }
+        uint8 GetAvMineOwner(uint8 mine) const { return uint8(m_mineOwner[mine]); }
     private:
         /* Nodes occupying */
         void EventPlayerAssaultsPoint(Player* player, BG_AV_Nodes node);

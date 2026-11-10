@@ -17,6 +17,7 @@
 #include "CommandFlow.h"
 #include "CommandParty.h"
 #include "CleanupParty.h"
+#include "AvTestCommands.h"
 #include "CommandDebug.h"
 #include "CommandQuest.h"
 #include "RequireState.h"
@@ -62,6 +63,8 @@ void TestAction::RegisterCommands()
     commands.push_back(std::make_unique<CommandPartyDespawnBot>());
     commands.push_back(std::make_unique<CommandPartyForm>());
     commands.push_back(std::make_unique<CommandPartySpawnGroup>());
+    commands.push_back(std::make_unique<CommandAvStatus>());
+    commands.push_back(std::make_unique<RequireAvNode>());
     commands.push_back(std::make_unique<CommandFlowObserve>());
     commands.push_back(std::make_unique<CommandFlowMonitor>());
     commands.push_back(std::make_unique<CommandFlowWaitGroup>());
