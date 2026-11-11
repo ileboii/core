@@ -1049,7 +1049,8 @@ std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& s
         }
     }
 
-    if ((!forceNormalPath && type == PATHFIND_INCOMPLETE) || type == PATHFIND_NORMAL)
+    PathType const movementType = PathType(type & ~PATHFIND_UNDERWATER);
+    if ((!forceNormalPath && movementType == PATHFIND_INCOMPLETE) || movementType == PATHFIND_NORMAL)
         return retvec;
 
     return {};
@@ -1075,7 +1076,7 @@ bool WorldPosition::setAtWaterSurface()
     float waterLevel = getWaterLevel();
     if (waterLevel > -100000.0f)
     {
-        z = waterLevel + 0.5f;
+        z = getTerrain()->GetWaterOrGroundLevel(x, y, z, nullptr, true);
         return true;
     }
     return false;
@@ -1164,7 +1165,7 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
         return false;
 
     // Loading the terrain tile also loads its navmesh.
-    getTerrain()->GetHeightStatic(x, y, z, false);
+    float const terrainHeight = getTerrain()->GetHeightStatic(x, y, z, false);
 
     MMAP::MMapManager* mmap = MMAP::MMapFactory::createOrGetMMapManager();
 
@@ -1186,7 +1187,7 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
     uint16 excludeFlags = 0;
 
     includeFlags |= (NAV_GROUND );
-    excludeFlags |= (0 | 0 | 0);
+    excludeFlags |= NAV_STEEP_SLOPES;
 
 
     filter.setIncludeFlags(includeFlags);
@@ -1198,6 +1199,24 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
         std::abs(newPoint[1] - z) > maxHeight ||
         std::abs(newPoint[2] - x) > maxRange || std::abs(newPoint[0] - y) > maxRange)
         return false;
+
+    // A fence top can have its own polygon without a walking route to the ground below.
+    if (terrainHeight > INVALID_HEIGHT && newPoint[1] > terrainHeight + 2.0f)
+    {
+        float below[VERTEX_SIZE] = { newPoint[0], terrainHeight, newPoint[2] };
+        float groundExtents[VERTEX_SIZE] = { 24.0f, 2.0f, 24.0f };
+        float groundPoint[VERTEX_SIZE] = {};
+        dtPolyRef groundRef = INVALID_POLYREF;
+        if (dtStatusFailed(query->findNearestPoly(below, groundExtents, &filter, &groundRef, groundPoint)) ||
+            groundRef == INVALID_POLYREF || std::abs(groundPoint[1] - terrainHeight) > 2.0f)
+            return false;
+
+        dtPolyRef route[MAX_PATH_LENGTH];
+        int count = 0;
+        if (dtStatusFailed(query->findPath(polyRef, groundRef, newPoint, groundPoint, &filter,
+                                         route, &count, MAX_PATH_LENGTH)) || !count || route[count - 1] != groundRef)
+            return false;
+    }
 
     y = newPoint[0];
     z = newPoint[1];

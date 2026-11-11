@@ -21,6 +21,7 @@
 #include "SpellEntry.h"
 #include "strategy/values/LastMovementValue.h"
 #include "strategy/actions/LogLevelAction.h"
+#include "strategy/actions/MovementActions.h"
 #include "strategy/actions/SayAction.h"
 #include "strategy/actions/AIPlayAction.h"
 #include "strategy/actions/EmoteAction.h"
@@ -39,6 +40,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "MoveSplineInitArgs.h"
+#include "MoveSpline.h"
 #include "InstanceData.h"
 #include "ChatHelper.h"
 #include "strategy/values/BudgetValues.h"
@@ -290,6 +292,8 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
             bot->DestroyItemCount(itemId, count, true, false, true);
         }
     }
+    if (!IsRealPlayer())
+        bot->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_USE_SWIM_ANIMATION);
 }
 
 PlayerbotAI::~PlayerbotAI()
@@ -698,7 +702,8 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
 
     if (IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() || !bot->GetMap() ||
         bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->IsFlying() ||
-        bot->GetTransport() || IsInVehicle() || IsJumping() || bot->IsInWater())
+        bot->GetTransport() || IsInVehicle() || IsJumping() || bot->IsInWater() ||
+        bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING))
     {
         undergroundDetected = false;
         return false;
@@ -709,8 +714,19 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
     float y = bot->GetPositionY();
     float z = bot->GetPositionZ();
     float ground = map->GetHeight(x, y, z);
+    float const terrainGround = map->GetTerrain()->GetHeightStatic(x, y, z, false);
 
-    if (!std::isfinite(ground) || ground <= INVALID_HEIGHT || z >= ground - 1.0f)
+    bool raisedSurface = false;
+    if (terrainGround > INVALID_HEIGHT && z > terrainGround + 2.0f &&
+        bot->movespline->Finalized() && !sServerFacade.IsInCombat(bot) &&
+        aiObjectContext->GetValue<uint32>("time since last change", "current position")->Get() >= 10)
+    {
+        WorldPosition standing(bot);
+        raisedSurface = !standing.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId());
+    }
+
+    if (!raisedSurface && (!std::isfinite(ground) || ground <= INVALID_HEIGHT || z >= ground - 1.0f ||
+        (terrainGround > INVALID_HEIGHT && z >= terrainGround - 1.0f && ground > terrainGround + 1.0f)))
     {
         undergroundDetected = false;
         return false;
@@ -732,7 +748,7 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
     dtPolyRef polyRef = INVALID_POLYREF;
 
     // A nearby walkable floor can be inside a cave below the terrain surface.
-    if (dtStatusSucceed(query->findNearestPoly(point, extents, &filter, &polyRef, closest)) &&
+    if (!raisedSurface && dtStatusSucceed(query->findNearestPoly(point, extents, &filter, &polyRef, closest)) &&
         polyRef != INVALID_POLYREF && std::abs(closest[1] - z) <= 1.0f)
     {
         undergroundDetected = false;
@@ -745,9 +761,9 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
         return false;
     }
 
-    point[1] = ground;
-    extents[0] = extents[2] = 2.0f;
-    extents[1] = 3.0f;
+    point[1] = raisedSurface ? terrainGround : ground;
+    extents[0] = extents[2] = raisedSurface ? 24.0f : 2.0f;
+    extents[1] = raisedSurface ? 2.0f : 3.0f;
     filter.setExcludeFlags(NAV_STEEP_SLOPES);
     polyRef = INVALID_POLYREF;
 
@@ -757,10 +773,33 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
 
     float landingZ = map->GetHeight(closest[2], closest[0], closest[1]);
     if (!std::isfinite(landingZ) || landingZ <= INVALID_HEIGHT ||
-        std::abs(landingZ - closest[1]) > 1.0f || landingZ <= z + 1.0f)
+        std::abs(landingZ - closest[1]) > 1.0f ||
+        (raisedSurface ? (landingZ >= z - 1.0f || z - landingZ > 40.0f) : landingZ <= z + 1.0f))
         return false;
 
-    if (!bot->TeleportTo(bot->GetMapId(), closest[2], closest[0], landingZ + 0.05f,
+    WorldPosition landing(bot->GetMapId(), closest[2], closest[0], landingZ);
+    if (landing.isInWater() || landing.isUnderWater() ||
+        !landing.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()))
+        return false;
+
+    if (raisedSurface && map->isInLineOfSight(x, y, z + 0.5f,
+        landing.x, landing.y, landing.z + 0.5f, true, false))
+    {
+        InterruptSpell(false);
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+        StopMoving();
+        bot->SetFallInformation(z);
+        bot->GetMotionMaster()->MovePoint(0, landing.x, landing.y, landing.z, MOVE_FALLING | MOVE_STRAIGHT_PATH);
+        GetLastMovement().clear();
+        SetAIInternalUpdateDelay(std::max<uint32>(sPlayerbotAIConfig.reactDelay, bot->movespline->Duration()));
+        undergroundDetected = false;
+        return true;
+    }
+
+    if (raisedSurface)
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+    if (!bot->TeleportTo(bot->GetMapId(), landing.x, landing.y, landing.z + 0.05f,
                          bot->GetOrientation(), TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET))
         return false;
 
@@ -768,9 +807,9 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
     GetLastMovement().clear();
     ResetAIInternalUpdateDelay();
     undergroundDetected = false;
-    TellDebug(GetMaster(), "Recovered from an underground position.", "debug stuck");
+    TellDebug(GetMaster(), "Recovered to nearby walkable ground.", "debug stuck");
     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL,
-        "Playerbot %s: underground recovery on map %u from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f",
+        "Playerbot %s: ground recovery on map %u from %.2f,%.2f,%.2f to %.2f,%.2f,%.2f",
         bot->GetName(), bot->GetMapId(), x, y, z, closest[2], closest[0], landingZ + 0.05f);
     return true;
 }
@@ -2399,6 +2438,14 @@ void PlayerbotAI::DoNextAction(bool min)
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || (GetMaster() && IsSafe(GetMaster()) && GetMaster()->IsBeingTeleported()))
     {
         SetAIInternalUpdateDelay(sPlayerbotAIConfig.globalCoolDown);
+        return;
+    }
+
+    MovementAction::UpdateMovementState(this);
+
+    if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) && !bot->IsInWater() && !bot->movespline->Finalized())
+    {
+        SetAIInternalUpdateDelay(sPlayerbotAIConfig.reactDelay);
         return;
     }
 
@@ -8961,7 +9008,8 @@ void PlayerbotAI::StopMoving()
     if (bot->GetTransport())
         bot->m_movementInfo.SetMovementFlags(MOVEFLAG_ONTRANSPORT);
     else
-        bot->m_movementInfo.SetMovementFlags(MOVEFLAG_NONE);
+        bot->m_movementInfo.SetMovementFlags(bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING)
+            ? MOVEFLAG_SWIMMING : MOVEFLAG_NONE);
 
     bot->StopMoving();
     MovementInfo mInfo = bot->m_movementInfo;

@@ -21,6 +21,7 @@ namespace ai
             lastTransportEntry = other.lastTransportEntry;
             lastMoveShort = other.lastMoveShort;
             lastMoveShortStart = other.lastMoveShortStart;
+            lastSwimGoal = other.lastSwimGoal;
             lastPath = other.lastPath;
             nextTeleport = other.nextTeleport;
             lastFlee = other.lastFlee;
@@ -36,6 +37,7 @@ namespace ai
         {
             lastMoveShort = WorldPosition();
             lastMoveShortStart = WorldPosition();
+            lastSwimGoal = WorldPosition();
             lastPath.clear();
             lastFollow = NULL;
             lastAreaTrigger = 0;
@@ -73,6 +75,7 @@ namespace ai
         time_t lastFlee;
         WorldPosition lastMoveShortStart;
         WorldPosition lastMoveShort;
+        WorldPosition lastSwimGoal;
         TravelPath lastPath;
         time_t nextTeleport;
         time_t nextPlayerNearbyCheck = 0;

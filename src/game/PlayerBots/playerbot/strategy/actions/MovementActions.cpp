@@ -12,6 +12,8 @@
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/Stances.h"
 #include "TargetedMovementGenerator.h"
+#include "MoveSpline.h"
+#include "MoveMap.h"
 #include "playerbot/TravelMgr.h"
 // Transports.h not in vmangos
 #ifdef MANGOSBOT_TWO
@@ -23,9 +25,107 @@ using namespace ai;
 
 namespace
 {
+    bool GetSwimPosition(Player* bot, WorldPosition& position, bool surface = false)
+    {
+        if (position.mapId != bot->GetMapId() || !position.isValid() || bot->IsWaterWalking())
+            return false;
+
+        GridMapLiquidData liquid{};
+        if (bot->GetTerrain()->getLiquidStatus(position.x, position.y, position.z,
+                MAP_LIQUID_TYPE_WATER | MAP_LIQUID_TYPE_OCEAN, &liquid) == LIQUID_MAP_NO_WATER ||
+            !(liquid.type_flags & (MAP_LIQUID_TYPE_WATER | MAP_LIQUID_TYPE_OCEAN)) ||
+            liquid.level - liquid.depth_level <= bot->GetMinSwimDepth() || position.z > liquid.level + 2.0f)
+            return false;
+
+        float const surfaceZ = std::max(liquid.depth_level + 0.1f, liquid.level - bot->GetMinSwimDepth() - 0.1f);
+        float const floorZ = std::min(surfaceZ, liquid.depth_level + 0.5f);
+        position.z = std::max(floorZ, std::min(surface ? surfaceZ : position.z, surfaceZ));
+        return true;
+    }
+
+    bool CanSwimBetween(Player* bot, WorldPosition const& from, WorldPosition const& to)
+    {
+        if (from.mapId != to.mapId || from.mapId != bot->GetMapId() || !from.isValid() || !to.isValid() ||
+            !bot->GetMap()->isInLineOfSight(from.x, from.y, from.z + 0.5f, to.x, to.y, to.z + 0.5f, true, false))
+            return false;
+
+        uint32 const steps = std::max<uint32>(1, uint32(std::ceil(from.distance(to) / 2.0f)));
+        if (steps > 64)
+            return false;
+
+        for (uint32 step = 0; step <= steps; ++step)
+        {
+            float const fraction = float(step) / steps;
+            float const x = from.x + (to.x - from.x) * fraction;
+            float const y = from.y + (to.y - from.y) * fraction;
+            float const z = from.z + (to.z - from.z) * fraction;
+            GridMapLiquidData liquid;
+            if (!bot->GetTerrain()->IsSwimmable(x, y, z, bot->GetMinSwimDepth(), &liquid) ||
+                !(liquid.type_flags & (MAP_LIQUID_TYPE_WATER | MAP_LIQUID_TYPE_OCEAN)) ||
+                z > liquid.level - 0.1f || z < liquid.depth_level)
+                return false;
+        }
+        return true;
+    }
+
+    bool GetSwimStep(Player* bot, WorldPosition const& from, WorldPosition const& to,
+        bool surface, WorldPosition& result)
+    {
+        if (from.mapId != to.mapId || from.mapId != bot->GetMapId())
+            return false;
+
+        uint32 const steps = std::max<uint32>(1, uint32(std::ceil(from.distance(to) / 2.0f)));
+        if (steps > 64)
+            return false;
+
+        WorldPosition last(from);
+        for (uint32 step = 1; step <= steps; ++step)
+        {
+            float const fraction = float(step) / steps;
+            WorldPosition next(from.mapId, from.x + (to.x - from.x) * fraction,
+                from.y + (to.y - from.y) * fraction, from.z + (to.z - from.z) * fraction);
+            if (!GetSwimPosition(bot, next, surface))
+                break;
+            last = next;
+        }
+
+        if (from.distance(last) < 0.5f || !CanSwimBetween(bot, from, last))
+            return false;
+        result = last;
+        return true;
+    }
+
+    bool HasNavigationRoute(Player* bot, WorldPosition const& destination)
+    {
+        dtNavMeshQuery const* query = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMeshQuery(bot->GetMapId());
+        if (!query || destination.mapId != bot->GetMapId())
+            return false;
+
+        dtQueryFilter filter;
+        filter.setIncludeFlags(NAV_GROUND | NAV_WATER);
+        filter.setExcludeFlags(NAV_STEEP_SLOPES);
+        float start[3] = { bot->GetPositionY(), bot->GetPositionZ(), bot->GetPositionX() };
+        float finish[3] = { destination.y, destination.z, destination.x };
+        float extents[3] = { 1.0f, 1.0f, 1.0f };
+        float startPoint[3] = {}, finishPoint[3] = {};
+        dtPolyRef startRef = 0, finishRef = 0;
+        if (dtStatusFailed(query->findNearestPoly(start, extents, &filter, &startRef, startPoint)) || !startRef ||
+            dtStatusFailed(query->findNearestPoly(finish, extents, &filter, &finishRef, finishPoint)) || !finishRef)
+            return false;
+
+        dtPolyRef route[MAX_PATH_LENGTH];
+        int count = 0;
+        return dtStatusSucceed(query->findPath(startRef, finishRef, startPoint, finishPoint, &filter,
+                                              route, &count, MAX_PATH_LENGTH)) && count && route[count - 1] == finishRef;
+    }
+
     bool TeleportToWalkablePoint(Player* bot, WorldPosition destination)
     {
-        if (!destination.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()))
+        WorldPosition origin(bot);
+        if (bot->IsInWater() || bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) ||
+            GetSwimPosition(bot, origin) || GetSwimPosition(bot, destination))
+            return false;
+        if (!destination.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()) || !HasNavigationRoute(bot, destination))
             return false;
 
         destination.z += 0.05f;
@@ -537,7 +637,24 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
     LastMovement& lastMove = ai->GetLastMovement();
 
     if (lastMove.lastPath.empty())
-        return false;
+    {
+        if (bot->GetTransport() || !bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) || !lastMove.lastSwimGoal)
+            return false;
+
+        WorldPosition const destination = lastMove.lastSwimGoal;
+        MovementAction movement(ai, "minimal swim");
+        return movement.MoveTo2(destination.mapId, destination.x, destination.y, destination.z, false, false, false, false, true);
+    }
+
+    WorldPosition nextPosition = lastMove.lastPath.getFront();
+    WorldPosition origin(bot);
+    if (!bot->GetTransport() && (bot->IsInWater() || bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) ||
+        GetSwimPosition(bot, origin) || GetSwimPosition(bot, nextPosition)))
+    {
+        WorldPosition const destination = lastMove.lastPath.getBack();
+        MovementAction movement(ai, "minimal swim");
+        return movement.MoveTo2(destination.mapId, destination.x, destination.y, destination.z, false, false, false, false, true);
+    }
 
     time_t now = time(0);
 
@@ -817,12 +934,6 @@ bool MovementAction::ResolveMovePath(
 
         const PointsArray& points = pathfinder.getPath();
         outMovePath.addPath(startPosition.fromPointsArray(points));
-    }
-
-    // Keep the old path if it gets us closer than the new one.
-    if (!lastMove.lastPath.empty() && !outMovePath.empty() && lastMove.lastPath.getBack().distance(endPosition) <= outMovePath.getBack().distance(endPosition))
-    {
-        outMovePath = lastMove.lastPath;
     }
 
     return true;
@@ -1132,6 +1243,13 @@ void MovementAction::DispatchMovement(
     bool generatePath,
     bool masterWalking)
 {
+    if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) && CanSwimBetween(bot, WorldPosition(bot), movePosition))
+    {
+        mm.MovePoint(movePosition.mapId, movePosition.x, movePosition.y, movePosition.z,
+            MOVE_RUN_MODE, bot->GetSpeed(MOVE_SWIM));
+        return;
+    }
+
     uint32 moveOptions = (masterWalking ? MOVE_WALK_MODE : MOVE_RUN_MODE) | (generatePath ? (MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES) : 0);
 
 Movement::PointsArray path;
@@ -1155,8 +1273,6 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     WorldPosition endPosition(mapId, x, y, z, 0);
     if (!endPosition.isValid())
         return false;
-
-    UpdateMovementState();
 
     if (!IsMovingAllowed())
     {
@@ -1183,7 +1299,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     }
 #endif
     bool detailedMove = ai->AllowActivity(DETAILED_MOVE_ACTIVITY, true);
-    if (!naturalTravel && !detailedMove)
+    if (!naturalTravel && !detailedMove && !bot->IsInWater() && !bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING))
     {
         LastMovement& lm = AI_VALUE(LastMovement&, "last movement");
         time_t now = time(0);
@@ -1198,7 +1314,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     float maxDist = sPlayerbotAIConfig.sightDistance;
     float originalZ = z;
 
-    bool generatePath = !bot->IsFlying() && !bot->HasMovementFlag(MOVEFLAG_SWIMMING) && !bot->IsInWater() && !sServerFacade.IsUnderwater(bot);
+    bool generatePath = !bot->IsFlying();
     if (noPath)
         generatePath = false;
 
@@ -1214,8 +1330,26 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         return true;
 
     WorldPosition startPosition(bot);
+    // An AI timer expiring should not restart an unchanged swimming leg.
+    if (!react && mover == bot && bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) &&
+        !bot->movespline->Finalized() && lastMove.lastSwimGoal && lastMove.lastSwimGoal.mapId == mapId &&
+        lastMove.lastSwimGoal.distance(endPosition) < 1.0f &&
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+    {
+        Vector3 const& destination = bot->movespline->FinalDestination();
+        WorldPosition const activeDestination(mapId, destination.x, destination.y, destination.z);
+        if (activeDestination.distance(lastMove.lastMoveShort) < 0.5f)
+        {
+            SetDuration(uint32(std::min<float>(sPlayerbotAIConfig.maxWaitForMove,
+                1000.0f * startPosition.distance(activeDestination) / bot->GetSpeed(MOVE_SWIM) + sPlayerbotAIConfig.reactDelay)));
+            return true;
+        }
+    }
+
     float totalDistance = startPosition.distance(endPosition);
     float maxDistChange = totalDistance * 0.1f;
+    WorldPosition waterGoal(endPosition);
+    bool const swimToSurface = !GetSwimPosition(bot, waterGoal);
 
     if (TryDropFromStuckSurface(endPosition))
         return true;
@@ -1242,7 +1376,24 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     bool isWalking = false;
 
     if (!ResolveMovePath(startPosition, endPosition, mover, minDist, maxDist, movePosition, movePath))
-        return false;
+    {
+        float const fraction = std::min(1.0f, maxDist / totalDistance);
+        movePosition = WorldPosition(mapId,
+            startPosition.x + (endPosition.x - startPosition.x) * fraction,
+            startPosition.y + (endPosition.y - startPosition.y) * fraction,
+            startPosition.z + (endPosition.z - startPosition.z) * fraction);
+        WorldPosition swimStep;
+        if (GetSwimStep(bot, startPosition, movePosition, swimToSurface, swimStep))
+            movePosition = swimStep;
+        else
+        {
+            movePosition = startPosition;
+            if (!GetSwimPosition(bot, movePosition, true) || startPosition.distance(movePosition) < minDist)
+                return false;
+        }
+        if (!CanSwimBetween(bot, startPosition, movePosition))
+            return false;
+    }
 
     lastMove.setPath(movePath);
 
@@ -1255,7 +1406,9 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         if (movePath.empty())
         {
             lastMove.setPath(movePath);
-            return true; // Path collapsed ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶ will rebuild next tick.
+            lastMove.setShort(WorldPosition(), WorldPosition());
+            SetDuration(sPlayerbotAIConfig.reactDelay);
+            return false;
         }
 
         TravelNodePathType pathType = TravelNodePathType::none;
@@ -1312,10 +1465,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         return false;
     }
 
-   if (movePosition.getMapId() == endPosition.getMapId() && movePosition.isUnderWater() && !endPosition.isUnderWater())
-    {
-        movePosition.setZ(movePosition.getHeight(true));
-    }
+    GetSwimPosition(bot, movePosition, swimToSurface);
 
     if (IsHazardNearPosition(movePosition))
     {
@@ -1327,7 +1477,11 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     if (!react)
     {
         float waitDist = (totalDistance > maxDist) ? startPosition.distance(movePosition) - 10.0f : startPosition.distance(movePosition);
-        WaitForReach(waitDist);
+        if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING))
+            SetDuration(uint32(std::min<float>(sPlayerbotAIConfig.maxWaitForMove,
+                1000.0f * startPosition.distance(movePosition) / bot->GetSpeed(MOVE_SWIM) + sPlayerbotAIConfig.reactDelay)));
+        else
+            WaitForReach(waitDist);
     }
 
     if (!mover->IsStopped() && mm.GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
@@ -1336,7 +1490,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         if (mm.GetDestination(destinationX, destinationY, destinationZ))
         {
             WorldPosition activeDestination(movePosition.getMapId(), destinationX, destinationY, destinationZ);
-            if (activeDestination.fDist(movePosition) < 5.0f)
+            if (activeDestination.distance(movePosition) < 5.0f)
             {
                 lastMove.setShort(startPosition, movePosition);
                 if (!idle)
@@ -1398,7 +1552,18 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
 
     DispatchMovement(mm, movePosition, generatePath, masterWalking);
 
+    if (generatePath && mover == bot && (mover->movespline->Finalized() ||
+        (mover->movespline->FinalDestination() - startPosition.getVector3()).squaredLength() <= minDist * minDist))
+    {
+        lastMove.lastPath.clear();
+        lastMove.setShort(WorldPosition(), WorldPosition());
+        SetDuration(sPlayerbotAIConfig.reactDelay);
+        return false;
+    }
+
     lastMove.setShort(startPosition, movePosition);
+
+    lastMove.lastSwimGoal = bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) ? endPosition : WorldPosition();
 
     if (!idle)
         ClearIdleState();
@@ -1414,8 +1579,6 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
     WorldPosition endPosition(mapId, x, y, z, 0);
     if(!endPosition.isValid())
         return false;
-
-    UpdateMovementState();
 
     if (!IsMovingAllowed())
         return false;
@@ -2330,7 +2493,9 @@ bool MovementAction::MoveTo(Unit* target, float distance)
         tz = loc.z;
     }
 
-    float distanceToTarget = sServerFacade.GetDistance2d(bot, tx, ty);
+    float distanceToTarget = bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING)
+        ? WorldPosition(bot).distance(WorldPosition(target->GetMapId(), tx, ty, tz))
+        : sServerFacade.GetDistance2d(bot, tx, ty);
     if (sServerFacade.IsDistanceGreaterThan(distanceToTarget, sPlayerbotAIConfig.targetPosRecalcDistance))
     {
         /*
@@ -2411,7 +2576,7 @@ bool MovementAction::TryDropFromStuckSurface(const WorldPosition& destination)
 {
     if (!destination || !bot->IsAlive() || !bot->GetMap() || ai->IsJumping() || bot->IsInWater() ||
         sServerFacade.IsUnderwater(bot) || bot->IsFlying() || bot->IsTaxiFlying() ||
-        bot->IsMounted() || bot->GetTransport() ||
+        bot->GetTransport() ||
         bot->IsNonMeleeSpellCasted(false, false, true) ||
         destination.getMapId() != bot->GetMapId() || destination.isInWater() || destination.isUnderWater())
         return false;
@@ -2471,6 +2636,9 @@ bool MovementAction::TryDropFromStuckSurface(const WorldPosition& destination)
             WorldPosition candidate(botPosition.getMapId(), x, y, z, botPosition.getO());
             if (candidate.isInWater() || candidate.isUnderWater())
                 continue;
+            if (!bot->GetMap()->isInLineOfSight(botPosition.x, botPosition.y, botPosition.z + 0.5f,
+                                               candidate.x, candidate.y, candidate.z + 0.5f, true, false))
+                continue;
 
             float score = candidate.fDist(destination) + radius * 0.25f;
             if (score < bestScore)
@@ -2484,14 +2652,16 @@ bool MovementAction::TryDropFromStuckSurface(const WorldPosition& destination)
             break;
     }
 
-    if (!landing || !bot->GetMap()->isInLineOfSight(botPosition.x, botPosition.y, botPosition.z + 0.5f,
-                                                  landing.x, landing.y, landing.z + 0.5f, true, false))
+    if (!landing || !landing.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()) ||
+        !bot->GetMap()->isInLineOfSight(botPosition.x, botPosition.y, botPosition.z + 0.5f,
+                                      landing.x, landing.y, landing.z + 0.5f, true, false))
         return false;
 
     lastMove.nextStuckRecoveryAttempt = now + 15;
     lastMove.stuckRecoveryUntil = now + 4;
 
     bot->SetFallInformation(botZ);
+    bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
     bot->GetMotionMaster()->Clear(false);
     bot->GetMotionMaster()->MovePoint(0, landing.getX(), landing.getY(), landing.getZ(), MOVE_FALLING | MOVE_STRAIGHT_PATH);
     ai->TellDebug(ai->GetMaster(), "Stuck above terrain; moving off the surface.", "debug stuck");
@@ -2505,27 +2675,70 @@ bool MovementAction::Follow(Unit* target, float distance)
     return Follow(target, distance, GetFollowAngle());
 }
 
-void MovementAction::UpdateMovementState()
+void MovementAction::UpdateMovementState(PlayerbotAI* ai)
 {
-    if (bot->IsInWater() || sServerFacade.IsUnderwater(bot))
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || ai->IsRealPlayer() ||
+        bot->GetTransport() || bot->IsTaxiFlying() || bot->IsFlying() || bot->IsHovering() || ai->IsJumping())
+        return;
+
+    float const x = bot->GetPositionX();
+    float const y = bot->GetPositionY();
+    float const z = bot->GetPositionZ();
+    GridMapLiquidData liquid{};
+    GridMapLiquidStatus const status = bot->GetTerrain()->getLiquidStatus(x, y, z,
+        MAP_LIQUID_TYPE_WATER | MAP_LIQUID_TYPE_OCEAN, &liquid);
+    bool const deepWater = status != LIQUID_MAP_NO_WATER &&
+        (liquid.type_flags & (MAP_LIQUID_TYPE_WATER | MAP_LIQUID_TYPE_OCEAN)) &&
+        liquid.level - liquid.depth_level > bot->GetMinSwimDepth() && !bot->IsWaterWalking();
+
+    bool settling = false;
+    float swimZ = z;
+    if (deepWater && ai->CanMove() && bot->movespline->Finalized() && z >= liquid.level - 0.1f && z <= liquid.level + 2.0f)
     {
-		bot->m_movementInfo.AddMovementFlag(MOVEFLAG_SWIMMING);
-        bot->UpdateSpeed(MOVE_SWIM, true);
+        swimZ = std::max(liquid.depth_level + 0.1f, liquid.level - bot->GetMinSwimDepth() - 0.1f);
+        settling = bot->GetMap()->isInLineOfSight(x, y, z + 0.5f, x, y, swimZ + 0.5f, true, false);
     }
+
+    bool const wasSwimming = bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING);
+    bool const swimming = deepWater && (z < liquid.level - 0.1f || settling ||
+        (wasSwimming && !bot->movespline->Finalized() && z <= liquid.level + 2.0f));
+    if (swimming)
+        bot->m_movementInfo.AddMovementFlag(MOVEFLAG_SWIMMING);
     else
+        bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_SWIMMING);
+
+    if (swimming != wasSwimming)
     {
-		bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_SWIMMING);
+        WorldPosition resume;
+        if (!bot->movespline->Finalized() && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+        {
+            Vector3 const& destination = bot->movespline->FinalDestination();
+            resume = WorldPosition(bot->GetMapId(), destination.x, destination.y, destination.z);
+        }
+
+        bot->m_movementInfo.ChangePosition(x, y, z, bot->GetOrientation());
+        if (swimming)
+            bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
         bot->UpdateSpeed(MOVE_SWIM, true);
+        bot->SendHeartBeat();
+
+        if (resume)
+        {
+            uint32 options = MOVE_RUN_MODE | MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES;
+            if (swimming && GetSwimPosition(bot, resume) && CanSwimBetween(bot, WorldPosition(bot), resume))
+                options = MOVE_RUN_MODE;
+            bot->GetMotionMaster()->MovePoint(0, resume.x, resume.y, resume.z, options,
+                swimming ? bot->GetSpeed(MOVE_SWIM) : 0.0f);
+        }
     }
-
-#ifndef MANGOSBOT_ZERO
-    if (bot->IsFlying())
-        bot->UpdateSpeed(MOVE_FLIGHT, true);
-#endif
-
-    // Temporary speed increase in group
-    //if (ai->HasRealPlayerMaster())
-    //    bot->UpdateSpeed(MOVE_RUN, true, 1.1f);
+    if (swimming)
+        bot->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_USE_SWIM_ANIMATION);
+    if (settling)
+    {
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+        bot->GetMotionMaster()->MovePoint(0, x, y, swimZ, MOVE_RUN_MODE, bot->GetSpeed(MOVE_SWIM));
+    }
 }
 
 bool MovementAction::Follow(Unit* target, float distance, float angle)
@@ -2536,8 +2749,6 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     MotionMaster &mm = *bot->GetMotionMaster();
 
     distance = distance <= target->GetObjectBoundingRadius() ? 0 : distance - target->GetObjectBoundingRadius();
-
-    UpdateMovementState();
 
     if (FollowOnTransport(target))
         return true;

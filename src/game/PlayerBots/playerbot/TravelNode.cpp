@@ -870,13 +870,6 @@ bool TravelPath::makeShortCut(WorldPosition startPos, float maxDist, Unit* bot)
     if (newPath.front() == fullPath.front() || beginPos.distance(firstNode) < sPlayerbotAIConfig.tooCloseDistance)
         return false;
 
-    //We are (nearly) on the new path. Just follow the rest.
-    if (beginPos.distance(startPos) < sPlayerbotAIConfig.tooCloseDistance)
-    {
-        fullPath = newPath;
-        return true;
-    }
-
     std::vector<WorldPosition> toPath = startPos.getPathTo(beginPos, bot);
 
     //We can not reach the new begin position. Follow the complete path.
@@ -1005,11 +998,15 @@ WorldPosition TravelPath::getNextPoint(WorldPosition startPos, float maxDist, Tr
     if (std::next(nextP) != ed)
         nextP = std::next(nextP);
 
-    if (startP != ed && startP->isWalkable() && nextP != ed &&
-        startPos.projectOnSegment(startP->point, nextP->point) > 0.0f &&
-        startPos.projectOnSegment(startP->point, nextP->point) < 1.0f)
+    if (startP != ed && startP->isWalkable() && nextP != ed)
     {
-        startP = nextP;
+        float const projection = startPos.projectOnSegment(startP->point, nextP->point);
+        if (projection > 0.0f && projection < 1.0f)
+        {
+            WorldPosition const projected = startP->point + (nextP->point - startP->point) * projection;
+            if (startPos.distance(projected) <= 1.0f)
+                startP = nextP;
+        }
     }
 
     WorldPosition nextPoint = startP->point;

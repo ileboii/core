@@ -17,6 +17,7 @@ namespace ai
 
         static bool MinimalMove(PlayerbotAI* ai);
         static bool UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition dockPosition, bool doTeleport = true);
+        static void UpdateMovementState(PlayerbotAI* ai);
     protected:
         bool ChaseTo(WorldObject *obj, float distance = 0.0f, float angle = 0.0f);
         bool MoveNear(uint32 mapId, float x, float y, float z, float distance = sPlayerbotAIConfig.contactDistance);
@@ -93,7 +94,7 @@ namespace ai
         bool IsMovingAllowed();
         bool Flee(Unit *target);
         void ClearIdleState();
-        void UpdateMovementState();
+        void UpdateMovementState() { UpdateMovementState(ai); }
 
         bool isPossible() override;
         bool isUseful() override;
