@@ -157,18 +157,9 @@ bool MoveToRpgTargetAction::Execute(Event& event)
     y += sin(angle) * INTERACTION_DISTANCE * distance;
 
     WorldPosition movePos(mapId, x, y, z);
-    
+    bool validApproach = true;
     if (movePos.distance(bot) < sPlayerbotAIConfig.sightDistance)
-    {
-        if (!movePos.ClosestCorrectPoint(5.0f, 5.0f, bot->GetInstanceId()) || abs(movePos.getZ()- z) > 10.0f)
-        {
-            ai->TellDebug(GetMaster(), "Can not path to desired location around " + chat->formatWorldobject(guidP.GetWorldObject(bot->GetInstanceId())) + " trying again later.", "debug move");
-
-            return false;
-        }
-    }
-
-    bool couldMove;
+        validApproach = movePos.ClosestCorrectPoint(5.0f, 5.0f, bot->GetInstanceId()) && std::abs(movePos.getZ() - z) <= 10.0f;
 
     if (unit && unit->IsMoving() && bot->GetDistance(unit) < INTERACTION_DISTANCE * 2 && unit->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
     {
@@ -180,7 +171,15 @@ bool MoveToRpgTargetAction::Execute(Event& event)
             if (uint32 pauseTimer = 0)
                 /* PauseWaypoints not in vmangos */;
     }
-        couldMove = MoveTo(mapId, x, y, z, false, false);
+    WorldPosition const targetPosition(wo);
+    bool const couldMove = MoveTo2(mapId, x, y, z, false, false, false, false, false,
+        wo->GetTransport() ? nullptr : &targetPosition, validApproach);
+
+    if (!couldMove && !validApproach)
+    {
+        ai->TellDebug(GetMaster(), "Can not path to desired location around " + chat->formatWorldobject(wo) + " trying again later.", "debug move");
+        return false;
+    }
 
     if (!couldMove && movePos.distance(bot) > INTERACTION_DISTANCE)
     {

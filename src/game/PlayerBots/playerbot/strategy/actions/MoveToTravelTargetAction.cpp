@@ -183,7 +183,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         ai->TellPlayerNoFacing(GetMaster(), out);
     }
 
-    canMove = MoveTo(mapId, x, y, z, false, false);
+    canMove = MoveTo2(mapId, x, y, z, false, false, false, false, false, &location);
 
     if (!canMove)
     {

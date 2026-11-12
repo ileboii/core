@@ -61,7 +61,8 @@ namespace ai
 
         void ClipMovePositionForAggro(WorldPosition& movePosition,
             Unit* mover,
-            const WorldPosition& startPosition);
+            const WorldPosition& startPosition,
+            Movement::PointsArray const* route);
 
         void UpdateFlyingState(WorldPosition& movePosition,
             float totalDistance,
@@ -72,10 +73,13 @@ namespace ai
         void DispatchMovement(MotionMaster& mm,
             const WorldPosition& movePosition,
             bool generatePath,
-            bool masterWalking);
+            bool masterWalking,
+            bool useCompleteMmapPath);
 
         // (existing private members below)
-        bool MoveTo2(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets, bool naturalTravel);
+        bool MoveTo2(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath,
+            bool ignoreEnemyTargets, bool naturalTravel, const WorldPosition* lowerFloorDestination = nullptr,
+            bool allowFallback = true);
 
         bool MoveTo(uint32 mapId, float x, float y, float z, bool idle = false, bool react = false, bool noPath = false, bool ignoreEnemyTargets = false, bool naturalTravel = false);
         bool MoveTo(Unit* target, float distance = 0.0f);

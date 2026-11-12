@@ -119,6 +119,21 @@ namespace
                                               route, &count, MAX_PATH_LENGTH)) && count && route[count - 1] == finishRef;
     }
 
+    bool FindCompleteMmapPath(Unit* mover, WorldPosition const& destination, Movement::PointsArray* points = nullptr)
+    {
+        PathFinder path(mover);
+        path.calculate(destination.x, destination.y, destination.z);
+        Movement::PointsArray const& route = path.getPath();
+        if (path.getPathType() != PATHFIND_NORMAL || route.size() < 2 ||
+            (route.front() - path.getStartPosition()).squaredLength() > 4.0f ||
+            (route.back() - destination.getVector3()).squaredLength() > 4.0f)
+            return false;
+
+        if (points)
+            *points = std::move(path.getFullPath());
+        return true;
+    }
+
     bool TeleportToWalkablePoint(Player* bot, WorldPosition destination)
     {
         WorldPosition origin(bot);
@@ -1081,7 +1096,8 @@ MovementAction::PathHandleResult MovementAction::HandlePathNodeType(
 void MovementAction::ClipMovePositionForAggro(
     WorldPosition& movePosition,
     Unit* mover,
-    const WorldPosition& startPosition)
+    const WorldPosition& startPosition,
+    Movement::PointsArray const* route)
 {
     std::list<ObjectGuid> targets = AI_VALUE_LAZY(std::list<ObjectGuid>, "possible attack targets");
     if (targets.empty() || !movePosition)
@@ -1089,13 +1105,15 @@ void MovementAction::ClipMovePositionForAggro(
 
     PathFinder path(mover);
 
-    if (mover && mover->IsPlayer())
-        path.ExcludeSteepSlopes();
+    if (!route)
+    {
+        if (mover && mover->IsPlayer())
+            path.ExcludeSteepSlopes();
+        path.calculate(movePosition.getX(), movePosition.getY(), movePosition.getZ(), false);
+        route = &path.getPath();
+    }
 
-    path.calculate(movePosition.getX(), movePosition.getY(), movePosition.getZ(), false);
-    const PointsArray& points = path.getPath();
-
-    for (auto& p : points)
+    for (auto const& p : *route)
     {
         WorldPosition point(startPosition.getMapId(), p.x, p.y, p.z, startPosition.getO());
 
@@ -1241,7 +1259,8 @@ void MovementAction::DispatchMovement(
     MotionMaster& mm,
     const WorldPosition& movePosition,
     bool generatePath,
-    bool masterWalking)
+    bool masterWalking,
+    bool useCompleteMmapPath)
 {
     if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) && CanSwimBetween(bot, WorldPosition(bot), movePosition))
     {
@@ -1250,9 +1269,11 @@ void MovementAction::DispatchMovement(
         return;
     }
 
-    uint32 moveOptions = (masterWalking ? MOVE_WALK_MODE : MOVE_RUN_MODE) | (generatePath ? (MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES) : 0);
+    uint32 moveOptions = masterWalking ? MOVE_WALK_MODE : MOVE_RUN_MODE;
+    if (generatePath)
+        moveOptions |= useCompleteMmapPath ? MOVE_PATHFINDING : (MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES);
 
-Movement::PointsArray path;
+    Movement::PointsArray path;
     if (GeneratePathAvoidingHazards(movePosition, generatePath, path))
     {
         WaitForReach(path);
@@ -1268,10 +1289,11 @@ Movement::PointsArray path;
 // ---------------------------------------------------------------
 // MoveTo2  (refactored version of MoveTo)
 // ---------------------------------------------------------------
-bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets, bool naturalTravel)
+bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath,
+    bool ignoreEnemyTargets, bool naturalTravel, const WorldPosition* lowerFloorDestination, bool allowFallback)
 {
     WorldPosition endPosition(mapId, x, y, z, 0);
-    if (!endPosition.isValid())
+    if (!endPosition.isValid() || (!lowerFloorDestination && !allowFallback))
         return false;
 
     if (!IsMovingAllowed())
@@ -1346,12 +1368,28 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         }
     }
 
+    Movement::PointsArray lowerFloorPath;
+    if (lowerFloorDestination && lowerFloorDestination->mapId == startPosition.mapId &&
+        startPosition.z - lowerFloorDestination->z > 2.0f && startPosition.distance(*lowerFloorDestination) <= maxDist &&
+        generatePath && mover == bot && bot->IsAlive() && !bot->GetTransport() && !bot->IsTaxiFlying() &&
+        !bot->IsInWater() && !bot->IsSwimming() && !bot->movespline->IsUninterruptible())
+    {
+        // Use the actual destination when mmap has a complete walk to its lower floor.
+        WorldPosition swimDestination(*lowerFloorDestination);
+        if (lowerFloorDestination->isValid() && !GetSwimPosition(bot, swimDestination) &&
+            FindCompleteMmapPath(bot, *lowerFloorDestination, &lowerFloorPath))
+            endPosition = *lowerFloorDestination;
+    }
+    bool const hasLowerFloorPath = !lowerFloorPath.empty();
+    if (!hasLowerFloorPath && !allowFallback)
+        return false;
+
     float totalDistance = startPosition.distance(endPosition);
     float maxDistChange = totalDistance * 0.1f;
     WorldPosition waterGoal(endPosition);
     bool const swimToSurface = !GetSwimPosition(bot, waterGoal);
 
-    if (TryDropFromStuckSurface(endPosition))
+    if (!hasLowerFloorPath && TryDropFromStuckSurface(endPosition))
         return true;
 
     if (totalDistance < minDist)
@@ -1375,7 +1413,9 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     TravelPath movePath;
     bool isWalking = false;
 
-    if (!ResolveMovePath(startPosition, endPosition, mover, minDist, maxDist, movePosition, movePath))
+    if (hasLowerFloorPath)
+        movePosition = endPosition;
+    else if (!ResolveMovePath(startPosition, endPosition, mover, minDist, maxDist, movePosition, movePath))
     {
         float const fraction = std::min(1.0f, maxDist / totalDistance);
         movePosition = WorldPosition(mapId,
@@ -1456,7 +1496,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     }
 
     if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT) && !bot->IsDead() && !ignoreEnemyTargets)
-        ClipMovePositionForAggro(movePosition, mover, startPosition);
+        ClipMovePositionForAggro(movePosition, mover, startPosition, hasLowerFloorPath ? &lowerFloorPath : nullptr);
 
     if (movePosition == WorldPosition())
     {
@@ -1465,7 +1505,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
         return false;
     }
 
-    GetSwimPosition(bot, movePosition, swimToSurface);
+    bool const swimDestination = GetSwimPosition(bot, movePosition, swimToSurface);
 
     if (IsHazardNearPosition(movePosition))
     {
@@ -1550,7 +1590,9 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     }
 #endif
 
-    DispatchMovement(mm, movePosition, generatePath, masterWalking);
+    bool const useCompleteMmapPath = hasLowerFloorPath && !swimDestination &&
+        (movePosition.getVector3() == endPosition.getVector3() || FindCompleteMmapPath(bot, movePosition));
+    DispatchMovement(mm, movePosition, generatePath, masterWalking, useCompleteMmapPath);
 
     if (generatePath && mover == bot && (mover->movespline->Finalized() ||
         (mover->movespline->FinalDestination() - startPosition.getVector3()).squaredLength() <= minDist * minDist))
