@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/FollowActions.h"
 #include "FollowMasterStrategy.h"
 
 using namespace ai;
@@ -42,7 +43,8 @@ void FollowMasterStrategy::OnStrategyAdded(BotState state)
 
 void FollowMasterStrategy::OnStrategyRemoved(BotState state)
 {
-    if (state == ai->GetState() && ai->GetBot()->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
+    if (state == ai->GetState() && (ai->GetBot()->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE ||
+        FollowAction::IsFollowingLowerFloor(ai)))
     {
         ai->StopMoving();
     }

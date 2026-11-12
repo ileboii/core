@@ -2,6 +2,7 @@
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/FollowActions.h"
 #include "playerbot/strategy/generic/CombatStrategy.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/values/Formations.h"
@@ -507,14 +508,16 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            bool const following = bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE ||
+                FollowAction::IsFollowingLowerFloor(ai);
             Stance* stance = AI_VALUE(Stance*, "stance");
 
             if (ai->IsStateActive(BotState::BOT_STATE_COMBAT) && stance && stance->getName() == "spread")
             {
-                return bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE;
+                return following;
             }
 
-            if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+            if (!following)
                 return false;
 
             if (sServerFacade.GetChaseTarget(bot) && !sServerFacade.GetChaseTarget(bot)->IsPlayer() && sServerFacade.GetChaseTarget(bot)->IsMoving())
@@ -553,7 +556,8 @@ namespace ai
                 return false;
             }
 
-            return !AI_VALUE2(bool, "can free move", "wandermax");
+            return !AI_VALUE2(bool, "can free move", "wandermax") ||
+                FollowAction::NeedsLowerFloorPath(ai, AI_VALUE(Unit*, "follow target"));
         }
     };
 
@@ -640,7 +644,8 @@ namespace ai
                 return false;
             }
 
-            return !AI_VALUE(bool, "can free move");
+            return !AI_VALUE(bool, "can free move") ||
+                FollowAction::NeedsLowerFloorPath(ai, AI_VALUE(Unit*, "follow target"));
         };
     };
 }

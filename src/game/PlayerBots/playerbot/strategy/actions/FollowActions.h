@@ -11,12 +11,21 @@ namespace ai
 		virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
         virtual bool CanDeadFollow(Unit* target);
+
+        static bool NeedsLowerFloorPath(PlayerbotAI* ai, Unit* target);
+        static bool IsFollowingLowerFloor(PlayerbotAI* ai);
+
+    private:
+        bool IsCurrentLowerFloorTarget(Unit* target) const;
+        ObjectGuid lowerFloorTarget;
+        G3D::Vector3 lowerFloorDestination;
+        time_t retryLowerFloorPath = 0;
 	};
 
 	class StopFollowAction : public MovementAction {
 	public:
 		StopFollowAction(PlayerbotAI* ai, std::string name = "stop follow") : MovementAction(ai, name) {}
-		virtual bool Execute(Event& event) override { ai->StopMoving(); return true; };
+        virtual bool Execute(Event& event) override;
 	};
 
     class FleeToMasterAction : public FollowAction {
