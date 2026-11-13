@@ -576,6 +576,8 @@ bool PlayerbotAIConfig::Initialize()
     levelCheck = config.GetIntDefault("AiPlayerbot.LevelCheck", 30);
 	randomBotPreQuests = config.GetBoolDefault("AiPlayerbot.PreQuests", true);
     randomBotSayWithoutMaster = config.GetBoolDefault("AiPlayerbot.RandomBotSayWithoutMaster", false);
+    allowChatTravel = config.GetBoolDefault("AiPlayerbot.AllowChat.Travel", true);
+    allowChatSpell = config.GetBoolDefault("AiPlayerbot.AllowChat.Spell", true);
     randomBotInvitePlayer = config.GetBoolDefault("AiPlayerbot.RandomBotInvitePlayer", true);
     randomBotGroupNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGroupNearby", true);
     randomBotRaidNearby = config.GetBoolDefault("AiPlayerbot.RandomBotRaidNearby", true);

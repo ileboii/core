@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TellCastFailedAction.h"
+#include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 
 using namespace ai;
@@ -17,6 +18,9 @@ bool TellCastFailedAction::Execute(Event& event)
 
     if (result == SPELL_CAST_OK)
         return false;
+
+    if (!sPlayerbotAIConfig.allowChatSpell)
+        return true;
 
     const SpellEntry *const pSpellInfo =  sServerFacade.LookupSpellInfo(spellId);
     std::ostringstream out; out << chat->formatSpell(pSpellInfo) << ": ";

@@ -336,6 +336,10 @@ AiPlayerbot.RandomBotQuestIds = 7848,3802,5505,6502,7761,9378
 # Bots without a master will say things they normally tell their master.
 # AiPlayerbot.RandomBotSayWithoutMaster = 0
 
+# Allow/suppress certain bot chat lines.
+# AiPlayerbot.AllowChat.Travel = 1
+# AiPlayerbot.AllowChat.Spell = 1
+
 # Minimum level at which bots will start accepting duels
 # AiPlayerbot.BotAcceptDuelMinimumLevel = 10
 

@@ -4,6 +4,7 @@
 #include "Talentspec.h"
 #include "SharedDefines.h"
 #include "SystemConfig.h"
+#include <atomic>
 
 class Player;
 class PlayerbotMgr;
@@ -261,6 +262,8 @@ public:
     uint32 minEnchantingBotLevel;
     uint32 randombotStartingLevel;
     bool randomBotSayWithoutMaster;
+    std::atomic<bool> allowChatTravel{true};
+    std::atomic<bool> allowChatSpell{true};
     bool randomBotInvitePlayer;
     bool randomBotGroupNearby;
     bool randomBotRaidNearby;

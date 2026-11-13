@@ -491,7 +491,7 @@ bool GoAction::TellWhereToGo(std::string& param, Player* requester) const
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
     if (!TellGrouped(ai, requester) && travelTarget->IsActive())
-        ChooseTravelTargetAction::ReportTravelTarget(bot, requester, travelTarget, nullptr);
+        ChooseTravelTargetAction::ReportTravelTarget(bot, requester, travelTarget, nullptr, true);
 
     TellStuck(ai, requester);
 

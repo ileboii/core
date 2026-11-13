@@ -164,21 +164,22 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
 
 //Tell the master what travel target we are moving towards.
 //This should at some point be rewritten to be denser or perhaps logic moved to ->getTitle()
-void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget)
+void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget, bool isStatusRequest)
 {
 #ifdef GenerateBotTests
     TravelProbe::ReportFlip(bot, newTarget, oldTarget);
 #endif
 
     PlayerbotAI* ai = bot->GetPlayerbotAI();
+    const bool allowChat = sPlayerbotAIConfig.allowChatTravel || isStatusRequest;
+    const bool logTravel = sPlayerbotAIConfig.hasLog("travel_map.csv");
+    if (!allowChat && !logTravel)
+        return;
+
     AiObjectContext* context = ai->GetAiObjectContext();
 
     TravelDestination* destination = newTarget->GetDestination();
-
-    TravelDestination* oldDestination;
-
-    if (oldTarget)
-        oldDestination = oldTarget->GetDestination();
+    TravelDestination* oldDestination = oldTarget ? oldTarget->GetDestination() : nullptr;
 
     std::ostringstream out;
 
@@ -268,15 +269,15 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
     if (out.str().empty())
         return;
 
-    if (!isGuildMeeting)
+    if (allowChat && !isGuildMeeting)
         ai->TellPlayerNoFacing(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK, false);
 
-    if (!futureTravelDetail.empty())
+    if (allowChat && !futureTravelDetail.empty())
         ai->TellDebug(requester, "Farming item: " + futureTravelDetail + " from " + destination->GetTitle(), "debug travel");
 
     std::string message = out.str().c_str();
 
-    if (sPlayerbotAIConfig.hasLog("travel_map.csv"))
+    if (logTravel)
     {
         WorldPosition botPos(bot);
         WorldPosition destPos = *newTarget->GetPosition();

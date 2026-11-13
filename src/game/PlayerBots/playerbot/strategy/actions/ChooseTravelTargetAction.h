@@ -15,7 +15,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
-        static void ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);
+        static void ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget, bool isStatusRequest = false);
     protected:
         void setNewTarget(Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);        
 
