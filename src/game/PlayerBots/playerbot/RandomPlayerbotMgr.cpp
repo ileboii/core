@@ -1278,7 +1278,7 @@ void RandomPlayerbotMgr::LoginFreeBots()
                 if (sRandomPlayerbotMgr.GetValue(botGuid, "create levelup"))
                 {
                     PlayerbotFactory factory(player, player->GetLevel());
-                    factory.Randomize(false, false);
+                    factory.Randomize(true, false);
                     sRandomPlayerbotMgr.SetValue(botGuid, "create levelup", 0);
                 }
 
