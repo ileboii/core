@@ -99,6 +99,8 @@ namespace ai
         // snapshot keeps the original assertion strength for the whole observe window.
         uint32 groupOnMapExpected = 0;
 
+        uint32 avJoinStart = 0;
+
         bool debug = false; // enable extra logging for debugging
 
         TestContext() : pc(0), observing(false), testStartTime(0), monitorTime(0), waitTime(0), undergroundCount(0), cannotReachCount(0), combatSeen(false), focusMobEntry(0), focusMobKilled(false), focusMobPassive(false), cleanupPc(0), cleanupPrepared(false), whoResponded(false), result(TestResult::PENDING) {}

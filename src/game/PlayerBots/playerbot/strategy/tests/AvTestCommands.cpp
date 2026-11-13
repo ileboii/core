@@ -4,6 +4,8 @@
 #include "TestRegistry.h"
 #include "BattleGround.h"
 #include "BattleGroundAV.h"
+#include "BattleGroundMgr.h"
+#include "playerbot/strategy/actions/BattleGroundJoinAction.h"
 
 using namespace ai;
 
@@ -16,6 +18,29 @@ namespace
             return nullptr;
 
         return (BattleGroundAV*)bg;
+    }
+
+    class TestAvJoinAction : public BGJoinAction
+    {
+    public:
+        TestAvJoinAction(PlayerbotAI* ai) : BGJoinAction(ai) {}
+        bool Queue() { return JoinQueue(BATTLEGROUND_QUEUE_AV); }
+    };
+
+    bool CollectAvSquad(Player* bot, TestContext& ctx, std::vector<Player*>& squad, std::string& message)
+    {
+        squad.push_back(bot);
+        for (ObjectGuid const& guid : ctx.spawnedBots)
+        {
+            Player* member = sObjectMgr.GetPlayer(guid);
+            if (!member || !member->IsInWorld())
+            {
+                message = "Waiting for spawned bots to enter world before joining Alterac Valley";
+                return false;
+            }
+            squad.push_back(member);
+        }
+        return true;
     }
 }
 
@@ -90,4 +115,110 @@ TestResult RequireAvNode::Execute(const std::string& params, Player* bot,
 
     message = "av node " + nodeKey + " is " + FormatAvNodeState(owner, state) + ", expected " + FormatAvNodeState(expectedOwner, expectedState);
     return TestResult::FAIL;
+}
+
+TestResult CommandAvJoin::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    if (!sBattleGroundMgr.isTesting())
+    {
+        message = "av join: battleground testing mode is off - enable it with .debug bg";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    uint32 timeoutSec = 300;
+    std::string timeoutArg = params;
+    timeoutArg.erase(0, timeoutArg.find_first_not_of(' '));
+    if (!timeoutArg.empty())
+    {
+        if (timeoutArg.size() > 4 || timeoutArg.find_first_not_of("0123456789") != std::string::npos)
+        {
+            message = "usage: av join [timeout seconds 1-3600]";
+            return TestResult::IMPOSSIBLE;
+        }
+        timeoutSec = std::min<uint32>(std::max<uint32>(std::stoul(timeoutArg), 1), 3600);
+    }
+
+    if (!ctx.avJoinStart)
+        ctx.avJoinStart = WorldTimer::getMSTime();
+
+    bool timedOut = WorldTimer::getMSTimeDiff(ctx.avJoinStart, WorldTimer::getMSTime()) > timeoutSec * IN_MILLISECONDS;
+
+    std::vector<Player*> squad;
+    if (!CollectAvSquad(bot, ctx, squad, message))
+    {
+        if (!timedOut)
+            return TestResult::PENDING;
+
+        ctx.avJoinStart = 0;
+        message = "av join: spawned bots did not enter the world within " + std::to_string(timeoutSec) + "s";
+        return TestResult::FAIL;
+    }
+
+    uint32 inside = 0;
+    for (Player* member : squad)
+    {
+        if (BattleGroundAV* av = GetAvForBot(member))
+        {
+            if (member->GetMapId() == av->GetMapId() && member->IsInWorld() && !member->IsBeingTeleported())
+                ++inside;
+            continue;
+        }
+
+        if (member->InBattleGround())
+        {
+            message = "av join: " + std::string(member->GetName()) + " is in another battleground";
+            return TestResult::IMPOSSIBLE;
+        }
+
+        if (member->InBattleGroundQueueForBattleGroundQueueType(BATTLEGROUND_QUEUE_AV))
+            continue;
+
+        PlayerbotAI* memberAi = member->GetPlayerbotAI();
+        if (!memberAi)
+        {
+            message = "av join: " + std::string(member->GetName()) + " is not a bot";
+            return TestResult::IMPOSSIBLE;
+        }
+
+        TestAvJoinAction join(memberAi);
+        if (!join.Queue())
+        {
+            message = "av join: " + std::string(member->GetName()) + " could not queue for Alterac Valley (level " + std::to_string(member->GetLevel()) + ")";
+            return TestResult::IMPOSSIBLE;
+        }
+    }
+
+    if (inside == squad.size())
+    {
+        ctx.avJoinStart = 0;
+        return TestResult::PASS;
+    }
+
+    if (timedOut)
+    {
+        message = "av join: " + std::to_string(inside) + "/" + std::to_string(squad.size()) + " bots entered Alterac Valley within " + std::to_string(timeoutSec) + "s";
+        ctx.avJoinStart = 0;
+        return TestResult::FAIL;
+    }
+
+    message = "Waiting for " + std::to_string(squad.size() - inside) + " bots to enter Alterac Valley";
+    return TestResult::PENDING;
+}
+
+TestResult CommandAvLeave::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    ctx.avJoinStart = 0;
+
+    if (bot->InBattleGround())
+        bot->LeaveBattleground();
+    else if (bot->InBattleGroundQueueForBattleGroundQueueType(BATTLEGROUND_QUEUE_AV))
+    {
+        bot->RemoveBattleGroundQueueId(BATTLEGROUND_QUEUE_AV);
+        sBattleGroundMgr.m_battleGroundQueues[BATTLEGROUND_QUEUE_AV].RemovePlayer(bot->GetObjectGuid(), true);
+        sBattleGroundMgr.ScheduleQueueUpdate(BATTLEGROUND_QUEUE_AV, BATTLEGROUND_AV, bot->GetBattleGroundBracketIdFromLevel(BATTLEGROUND_AV));
+    }
+
+    return TestResult::PASS;
 }
