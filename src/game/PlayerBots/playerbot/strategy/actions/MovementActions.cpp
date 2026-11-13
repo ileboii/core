@@ -2649,6 +2649,10 @@ bool MovementAction::TryDropFromStuckSurface(const WorldPosition& destination)
 
     lastMove.nextStuckRecoveryAttempt = now + 3;
 
+    WorldPosition standing(botPosition);
+    if (standing.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()))
+        return false;
+
     float startAngle = botPosition.getAngleTo(destination);
     WorldPosition landing;
     float bestScore = 1.0e30f;

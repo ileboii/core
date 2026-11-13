@@ -1159,6 +1159,27 @@ std::vector<WorldPosition> WorldPosition::getPathFromPath(const std::vector<Worl
     return fullPath;
 }
 
+float WorldPosition::GetWmoFloorHeight(uint32* areaId) const
+{
+    if (areaId)
+        *areaId = 0;
+
+    float floorZ = z + 1.0f;
+    uint32 flags;
+    int32 adtId, rootId, groupId;
+    if (VMAP::VMapFactory::createOrGetVMapManager()->getAreaInfo(mapId, x, y, floorZ, flags, adtId, rootId, groupId) &&
+        std::abs(floorZ - z) <= 1.0f)
+    {
+        if (areaId)
+            if (auto const* area = GetWMOAreaTableEntryByTripple(rootId, adtId, groupId))
+                *areaId = area->areaId;
+
+        return floorZ;
+    }
+
+    return INVALID_HEIGHT_VALUE;
+}
+
 bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 instanceId)
 {
     if (!isValid())
@@ -1200,9 +1221,20 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
         std::abs(newPoint[2] - x) > maxRange || std::abs(newPoint[0] - y) > maxRange)
         return false;
 
-    // A fence top can have its own polygon without a walking route to the ground below.
     if (terrainHeight > INVALID_HEIGHT && newPoint[1] > terrainHeight + 2.0f)
     {
+        WorldPosition const floor(mapId, newPoint[2], newPoint[0], newPoint[1], o);
+        dtQueryFilter wmoFilter = filter;
+        wmoFilter.setExcludeFlags(0);
+        float wallDistance, hit[VERTEX_SIZE] = {}, normal[VERTEX_SIZE];
+        if (floor.GetWmoFloorHeight() > INVALID_HEIGHT &&
+            dtStatusSucceed(query->findDistanceToWall(polyRef, newPoint, 1.0f, &wmoFilter, &wallDistance, hit, normal)) &&
+            wallDistance >= 1.0f)
+        {
+            set(floor);
+            return true;
+        }
+
         float below[VERTEX_SIZE] = { newPoint[0], terrainHeight, newPoint[2] };
         float groundExtents[VERTEX_SIZE] = { 24.0f, 2.0f, 24.0f };
         float groundPoint[VERTEX_SIZE] = {};
