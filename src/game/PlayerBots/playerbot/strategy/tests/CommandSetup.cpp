@@ -241,8 +241,11 @@ TestResult CommandSetupSetDestination::Execute(const std::string& params, Player
     {
         // Pass the guid-backed entry through: rpg triggers match "rpg target entry == travel
         // target entry" for gray/low-level quests, and a coords-only destination reports 0.
-        message = "set destination: fork TravelDestination does not yet support coords-pinned targets";
-        return TestResult::IMPOSSIBLE;
+        TemporaryTravelDestination* tempDest = new TemporaryTravelDestination(loc, (int32)loc.GetEntry());
+        target->SetTarget(tempDest, tempDest->GetPosition());
+        target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
+        target->SetForced(!nonForced);
+        target->SetConditions({"not::manual bool::is travel refresh"});
 
         // The default TRAVEL budget is distance-based (2x theoretical walk time + 3 s), sized for
         // destinations the bot itself picks from far away. A test's 90 yd drop computes to ~16 s,

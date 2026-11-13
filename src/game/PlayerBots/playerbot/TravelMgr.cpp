@@ -858,6 +858,9 @@ TravelTarget::TravelTarget(PlayerbotAI* ai) : AiObject(ai)
 }
 
 void TravelTarget::SetTarget(TravelDestination* tDestination1, WorldPosition* wPosition1) {
+    if (dynamic_cast<TemporaryTravelDestination*>(tDestination) && tDestination1 != tDestination)
+        delete tDestination;
+
     wPosition = wPosition1;
     tDestination = tDestination1;
     guildQuestId = 0;
