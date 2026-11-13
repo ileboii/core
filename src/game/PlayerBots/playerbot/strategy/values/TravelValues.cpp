@@ -373,9 +373,16 @@ bool ShouldTravelNamedValue::Calculate()
     {
         return GuildScheduleValue::GetActivity(ai) == GuildActivity::Meeting;
     }
-    else if (name == "guild order")
+    else if (name == "guild order" || name == "guild quest reward")
     {
-        return GuildOrdersAllowed(ai) && AI_VALUE(bool, "has guild travel order");
+        if (!GuildOrdersAllowed(ai))
+            return false;
+
+        GuildOrder const order = AI_VALUE(GuildOrder, "guild order");
+        if (name == "guild quest reward")
+            return order.IsReadyQuestReward();
+
+        return !order.IsReadyQuestReward() && AI_VALUE(bool, "has guild travel order");
     }
     else if (name == "reagent vendor")
     {

@@ -7,6 +7,8 @@
 
 namespace ai
 {
+    enum class TravelDestinationPurpose : uint32;
+
     enum class GuildActivity
     {
         None,
@@ -53,6 +55,10 @@ namespace ai
     };
 
     bool GuildOrdersAllowed(PlayerbotAI* ai);
+    bool HasGuildQuestItems(Player const* bot, Quest const* quest);
+    bool CanCompleteGuildQuest(Player const* bot, Quest const* quest);
+    TravelDestinationPurpose GetGuildQuestTravelPurpose(Player const* bot, Quest const* quest);
+    void ResetGuildQuestOrders(PlayerbotAI* ai);
     inline constexpr std::string_view GuildOrderCastPrefix = "guild order ";
 
     enum class GuildOrderType : uint8
@@ -70,14 +76,19 @@ namespace ai
     {
         GuildOrderType type = GuildOrderType::None;
         std::string target;
-        uint32 amount = 0; // Used for Craft and Farm orders
+        uint32 amount = 0;
         uint32 questId = 0;
         uint32 rewardItemId = 0;
+        uint32 itemId = 0;
+        int8 rewardChoiceIndex = -1;
+        bool isQuestPrerequisite = false;
 
         bool IsValid() const { return type != GuildOrderType::None && !target.empty(); }
         bool IsTravelOrder() const { return type == GuildOrderType::Farm || type == GuildOrderType::Kill || type == GuildOrderType::Explore || type == GuildOrderType::AuctionHouse || type == GuildOrderType::QuestReward; }
         bool IsCraftOrder() const { return type == GuildOrderType::Craft; }
         bool IsQuestRewardOrder() const { return type == GuildOrderType::QuestReward; }
+        bool IsReadyQuestReward() const { return IsQuestRewardOrder() && !isQuestPrerequisite; }
+        bool NeedsMoreOfReward(Player const* player) const { return rewardItemId && player->GetItemCount(rewardItemId) < amount; }
 
         std::string GetTypeName() const
         {
@@ -99,12 +110,14 @@ namespace ai
     public:
         GuildOrderValue(PlayerbotAI* ai) : CalculatedValue<GuildOrder>(ai, "guild order", 60) {}
 
+        GuildOrder Get() override;
         GuildOrder Calculate() override;
 
         static uint32 FindItemByName(const std::string& name);
     private:
         static std::string TrimWhitespace(const std::string& str);
         static bool ParseOrderPrefix(const std::string& note, const std::string& prefix, std::string& outBody);
+        bool useShareList = false;
     };
 
     class HasGuildOrderValue : public BoolCalculatedValue
@@ -129,20 +142,13 @@ namespace ai
             // If a Farm order has an amount, check inventory count.
             if (order.type == GuildOrderType::Farm && order.amount > 0)
             {
-                uint32 itemId = GuildOrderValue::FindItemByName(order.target);
+                uint32 itemId = order.itemId ? order.itemId : GuildOrderValue::FindItemByName(order.target);
                 if (itemId)
                 {
                     uint32 currentCount = ai->GetInventoryItemsCountWithId(itemId);
                     if (currentCount >= order.amount)
                         return false;
                 }
-            }
-
-            if (order.type == GuildOrderType::QuestReward && order.amount > 0 && order.rewardItemId)
-            {
-                uint32 currentCount = ai->GetInventoryItemsCountWithId(order.rewardItemId);
-                if (currentCount >= order.amount)
-                    return false;
             }
 
             return true;
@@ -166,33 +172,14 @@ namespace ai
         bool Calculate() override
         {
             GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-            if (!order.IsQuestRewardOrder() || !order.questId)
-                return false;
-
-            // Already have enough of the reward item.
-            if (order.amount > 0 && order.rewardItemId)
-            {
-                uint32 currentCount = ai->GetInventoryItemsCountWithId(order.rewardItemId);
-                if (currentCount >= order.amount)
-                    return false;
-            }
-
-            QuestStatus status = bot->GetQuestStatus(order.questId);
-            // Quest already in log (incomplete or complete) — no need to accept.
-            if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE)
+            if (!order.IsQuestRewardOrder() || !order.NeedsMoreOfReward(bot))
                 return false;
 
             Quest const* quest = sObjectMgr.GetQuestTemplate(order.questId);
-            if (!quest)
+            if (!HasGuildQuestItems(bot, quest) || quest->IsAutoComplete())
                 return false;
 
-            if (!bot->CanTakeQuest(quest, false))
-                return false;
-
-            if (!bot->SatisfyQuestLog(false))
-                return false;
-
-            return true;
+            return bot->CanTakeQuest(quest, false) && bot->CanAddQuest(quest, false);
         }
     };
 
@@ -204,27 +191,12 @@ namespace ai
         bool Calculate() override
         {
             GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-            if (!order.IsQuestRewardOrder() || !order.questId)
-                return false;
-
-            if (order.amount > 0 && order.rewardItemId)
-            {
-                uint32 currentCount = ai->GetInventoryItemsCountWithId(order.rewardItemId);
-                if (currentCount >= order.amount)
-                    return false;
-            }
-
-            if (bot->GetQuestStatus(order.questId) != QUEST_STATUS_COMPLETE)
+            if (!order.IsQuestRewardOrder() || !order.NeedsMoreOfReward(bot))
                 return false;
 
             Quest const* quest = sObjectMgr.GetQuestTemplate(order.questId);
-            if (!quest)
-                return false;
-
-            if (!bot->CanRewardQuest(quest, false))
-                return false;
-
-            return true;
+            return HasGuildQuestItems(bot, quest) &&
+                (bot->CanRewardQuest(quest, false) || CanCompleteGuildQuest(bot, quest));
         }
     };
 
@@ -260,8 +232,6 @@ namespace ai
     };
 
     uint32 CountGuildFinishedItemDeficit(Player* bot, uint32 itemId, const std::vector<GuildShareItemEntry>& shareList);
-
-    std::vector<std::pair<uint32, int8>> FindRepeatableQuestsRewardingItem(uint32 itemId);
 
     class GuildShareListValue : public CalculatedValue<std::vector<GuildShareItemEntry>>
     {
@@ -320,9 +290,26 @@ namespace ai
     class GuildShareQuestRewardOrderValue : public CalculatedValue<GuildOrder>
     {
     public:
-        GuildShareQuestRewardOrderValue(PlayerbotAI* ai) : CalculatedValue<GuildOrder>(ai, "guild share quest reward order", 60) {}
+        GuildShareQuestRewardOrderValue(PlayerbotAI* ai) : CalculatedValue<GuildOrder>(ai, "guild share quest reward order", 10) {}
 
         GuildOrder Calculate() override;
+    };
+
+    struct GuildShareQuestWork
+    {
+        std::map<uint32, uint32> requiredItems;
+        std::vector<GuildOrder> exchanges;
+    };
+
+    class GuildShareQuestWorkValue : public CalculatedValue<GuildShareQuestWork const*>
+    {
+    public:
+        GuildShareQuestWorkValue(PlayerbotAI* ai) : CalculatedValue<GuildShareQuestWork const*>(ai, "guild share quest work", 30) {}
+
+        GuildShareQuestWork const* Calculate() override;
+
+    private:
+        GuildShareQuestWork work;
     };
 
     class GuildShareQuestRewardItemValue : public CalculatedValue<uint32>

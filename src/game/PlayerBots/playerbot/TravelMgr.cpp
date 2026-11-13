@@ -860,6 +860,8 @@ TravelTarget::TravelTarget(PlayerbotAI* ai) : AiObject(ai)
 void TravelTarget::SetTarget(TravelDestination* tDestination1, WorldPosition* wPosition1) {
     wPosition = wPosition1;
     tDestination = tDestination1;
+    guildQuestId = 0;
+    SetGuildItem(0, 0);
 
     SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
 }
@@ -870,6 +872,8 @@ void TravelTarget::CopyTarget(TravelTarget* const target) {
     forced = target->forced;
     relevance = target->relevance;
     extendRetryCount = target->extendRetryCount;
+    guildQuestId = target->guildQuestId;
+    SetGuildItem(target->guildItemId, target->guildItemCount);
 }
 
 void TravelTarget::SetStatus(TravelStatus status) {
@@ -956,12 +960,41 @@ void TravelTarget::CheckGuildSchedule()
 
     std::string const& condition = travelConditions.front();
     bool const isMeeting = condition == "should travel named::guild meeting";
-    if (!isMeeting && condition != "should travel named::guild order" && condition != "should travel named::reagent vendor")
+    if (!isMeeting && condition != "should travel named::guild order" &&
+        condition != "should travel named::guild quest reward" && condition != "should travel named::reagent vendor")
         return;
 
     GuildActivity const expected = isMeeting ? GuildActivity::Meeting : GuildActivity::Orders;
     if (GuildScheduleValue::GetActivity(ai) == expected)
-        return;
+    {
+        if (!guildQuestId)
+        {
+            if (!guildItemId || !bot->HasItemCount(guildItemId, guildItemCount))
+                return;
+        }
+        else
+        {
+            GuildOrder const order = AI_VALUE(GuildOrder, "guild order");
+            if (order.questId == guildQuestId && order.IsReadyQuestReward() == (condition == "should travel named::guild quest reward"))
+            {
+                if (Quest const* quest = sObjectMgr.GetQuestTemplate(guildQuestId))
+                {
+                    auto const purpose = GetGuildQuestTravelPurpose(bot, quest);
+                    auto const currentPurpose = tDestination->GetPurpose();
+                    if (purpose == currentPurpose)
+                        return;
+
+                    if (purpose == TravelDestinationPurpose::QuestAllObjective && (uint32(purpose) & uint32(currentPurpose)))
+                    {
+                        auto const* objective = static_cast<QuestObjectiveTravelDestination const*>(tDestination);
+                        std::string qualifier = std::to_string(guildQuestId) + "," + std::to_string(objective->GetObjective());
+                        if (AI_VALUE2(bool, "need quest objective", qualifier))
+                            return;
+                    }
+                }
+            }
+        }
+    }
 
     LastMovement& lastMove = ai->GetLastMovement();
     lastMove.lastPath.clear();
@@ -1016,7 +1049,7 @@ void TravelTarget::CheckStatus()
         return;
     }
 
-    if (statusTime != 0 && GetTimeLeft() <= 0 && !IsForced())
+    if (statusTime != 0 && GetTimeLeft() <= 0 && (!IsForced() || (guildItemId && m_status == TravelStatus::TRAVEL_STATUS_WORK)))
     {
         ai->TellDebug(ai->GetMaster(), "Travel target expired because the status time was exceeded.", "debug travel");
         SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);

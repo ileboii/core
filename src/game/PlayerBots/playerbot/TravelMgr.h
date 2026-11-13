@@ -383,6 +383,10 @@ namespace ai
 		void SetExpireIn(uint32 expireMs) { statusTime = GetExpiredTime() + expireMs; }
 		void SetForced(bool forced1) { forced = forced1; }
 		void SetGroupCopy(GuidPosition member) { groupMember = member; }
+        uint32 GetGuildQuestId() const { return guildQuestId; }
+        void SetGuildQuestId(uint32 questId) { guildQuestId = questId; }
+        uint32 GetGuildItemId() const { return guildItemId; }
+        void SetGuildItem(uint32 itemId, uint32 count) { guildItemId = itemId; guildItemCount = count; }
 
 		void IncRetry(bool isMove) { if (isMove) moveRetryCount+=2; else extendRetryCount++; }
 		void DecRetry(bool isMove) { if (isMove && moveRetryCount > 0) moveRetryCount--; else if (extendRetryCount > 0) extendRetryCount--; }
@@ -403,6 +407,9 @@ namespace ai
 		uint32 moveRetryCount = 0;
 
 		TravelDestination* tDestination = nullptr;
+        uint32 guildQuestId = 0;
+        uint32 guildItemId = 0;
+        uint32 guildItemCount = 0;
 		std::vector<std::string> travelConditions = {};
 		WorldPosition* wPosition = nullptr;
 		GuidPosition groupMember;

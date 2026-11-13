@@ -261,12 +261,13 @@ bool MoveToTravelTargetAction::isUseful()
 
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
-    if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT))
+    if (ai->GetMaster() && !ai->IsSelfMaster() &&
+        (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
     {
         auto conditions = travelTarget->GetConditions();
         for (auto& cond : conditions)
         {
-            if (cond == "should travel named::guild order")
+            if (cond == "should travel named::guild order" || cond == "should travel named::guild quest reward")
                 return false;
         }
     }

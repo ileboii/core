@@ -132,6 +132,16 @@ ItemUsage ItemUsageValue::Calculate()
         std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
         if (!shareList.empty())
         {
+            auto const* questWork = AI_VALUE(GuildShareQuestWork const*, "guild share quest work");
+            auto const requirement = questWork->requiredItems.find(itemId);
+            if (requirement != questWork->requiredItems.end())
+            {
+                if (bot->HasItemCount(itemId, requirement->second))
+                    return ItemUsage::ITEM_USAGE_KEEP;
+
+                return GuildOrdersAllowed(ai) ? ItemUsage::ITEM_USAGE_GUILD_TASK : ItemUsage::ITEM_USAGE_KEEP;
+            }
+
             for (const auto& entry : shareList)
             {
                 if (entry.itemId == itemId)

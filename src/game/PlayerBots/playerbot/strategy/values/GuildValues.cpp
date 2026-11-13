@@ -7,6 +7,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "GuildMgr.h"
+#include <charconv>
 #include <mutex>
 #include <regex>
 #include <shared_mutex>
@@ -170,6 +171,155 @@ bool ai::GuildOrdersAllowed(PlayerbotAI* ai)
     return GuildScheduleValue::GetActivity(ai) == GuildActivity::Orders;
 }
 
+static uint32 GetGuildQuestItemCount(Quest const& quest, uint32 itemId)
+{
+    uint32 count = 0;
+    for (uint8 slot = 0; slot < QUEST_ITEM_OBJECTIVES_COUNT; ++slot)
+        if (quest.ReqItemId[slot] == itemId)
+            count += quest.ReqItemCount[slot];
+
+    return count;
+}
+
+static std::map<uint32, uint32> GetGuildQuestItems(Quest const& quest)
+{
+    std::map<uint32, uint32> items;
+    for (uint8 slot = 0; slot < QUEST_ITEM_OBJECTIVES_COUNT; ++slot)
+        if (quest.ReqItemId[slot] && quest.ReqItemCount[slot])
+            items.try_emplace(quest.ReqItemId[slot], GetGuildQuestItemCount(quest, quest.ReqItemId[slot]));
+
+    return items;
+}
+
+bool ai::HasGuildQuestItems(Player const* bot, Quest const* quest)
+{
+    if (!quest || !quest->IsActive())
+        return false;
+
+    for (uint8 slot = 0; slot < QUEST_ITEM_OBJECTIVES_COUNT; ++slot)
+    {
+        uint32 const itemId = quest->ReqItemId[slot];
+        if (!itemId || !quest->ReqItemCount[slot])
+            continue;
+
+        uint32 const count = GetGuildQuestItemCount(*quest, itemId);
+        if (!bot->HasItemCount(itemId, count))
+            return false;
+    }
+
+    return true;
+}
+
+bool ai::CanCompleteGuildQuest(Player const* bot, Quest const* quest)
+{
+    return bot->GetQuestStatus(quest->GetQuestId()) == QUEST_STATUS_INCOMPLETE &&
+        !quest->HasQuestFlag(QUEST_FLAGS_AUTO_REWARDED) && bot->CanCompleteQuest(quest->GetQuestId());
+}
+
+TravelDestinationPurpose ai::GetGuildQuestTravelPurpose(Player const* bot, Quest const* quest)
+{
+    if (bot->CanRewardQuest(quest, false) || CanCompleteGuildQuest(bot, quest))
+        return TravelDestinationPurpose::QuestTaker;
+
+    return bot->GetQuestStatus(quest->GetQuestId()) == QUEST_STATUS_INCOMPLETE ?
+        TravelDestinationPurpose::QuestAllObjective : TravelDestinationPurpose::QuestGiver;
+}
+
+static bool CanWorkOnGuildQuest(Player const* bot, Quest const* quest)
+{
+    if (!quest || !quest->IsActive())
+        return false;
+
+    if (!quest->IsRepeatable() && bot->GetQuestRewardStatus(quest->GetQuestId()))
+        return false;
+
+    if (uint32 faction = quest->GetRepObjectiveFaction())
+        if (bot->GetReputationMgr().GetReputation(faction) < quest->GetRepObjectiveValue())
+            return false;
+
+    QuestStatus const status = bot->GetQuestStatus(quest->GetQuestId());
+    if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE)
+        return true;
+
+    return bot->CanTakeQuest(quest, false) && (quest->IsAutoComplete() || bot->CanAddQuest(quest, false));
+}
+
+static bool CanWorkOnGuildQuestReward(Player const* bot, Quest const* quest)
+{
+    if (!HasGuildQuestItems(bot, quest) || !CanWorkOnGuildQuest(bot, quest))
+        return false;
+
+    if (quest->GetRewOrReqMoney() < 0 && bot->GetMoney() < uint32(-int64(quest->GetRewOrReqMoney())))
+        return false;
+
+    QuestStatus const status = bot->GetQuestStatus(quest->GetQuestId());
+    if (quest->IsAutoComplete() || status == QUEST_STATUS_COMPLETE)
+        return bot->CanRewardQuest(quest, false);
+
+    return status == QUEST_STATUS_NONE || CanCompleteGuildQuest(bot, quest) ||
+        quest->GetReqCreatureOrGOcount();
+}
+
+static bool CanStoreGuildQuestReward(Player const* bot, Quest const& quest, uint32 itemId, int8 rewardIndex)
+{
+    uint32 count = rewardIndex >= 0 ? quest.RewChoiceItemCount[rewardIndex] : 0;
+    for (uint8 slot = 0; slot < QUEST_REWARDS_COUNT; ++slot)
+        if (quest.RewItemId[slot] == itemId)
+            count += quest.RewItemCount[slot];
+
+    ItemPosCountVec positions;
+    return count && bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, positions, itemId, count) == EQUIP_ERR_OK;
+}
+
+static GuildOrder MakeGuildQuestOrder(Quest const& quest, uint32 itemId, int8 rewardIndex, uint32 amount)
+{
+    GuildOrder order;
+    order.type = GuildOrderType::QuestReward;
+    order.target = quest.GetTitle();
+    order.amount = amount;
+    order.questId = quest.GetQuestId();
+    order.rewardItemId = itemId;
+    order.rewardChoiceIndex = rewardIndex;
+    return order;
+}
+
+static bool IsGuildQuestOrderAvailable(Player const* bot, GuildOrder const& order)
+{
+    Quest const* quest = sObjectMgr.GetQuestTemplate(order.questId);
+    return bot->GetGuildId() && order.NeedsMoreOfReward(bot) &&
+        CanWorkOnGuildQuestReward(bot, quest);
+}
+
+void ai::ResetGuildQuestOrders(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    RESET_AI_VALUE(GuildOrder, "guild order");
+    RESET_AI_VALUE(GuildOrder, "guild share quest reward order");
+    RESET_AI_VALUE(GuildOrder, "guild share farm order");
+    RESET_AI_VALUE(GuildShareQuestWork const*, "guild share quest work");
+    RESET_AI_VALUE(bool, "needs profession reagents");
+    RESET_AI_VALUE(bool, "has guild travel order");
+    RESET_AI_VALUE2(bool, "should travel named", "guild order");
+    RESET_AI_VALUE2(bool, "should travel named", "guild quest reward");
+    RESET_AI_VALUE2(bool, "no active travel destinations", "guild order");
+    RESET_AI_VALUE2(bool, "no active travel destinations", "guild quest reward");
+    RESET_AI_VALUE(bool, "needs guild quest order accept");
+    RESET_AI_VALUE(bool, "needs guild quest order turn in");
+}
+
+static GuildOrder PickGuildShareOrder(AiObjectContext* context)
+{
+    GuildOrder const quest = AI_VALUE(GuildOrder, "guild share quest reward order");
+    if (quest.IsValid())
+        return quest;
+
+    GuildOrder const craft = AI_VALUE(GuildOrder, "guild share craft order");
+    if (craft.IsValid())
+        return craft;
+
+    return AI_VALUE(GuildOrder, "guild share farm order");
+}
+
 std::string GuildOrderValue::TrimWhitespace(const std::string& str)
 {
     std::string result = str;
@@ -237,7 +387,7 @@ uint32 GuildOrderValue::FindItemByName(const std::string& name)
     return s_cache.emplace(lowerName, substringMatch).first->second;
 }
 
-std::vector<std::pair<uint32, int8>> ai::FindRepeatableQuestsRewardingItem(uint32 itemId)
+static std::vector<std::pair<uint32, int8>> FindQuestsRewardingItem(uint32 itemId)
 {
     static std::unordered_map<uint32, std::vector<std::pair<uint32, int8>>> s_cache;
     static std::shared_mutex s_cacheMutex;
@@ -255,13 +405,10 @@ std::vector<std::pair<uint32, int8>> ai::FindRepeatableQuestsRewardingItem(uint3
     for (auto& [questId, questPtr] : questMap)
     {
         Quest* quest = questPtr.get();
-        if (!quest || !quest->IsActive())
+        if (!quest || !quest->IsActive() || (!quest->IsRepeatable() && !quest->GetReqItemsCount()))
             continue;
 
-        if (!quest->IsRepeatable())
-            continue;
-
-        for (uint8 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
+        for (uint8 i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
         {
             if (quest->RewChoiceItemId[i] == itemId)
             {
@@ -270,7 +417,10 @@ std::vector<std::pair<uint32, int8>> ai::FindRepeatableQuestsRewardingItem(uint3
             }
         }
 
-        for (uint8 i = 0; i < quest->GetRewItemsCount(); ++i)
+        if (!result.empty() && result.back().first == questId)
+            continue;
+
+        for (uint8 i = 0; i < QUEST_REWARDS_COUNT; ++i)
         {
             if (quest->RewItemId[i] == itemId)
             {
@@ -475,8 +625,32 @@ static bool HasSkipOrderNote(Player* bot)
     return lower == "skip order";
 }
 
+GuildOrder GuildOrderValue::Get()
+{
+    GuildOrder order = CalculatedValue<GuildOrder>::Get();
+    if ((order.IsQuestRewardOrder() && !IsGuildQuestOrderAvailable(bot, order)) ||
+        (order.itemId && bot->HasItemCount(order.itemId, order.amount)))
+    {
+        ResetGuildQuestOrders(ai);
+        return CalculatedValue<GuildOrder>::Get();
+    }
+
+    if (useShareList && !order.IsReadyQuestReward())
+    {
+        GuildOrder const reward = AI_VALUE(GuildOrder, "guild share quest reward order");
+        if (reward.IsValid() && IsGuildQuestOrderAvailable(bot, reward))
+        {
+            value = reward;
+            return reward;
+        }
+    }
+
+    return order;
+}
+
 GuildOrder GuildOrderValue::Calculate()
 {
+    useShareList = false;
     GuildOrder order;
 
     if (!bot->GetGuildId())
@@ -499,19 +673,6 @@ GuildOrder GuildOrderValue::Calculate()
         std::string trimmed = TrimWhitespace(lower);
         if (trimmed == "skip order")
             return order;
-    }
-
-    if (note.empty())
-    {
-        GuildOrder questRewardOrder = AI_VALUE(GuildOrder, "guild share quest reward order");
-        if (questRewardOrder.IsValid())
-            return questRewardOrder;
-
-        GuildOrder craftOrder = AI_VALUE(GuildOrder, "guild share craft order");
-        if (craftOrder.IsValid())
-            return craftOrder;
-
-        return AI_VALUE(GuildOrder, "guild share farm order");
     }
 
     std::string body;
@@ -572,20 +733,11 @@ GuildOrder GuildOrderValue::Calculate()
         order.target = body;
     }
 
-    if (!order.IsValid())
-    {
-        GuildOrder questRewardOrder = AI_VALUE(GuildOrder, "guild share quest reward order");
-        if (questRewardOrder.IsValid())
-            return questRewardOrder;
+    if (order.IsValid())
+        return order;
 
-        GuildOrder craftOrder = AI_VALUE(GuildOrder, "guild share craft order");
-        if (craftOrder.IsValid())
-            return craftOrder;
-
-        return AI_VALUE(GuildOrder, "guild share farm order");
-    }
-
-    return order;
+    useShareList = true;
+    return PickGuildShareOrder(context);
 }
 
 static std::string TrimWS(const std::string& str)
@@ -594,6 +746,24 @@ static std::string TrimWS(const std::string& str)
     result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) { return !std::isspace(ch); }));
     result.erase(std::find_if(result.rbegin(), result.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), result.end());
     return result;
+}
+
+static uint32 ParseGuildShareItemAmount(std::string& itemName)
+{
+    auto const lastSpace = itemName.find_last_of(" \t");
+    if (lastSpace == std::string::npos)
+        return 1;
+
+    std::string_view const suffix = std::string_view(itemName).substr(lastSpace + 1);
+    if (!std::all_of(suffix.begin(), suffix.end(), [](char ch) { return ch >= '0' && ch <= '9'; }))
+        return 1;
+
+    uint32 amount = 0;
+    if (std::from_chars(suffix.data(), suffix.data() + suffix.size(), amount).ec != std::errc())
+        return 0;
+
+    itemName = TrimWS(itemName.substr(0, lastSpace));
+    return amount;
 }
 
 uint8 GuildShareListValue::ParseClassName(const std::string& name)
@@ -689,7 +859,7 @@ bool GuildShareItemEntry::MatchesPlayer(Player* player) const
     }
 }
 
-// Parse the guild info tab "Share: <class/role> <item1> <amount>, <item2> <amount>, ..."
+// Parse "Share: <class/role> <item> [amount], ..." from Guild Information.
 std::vector<GuildShareItemEntry> GuildShareListValue::Calculate()
 {
     std::vector<GuildShareItemEntry> result;
@@ -756,24 +926,14 @@ std::vector<GuildShareItemEntry> GuildShareListValue::Calculate()
             if (itemEntry.empty())
                 continue;
 
-            auto lastSpace = itemEntry.rfind(' ');
-            if (lastSpace == std::string::npos)
+            uint32 const amount = ParseGuildShareItemAmount(itemEntry);
+            if (!amount)
                 continue;
 
-            std::string amountStr = TrimWS(itemEntry.substr(lastSpace + 1));
-            bool isNumber = !amountStr.empty() && std::all_of(amountStr.begin(), amountStr.end(), ::isdigit);
-            if (!isNumber)
-                continue;
-
-            uint32 amount = std::stoul(amountStr);
-            std::string itemName = TrimWS(itemEntry.substr(0, lastSpace));
-            if (itemName.empty() || !amount)
-                continue;
-
-            uint32 itemId = GuildOrderValue::FindItemByName(itemName);
+            uint32 itemId = GuildOrderValue::FindItemByName(itemEntry);
             if (!itemId)
             {
-                sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "GuildShareList: item not found: '%s'", itemName.c_str());
+                sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "GuildShareList: item not found: '%s'", itemEntry.c_str());
                 continue;
             }
 
@@ -866,6 +1026,79 @@ GuildOrder GuildShareCraftOrderValue::Calculate()
     return order;
 }
 
+GuildShareQuestWork const* GuildShareQuestWorkValue::Calculate()
+{
+    work = {};
+    for (auto const& entry : AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list"))
+    {
+        if (!entry.MatchesPlayer(bot) || bot->GetItemCount(entry.itemId) >= entry.amount)
+            continue;
+
+        for (auto const& [questId, rewardIndex] : FindQuestsRewardingItem(entry.itemId))
+        {
+            Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+            if (!CanWorkOnGuildQuest(bot, quest) || !CanStoreGuildQuestReward(bot, *quest, entry.itemId, rewardIndex))
+                continue;
+
+            auto const requiredItems = GetGuildQuestItems(*quest);
+            if (requiredItems.count(entry.itemId))
+                continue;
+
+            for (auto const& [itemId, count] : requiredItems)
+            {
+                work.requiredItems[itemId] = std::max(work.requiredItems[itemId], count);
+                if (bot->HasItemCount(itemId, count))
+                    continue;
+
+                // A required item can itself come from a repeatable exchange.
+                for (auto const& [sourceId, sourceRewardIndex] : FindQuestsRewardingItem(itemId))
+                {
+                    Quest const* source = sObjectMgr.GetQuestTemplate(sourceId);
+                    if (sourceId == questId || !source || !source->IsRepeatable() || !source->GetReqItemsCount() ||
+                        !CanWorkOnGuildQuest(bot, source) ||
+                        !CanStoreGuildQuestReward(bot, *source, itemId, sourceRewardIndex))
+                        continue;
+
+                    if (GetGuildQuestItemCount(*source, itemId) || GetGuildQuestItemCount(*source, entry.itemId))
+                        continue;
+
+                    auto exchangeIt = std::find_if(work.exchanges.begin(), work.exchanges.end(),
+                        [sourceId, itemId](GuildOrder const& exchange) { return exchange.questId == sourceId && exchange.rewardItemId == itemId; });
+                    if (exchangeIt != work.exchanges.end())
+                    {
+                        exchangeIt->amount = std::max(exchangeIt->amount, count);
+                        continue;
+                    }
+
+                    auto const sourceItems = GetGuildQuestItems(*source);
+                    bool const hasSourceItems = HasGuildQuestItems(bot, source);
+                    bool const canCollectSourceItems = std::all_of(sourceItems.begin(), sourceItems.end(),
+                        [bot = bot](auto const& requirement)
+                        {
+                            auto const& [sourceItemId, sourceCount] = requirement;
+                            return bot->HasItemCount(sourceItemId, sourceCount) ||
+                                !GAI_VALUE2(std::list<int32>, "item drop list", sourceItemId).empty();
+                        });
+                    if (!canCollectSourceItems || (hasSourceItems && !CanWorkOnGuildQuestReward(bot, source)))
+                        continue;
+
+                    for (auto const& [sourceItemId, sourceCount] : sourceItems)
+                        work.requiredItems[sourceItemId] = std::max(work.requiredItems[sourceItemId], sourceCount);
+
+                    if (hasSourceItems)
+                    {
+                        GuildOrder exchange = MakeGuildQuestOrder(*source, itemId, sourceRewardIndex, count);
+                        exchange.isQuestPrerequisite = true;
+                        work.exchanges.push_back(std::move(exchange));
+                    }
+                }
+            }
+        }
+    }
+
+    return &work;
+}
+
 GuildOrder GuildShareFarmOrderValue::Calculate()
 {
     GuildOrder order;
@@ -894,51 +1127,42 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
         hasAlchemy || hasBlacksmithing || hasEngineering || hasLeatherworking ||
         hasTailoring || hasEnchanting || hasCooking || hasFirstAid;
 
-    if (!hasAnyGatherOrCraft)
-        return order;
-
-    std::set<uint32> finishedItemIds;
-    for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemId);
-
-    std::unordered_map<uint32, uint32> deficits = CountGuildFinishedItemDeficits(bot, finishedItemIds, shareList);
-    std::unordered_map<uint32, uint32> itemRemaining = ComputeRemainingNeeds(ai, finishedItemIds, deficits);
-
     std::map<uint32, uint32> reagentNeeds;
-
-    for (const auto& [itemId, remaining] : itemRemaining)
+    auto const* questWork = AI_VALUE(GuildShareQuestWork const*, "guild share quest work");
+    if (hasAnyGatherOrCraft)
     {
-        ItemPrototype const* shareProto = sObjectMgr.GetItemPrototype(itemId);
-        if (!shareProto)
-            continue;
+        std::set<uint32> finishedItemIds;
+        for (const auto& entry : shareList)
+            finishedItemIds.insert(entry.itemId);
 
-        // Never farm recipe items as share-list targets.
-        if (shareProto->Class == ITEM_CLASS_RECIPE)
-            continue;
-
-        std::vector<std::pair<uint32, uint32>> reagents = ItemUsageValue::GetAllReagentItemIdsForCraftingItem(shareProto);
-
-        if (reagents.empty())
+        std::unordered_map<uint32, uint32> deficits = CountGuildFinishedItemDeficits(bot, finishedItemIds, shareList);
+        std::unordered_map<uint32, uint32> itemRemaining = ComputeRemainingNeeds(ai, finishedItemIds, deficits);
+        for (const auto& [itemId, remaining] : itemRemaining)
         {
-            reagentNeeds[itemId] += remaining;
-            continue;
-        }
+            ItemPrototype const* shareProto = sObjectMgr.GetItemPrototype(itemId);
+            if (!shareProto || shareProto->Class == ITEM_CLASS_RECIPE)
+                continue;
 
-        for (const auto& [reagentId, reagentCount] : reagents)
-        {
-            reagentNeeds[reagentId] += reagentCount * remaining;
+            auto reagents = ItemUsageValue::GetAllReagentItemIdsForCraftingItem(shareProto);
+            if (reagents.empty())
+                reagentNeeds[itemId] += remaining;
+            else
+                for (auto const& [reagentId, reagentCount] : reagents)
+                    reagentNeeds[reagentId] += reagentCount * remaining;
         }
     }
 
-    if (reagentNeeds.empty())
-        return order;
-
-    // 20% chance to move to auctioneer instead of farming
-    if (urand(1, 100) <= 20 && bot->GetMoney() >= 100)
+    // 20% chance to move to auctioneer instead of farming.
+    if (!reagentNeeds.empty() && bot->GetMoney() >= 100 && urand(1, 100) <= 20)
     {
         std::vector<uint32> neededItemIds;
         for (const auto& [reagentId, totalNeeded] : reagentNeeds)
         {
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(reagentId);
+            if (!proto || proto->Bonding == BIND_WHEN_PICKED_UP || proto->Bonding == BIND_QUEST_ITEM ||
+                proto->Bonding == BIND_QUEST_ITEM1)
+                continue;
+
             uint32 currentCount = ai->GetInventoryItemsCountWithId(reagentId);
             if (currentCount < totalNeeded)
                 neededItemIds.push_back(reagentId);
@@ -952,16 +1176,23 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
             {
                 order.type = GuildOrderType::AuctionHouse;
                 order.target = chosenProto->Name1;
-                order.amount = reagentNeeds[chosenId] - ai->GetInventoryItemsCountWithId(chosenId);
+                order.itemId = chosenId;
+                order.amount = reagentNeeds.at(chosenId);
                 return order;
             }
         }
     }
 
+    for (auto const& [itemId, count] : questWork->requiredItems)
+    {
+        if (bot->HasItemCount(itemId, count) || GAI_VALUE2(std::list<int32>, "item drop list", itemId).empty())
+            continue;
+        reagentNeeds[itemId] = std::max(reagentNeeds[itemId], count);
+    }
+
     struct FarmCandidate
     {
         uint32 itemId;
-        uint32 needed;
         uint32 priority;
     };
 
@@ -978,11 +1209,8 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
         if (reagentProto->Class == ITEM_CLASS_RECIPE)
             continue;
 
-        uint32 currentCount = ai->GetInventoryItemsCountWithId(reagentId);
-        if (currentCount >= totalNeeded)
+        if (bot->HasItemCount(reagentId, totalNeeded))
             continue;
-
-        uint32 remaining = totalNeeded - currentCount;
 
         std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", reagentId);
 
@@ -1039,7 +1267,7 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
                 priority = hasRelevantCraftSkill ? 2 : 3;
             }
         }
-        else if (dropsFromGatherNode && !canGatherThisNode)
+        else if (dropsFromGatherNode && !questWork->requiredItems.count(reagentId))
         {
             priority = 3;
         }
@@ -1050,11 +1278,8 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
         if (priority < bestPriority)
             bestPriority = priority;
 
-        candidates.push_back({ reagentId, remaining, priority });
+        candidates.push_back({ reagentId, priority });
     }
-
-    if (candidates.empty())
-        return order;
 
     std::vector<FarmCandidate> bestCandidates;
     for (const auto& c : candidates)
@@ -1063,14 +1288,23 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
             bestCandidates.push_back(c);
     }
 
-    const FarmCandidate& chosen = bestCandidates[urand(0, bestCandidates.size() - 1)];
+    size_t const count = bestCandidates.size() + questWork->exchanges.size();
+    if (!count)
+        return order;
+
+    size_t const index = urand(0, count - 1);
+    if (index >= bestCandidates.size())
+        return questWork->exchanges[index - bestCandidates.size()];
+
+    const FarmCandidate& chosen = bestCandidates[index];
     ItemPrototype const* bestProto = sObjectMgr.GetItemPrototype(chosen.itemId);
     if (!bestProto)
         return order;
 
     order.type = GuildOrderType::Farm;
     order.target = bestProto->Name1;
-    order.amount = chosen.needed;
+    order.itemId = chosen.itemId;
+    order.amount = reagentNeeds.at(chosen.itemId);
 
     return order;
 }
@@ -1086,65 +1320,34 @@ GuildOrder GuildShareQuestRewardOrderValue::Calculate()
     if (shareList.empty())
         return order;
 
-    struct QuestRewardCandidate
-    {
-        uint32 itemId;
-        uint32 questId;
-        int8 rewardChoiceIndex;
-        uint32 needed;
-        std::string questTitle;
-    };
-
-    std::vector<QuestRewardCandidate> candidates;
+    std::vector<GuildOrder> candidates;
 
     for (const auto& entry : shareList)
     {
         if (!entry.MatchesPlayer(bot))
             continue;
 
-        if (ItemPrototype const* entryProto = sObjectMgr.GetItemPrototype(entry.itemId))
-        {
-            if (entryProto->Class == ITEM_CLASS_RECIPE)
-                continue;
-        }
-
-        uint32 currentCount = ai->GetInventoryItemsCountWithId(entry.itemId);
-        if (currentCount >= entry.amount)
+        if (bot->GetItemCount(entry.itemId) >= entry.amount)
             continue;
 
-        uint32 needed = entry.amount - currentCount;
-
-        auto questRewards = FindRepeatableQuestsRewardingItem(entry.itemId);
+        auto questRewards = FindQuestsRewardingItem(entry.itemId);
         if (questRewards.empty())
             continue;
 
         for (const auto& [questId, rewardIdx] : questRewards)
         {
             Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
-            if (!quest)
+            if (!CanWorkOnGuildQuestReward(bot, quest) || !CanStoreGuildQuestReward(bot, *quest, entry.itemId, rewardIdx))
                 continue;
 
-            if (!bot->CanTakeQuest(quest, false) &&
-                bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE &&
-                bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
-                continue;
-
-            candidates.push_back({ entry.itemId, questId, rewardIdx, needed, quest->GetTitle() });
+            candidates.push_back(MakeGuildQuestOrder(*quest, entry.itemId, rewardIdx, entry.amount));
         }
     }
 
     if (candidates.empty())
         return order;
 
-    const QuestRewardCandidate& chosen = candidates[urand(0, candidates.size() - 1)];
-
-    order.type = GuildOrderType::QuestReward;
-    order.target = chosen.questTitle;
-    order.amount = chosen.needed;
-    order.questId = chosen.questId;
-    order.rewardItemId = chosen.itemId;
-
-    return order;
+    return candidates[urand(0, candidates.size() - 1)];
 }
 
 uint32 GuildShareQuestRewardItemValue::Calculate()
@@ -1181,7 +1384,7 @@ uint32 GuildShareQuestRewardItemValue::Calculate()
             continue;
 
         Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
-        if (!quest)
+        if (!HasGuildQuestItems(bot, quest))
             continue;
 
         for (uint8 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
@@ -1302,6 +1505,10 @@ std::vector<uint32> NeedsProfessionReagentsValue::GetMissingReagents(PlayerbotAI
     if (!GuildOrdersAllowed(ai))
         return missing;
 
+    GuildOrder const order = ai->GetAiObjectContext()->GetValue<GuildOrder>("guild order")->Get();
+    if (!order.IsValid() || order.IsReadyQuestReward())
+        return missing;
+
     Player* bot = ai->GetBot();
 
     std::vector<GuildShareItemEntry> shareList = ai->GetAiObjectContext()->GetValue<std::vector<GuildShareItemEntry>>("guild share list")->Get();
@@ -1329,7 +1536,6 @@ std::vector<uint32> NeedsProfessionReagentsValue::GetMissingReagents(PlayerbotAI
     if (remainingMap.empty())
         return missing;
 
-    GuildOrder order = ai->GetAiObjectContext()->GetValue<GuildOrder>("guild order")->Get();
     std::set<uint32> itemsToCheck;
 
     if (order.IsValid())
@@ -1449,10 +1655,6 @@ bool NeedsProfessionReagentsValue::Calculate()
         ai->HasSkill(SKILL_COOKING) || ai->HasSkill(SKILL_FIRST_AID);
 
     if (!hasAnyCraftingSkill)
-        return false;
-
-    GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (!order.IsValid())
         return false;
 
     return !GetMissingReagents(ai).empty();

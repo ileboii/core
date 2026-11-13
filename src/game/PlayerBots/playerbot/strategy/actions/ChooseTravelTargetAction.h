@@ -68,6 +68,7 @@ namespace ai
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
         virtual bool isAllowed() const;
+        virtual bool CanReplaceTravelTarget() { return false; }
     };
 
     class RequestNamedTravelTargetAction : public RequestTravelTargetAction {
@@ -76,6 +77,7 @@ namespace ai
     private:
         virtual bool Execute(Event& event) override;
         virtual bool isAllowed() const override;
+        bool CanReplaceTravelTarget() override;
     };
 
     class RequestQuestTravelTargetAction : public RequestTravelTargetAction {

@@ -159,10 +159,16 @@ ItemIds TalkToQuestGiverAction::BestRewards(Quest const* quest)
     }
     else
     {
-        uint32 guildShareRewardItemId = GuildOrdersAllowed(ai) ? AI_VALUE(uint32, "guild share quest reward item") : 0;
+        uint32 guildShareRewardItemId = 0;
+        if (GuildOrdersAllowed(ai) && HasGuildQuestItems(bot, quest))
+        {
+            GuildOrder const order = AI_VALUE(GuildOrder, "guild order");
+            guildShareRewardItemId = order.questId == quest->GetQuestId() ?
+                order.rewardItemId : AI_VALUE(uint32, "guild share quest reward item");
+        }
         if (guildShareRewardItemId)
         {
-            for (uint8 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
+            for (uint8 i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
             {
                 if (quest->RewChoiceItemId[i] == guildShareRewardItemId)
                 {
