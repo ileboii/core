@@ -8,9 +8,167 @@
 #include "playerbot/ServerFacade.h"
 #include "GuildMgr.h"
 #include <mutex>
+#include <regex>
 #include <shared_mutex>
+#include <sstream>
 
 using namespace ai;
+
+namespace
+{
+    constexpr int MinutesPerDay = 24 * 60;
+    constexpr int MeetingLeadTime = 30;
+
+    std::string_view FindScheduleBody(std::string_view motd, std::string_view prefix)
+    {
+        auto pos = motd.find(prefix);
+        if (pos == std::string_view::npos)
+            return {};
+
+        auto body = motd.substr(pos + prefix.size());
+        return body.substr(0, body.find_first_of(",;\r\n"));
+    }
+
+    int ParseScheduleMinute(int hour, int minute, std::string const& meridiem)
+    {
+        if (hour > 23 || minute > 59)
+            return -1;
+
+        if (!meridiem.empty())
+        {
+            if (hour < 1 || hour > 12)
+                return -1;
+
+            hour %= 12;
+            if (meridiem == "p" || meridiem == "P")
+                hour += 12;
+        }
+
+        return hour * 60 + minute;
+    }
+}
+
+bool GuildSchedule::Window::Contains(int minute, int leadTime) const
+{
+    // Measure from the start of the window so overnight schedules wrap at midnight.
+    int const elapsed = (minute - start + leadTime + MinutesPerDay) % MinutesPerDay;
+    int const duration = (end - start + MinutesPerDay) % MinutesPerDay;
+    return elapsed < duration + leadTime;
+}
+
+std::optional<GuildSchedule::Window> GuildSchedule::ParseWindow(std::string_view body, std::string_view& location)
+{
+    if (body.empty())
+        return std::nullopt;
+
+    static std::regex const times(
+        R"((?:^|[ \t])([0-9]{1,2}):([0-9]{2})(?:[ \t]*([ap])m)?[ \t]+([0-9]{1,2}):([0-9]{2})(?:[ \t]*([ap])m)?[ \t]*$)",
+        std::regex::icase);
+    std::match_results<std::string_view::const_iterator> match;
+    if (!std::regex_search(body.begin(), body.end(), match, times))
+        return std::nullopt;
+
+    int const start = ParseScheduleMinute(std::stoi(match[1].str()), std::stoi(match[2].str()), match[3].str());
+    int const end = ParseScheduleMinute(std::stoi(match[4].str()), std::stoi(match[5].str()), match[6].str());
+    if (start < 0 || end < 0)
+        return std::nullopt;
+
+    location = body.substr(0, match.position());
+    return Window{start, end};
+}
+
+GuildSchedule GuildSchedule::Parse(std::string_view motd)
+{
+    GuildSchedule schedule;
+
+    std::string_view location;
+    auto farmWindow = ParseWindow(FindScheduleBody(motd, "Farm:"), location);
+    if (farmWindow && location.find_first_not_of(" \t") == std::string_view::npos)
+        schedule.farm = farmWindow;
+
+    auto meetingWindow = ParseWindow(FindScheduleBody(motd, "Meeting:"), location);
+    if (meetingWindow && location.find_first_not_of(" \t") != std::string_view::npos)
+    {
+        std::istringstream words{std::string(location)};
+        std::string word;
+        while (words >> word)
+        {
+            if (!schedule.meetingLocation.empty())
+                schedule.meetingLocation += ' ';
+            schedule.meetingLocation += word;
+        }
+        schedule.meeting = meetingWindow;
+    }
+
+    return schedule;
+}
+
+GuildActivity GuildSchedule::GetActivity(std::time_t now) const
+{
+    if (!farm && !meeting)
+        return GuildActivity::Orders;
+
+    std::tm local{};
+#if PLATFORM == PLATFORM_WINDOWS
+    if (localtime_s(&local, &now) != 0)
+#else
+    if (!localtime_r(&now, &local))
+#endif
+        return GuildActivity::None;
+
+    int const minute = local.tm_hour * 60 + local.tm_min;
+    if (meeting && meeting->Contains(minute, MeetingLeadTime))
+        return GuildActivity::Meeting;
+
+    if (!farm || farm->Contains(minute))
+        return GuildActivity::Orders;
+
+    return GuildActivity::None;
+}
+
+GuildActivity GuildScheduleValue::Calculate()
+{
+    Guild const* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
+    if (!guild)
+    {
+        motd.clear();
+        schedule = {};
+        return GuildActivity::None;
+    }
+
+    if (motd != guild->GetMOTD())
+    {
+        motd = guild->GetMOTD();
+        schedule = GuildSchedule::Parse(motd);
+    }
+
+    return schedule.GetActivity(std::time(nullptr));
+}
+
+GuildActivity GuildScheduleValue::GetActivity(PlayerbotAI* ai)
+{
+    if (!ai->GetBot()->GetGuildId())
+        return GuildActivity::None;
+
+    return ai->GetAiObjectContext()->GetValue<GuildActivity>("guild schedule")->Get();
+}
+
+std::string GuildScheduleValue::GetMeetingLocation(PlayerbotAI* ai)
+{
+    if (!ai->GetBot()->GetGuildId())
+        return {};
+
+    auto* scheduleValue = static_cast<GuildScheduleValue*>(ai->GetAiObjectContext()->GetUntypedValue("guild schedule"));
+    if (scheduleValue->Get() != GuildActivity::Meeting)
+        return {};
+
+    return scheduleValue->schedule.GetMeetingLocation();
+}
+
+bool ai::GuildOrdersAllowed(PlayerbotAI* ai)
+{
+    return GuildScheduleValue::GetActivity(ai) == GuildActivity::Orders;
+}
 
 std::string GuildOrderValue::TrimWhitespace(const std::string& str)
 {
@@ -1141,6 +1299,9 @@ GuildShareTarget GuildShareTargetValue::Calculate()
 std::vector<uint32> NeedsProfessionReagentsValue::GetMissingReagents(PlayerbotAI* ai)
 {
     std::vector<uint32> missing;
+    if (!GuildOrdersAllowed(ai))
+        return missing;
+
     Player* bot = ai->GetBot();
 
     std::vector<GuildShareItemEntry> shareList = ai->GetAiObjectContext()->GetValue<std::vector<GuildShareItemEntry>>("guild share list")->Get();

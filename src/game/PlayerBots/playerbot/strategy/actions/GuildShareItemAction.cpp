@@ -6,7 +6,7 @@ using namespace ai;
 
 bool GuildShareItemAction::isUseful()
 {
-    if (!bot->GetGuildId())
+    if (!GuildOrdersAllowed(ai))
         return false;
 
     if (bot->IsInCombat())
@@ -17,6 +17,9 @@ bool GuildShareItemAction::isUseful()
 
 bool GuildShareItemAction::Execute(Event& event)
 {
+    if (!GuildOrdersAllowed(ai))
+        return false;
+
     GuildShareTarget shareTarget = AI_VALUE(GuildShareTarget, "guild share target");
     if (!shareTarget.IsValid())
         return false;

@@ -2520,6 +2520,10 @@ void PlayerbotAI::DoNextAction(bool min)
         return;
     }
 
+    AiObjectContext* context = aiObjectContext;
+    if (context->HasValue("travel target"))
+        AI_VALUE(TravelTarget*, "travel target")->CheckGuildSchedule();
+
     MovementAction::UpdateMovementState(this);
 
     if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) && !bot->IsInWater() && !bot->movespline->Finalized())
@@ -6577,8 +6581,8 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
     if (sPlayerbotAIConfig.guildOrderAlwaysActive && bot->IsInWorld() && bot->GetGuildId())
     {
         AiObjectContext* context = GetAiObjectContext();
-        GuildOrder guildOrder = AI_VALUE(GuildOrder, "guild order");
-        if (guildOrder.IsValid())
+        GuildActivity const activity = GuildScheduleValue::GetActivity(this);
+        if (activity != GuildActivity::None && AI_VALUE(GuildOrder, "guild order").IsValid())
             return ActivePiorityType::IS_ALWAYS_ACTIVE;
     }
 

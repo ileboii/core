@@ -79,7 +79,7 @@ bool CanGetMailValue::Calculate() {
 bool ShouldGetMailValue::Calculate() {
     time_t cur_time = time(0);
 
-    bool hasGuildShareList = !AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list").empty();
+    bool hasGuildShareList = GuildOrdersAllowed(ai) && !AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list").empty();
 
     for (PlayerMails::iterator itr = (PlayerMails::iterator()); itr != (PlayerMails::iterator()); ++itr)
     {

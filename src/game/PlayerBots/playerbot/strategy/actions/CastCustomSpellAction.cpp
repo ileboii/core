@@ -4,6 +4,7 @@
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/values/GuildValues.h"
 #include "CheckMountStateAction.h"
 
 using namespace ai;
@@ -42,6 +43,16 @@ bool CastCustomSpellAction::Execute(Event& event)
         text = event.getParam();
 
     Player* commandOwner = event.getOwner();
+    bool const guildOrder = commandOwner == bot && text.compare(0, GuildOrderCastPrefix.size(), GuildOrderCastPrefix) == 0;
+    if (guildOrder)
+    {
+        if (!GuildOrdersAllowed(ai))
+            return false;
+
+        text.erase(0, GuildOrderCastPrefix.size());
+        target = bot;
+    }
+
     Player* requester = commandOwner ? commandOwner : GetMaster();
     const bool reportCast = sPlayerbotAIConfig.allowChatSpell || (commandOwner && commandOwner->isRealPlayer());
 
@@ -250,7 +261,10 @@ bool CastCustomSpellAction::Execute(Event& event)
         if (castCount > 1)
         {
             std::ostringstream cmd;
-            cmd << castString(target) << " " << text << " " << (castCount - 1);
+            cmd << castString(guildOrder ? nullptr : target) << " ";
+            if (guildOrder)
+                cmd << GuildOrderCastPrefix;
+            cmd << text << " " << (castCount - 1);
             ai->HandleCommand(CHAT_MSG_WHISPER, cmd.str(), *requester);
 
             if (reportCast)

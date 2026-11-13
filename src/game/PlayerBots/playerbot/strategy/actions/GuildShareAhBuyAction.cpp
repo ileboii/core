@@ -11,7 +11,7 @@ using namespace ai;
 
 bool GuildShareAhBuyAction::isUseful()
 {
-    if (!bot->GetGuildId())
+    if (!GuildOrdersAllowed(ai))
         return false;
 
     if (bot->IsInCombat())
@@ -179,6 +179,9 @@ std::map<uint32, uint32> GuildShareAhBuyAction::GetNeededItems()
 
 bool GuildShareAhBuyAction::Execute(Event& event)
 {
+    if (!GuildOrdersAllowed(ai))
+        return false;
+
     Unit* auctioneer = FindNearbyAuctioneer();
     if (!auctioneer)
         return false;

@@ -1,8 +1,60 @@
 #pragma once
 #include "playerbot/strategy/Value.h"
+#include <ctime>
+#include <optional>
+#include <string>
+#include <string_view>
 
 namespace ai
 {
+    enum class GuildActivity
+    {
+        None,
+        Orders,
+        Meeting
+    };
+
+    class GuildSchedule
+    {
+    public:
+        static GuildSchedule Parse(std::string_view motd);
+
+        GuildActivity GetActivity(std::time_t now) const;
+        std::string const& GetMeetingLocation() const { return meetingLocation; }
+
+    private:
+        struct Window
+        {
+            int start;
+            int end;
+
+            bool Contains(int minute, int leadTime = 0) const;
+        };
+
+        static std::optional<Window> ParseWindow(std::string_view body, std::string_view& location);
+
+        std::optional<Window> farm;
+        std::optional<Window> meeting;
+        std::string meetingLocation;
+    };
+
+    class GuildScheduleValue : public CalculatedValue<GuildActivity>
+    {
+    public:
+        GuildScheduleValue(PlayerbotAI* ai) : CalculatedValue<GuildActivity>(ai, "guild schedule", 2) {}
+
+        GuildActivity Calculate() override;
+        static GuildActivity GetActivity(PlayerbotAI* ai);
+        static std::string GetMeetingLocation(PlayerbotAI* ai);
+
+    private:
+        std::string motd;
+        GuildSchedule schedule;
+    };
+
+    bool GuildOrdersAllowed(PlayerbotAI* ai);
+    inline constexpr std::string_view GuildOrderCastPrefix = "guild order ";
+
     enum class GuildOrderType : uint8
     {
         None = 0,

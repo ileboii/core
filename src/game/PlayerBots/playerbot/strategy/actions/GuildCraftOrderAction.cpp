@@ -29,6 +29,9 @@ uint32 GuildCraftOrderAction::FindCraftSpell(uint32 itemId)
 
 bool GuildCraftOrderAction::Execute(Event& event)
 {
+    if (!GuildOrdersAllowed(ai))
+        return false;
+
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     if (!order.IsCraftOrder())
         return false;
@@ -79,7 +82,7 @@ bool GuildCraftOrderAction::Execute(Event& event)
         remaining = 1;
 
     std::ostringstream cmd;
-    cmd << "castnc " << craftSpellId << " " << remaining;
+    cmd << "castnc " << GuildOrderCastPrefix << craftSpellId << " " << remaining;
     ai->HandleCommand(CHAT_MSG_WHISPER, cmd.str(), *bot);
 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
@@ -90,7 +93,7 @@ bool GuildCraftOrderAction::Execute(Event& event)
 
 bool GuildCraftOrderAction::isUseful()
 {
-    if (!bot->GetGuildId())
+    if (!GuildOrdersAllowed(ai))
         return false;
 
     if (bot->IsMoving())

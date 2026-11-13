@@ -7,7 +7,7 @@ using namespace ai;
 
 bool GuildAcceptQuestOrderAction::isUseful()
 {
-    if (!bot->GetGuildId())
+    if (!GuildOrdersAllowed(ai))
         return false;
 
     if (bot->IsInCombat())
@@ -18,6 +18,9 @@ bool GuildAcceptQuestOrderAction::isUseful()
 
 bool GuildAcceptQuestOrderAction::Execute(Event& event)
 {
+    if (!GuildOrdersAllowed(ai))
+        return false;
+
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     if (!order.IsQuestRewardOrder() || !order.questId)
         return false;

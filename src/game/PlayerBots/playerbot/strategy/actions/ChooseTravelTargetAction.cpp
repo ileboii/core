@@ -10,7 +10,6 @@
 #ifdef GenerateBotTests
 #include "playerbot/strategy/tests/TravelProbe.h"
 #endif
-#include "GuildMgr.h"
 #include <iomanip>
 
 using namespace ai;
@@ -55,6 +54,15 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     PartitionedTravelList destinationList = futureDestinations->get();
 
     travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
+
+    if (futureTravelPurpose == "guild meeting")
+    {
+        std::string const meetingLocation = GuildScheduleValue::GetMeetingLocation(ai);
+        if (meetingLocation.empty() || meetingLocation != AI_VALUE2(std::string, "manual string", "future travel detail"))
+            return false;
+    }
+    else if ((futureTravelPurpose == "guild order" || futureTravelPurpose == "reagent vendor") && !GuildOrdersAllowed(ai))
+        return false;
 
     ai->TellDebug(ai->GetMaster(), "Got " + std::to_string(destinationList.size()) + " new destination ranges for " + futureTravelPurposeName, "debug travel");
 
@@ -131,8 +139,10 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     if (oldTarget->IsForced()) //Make sure travel goes into cooldown after getting to the destination.
         oldTarget->SetExpireIn(HOUR * IN_MILLISECONDS);
 
-    if(!AI_VALUE2(std::string, "manual string", "future travel condition").empty())
-        AI_VALUE(TravelTarget*, "travel target")->SetConditions({ AI_VALUE2(std::string, "manual string", "future travel condition")});
+    oldTarget->SetConditions({});
+    std::string const futureCondition = AI_VALUE2(std::string, "manual string", "future travel condition");
+    if (!futureCondition.empty())
+        oldTarget->AddCondition(futureCondition);
 
     if (QuestObjectiveTravelDestination* dest = dynamic_cast<QuestObjectiveTravelDestination*>(oldTarget->GetDestination()))
     {
@@ -272,7 +282,7 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
     if (allowChat && !isGuildMeeting)
         ai->TellPlayerNoFacing(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK, false);
 
-    if (allowChat && !futureTravelDetail.empty())
+    if (allowChat && !isGuildMeeting && !futureTravelDetail.empty())
         ai->TellDebug(requester, "Farming item: " + futureTravelDetail + " from " + destination->GetTitle(), "debug travel");
 
     std::string message = out.str().c_str();
@@ -854,39 +864,11 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     }
     else if (travelName == "guild meeting")
     {
-        // Parse guild MOTD for the meeting time.
-        // Meeting: <location> <start time> <end time>
-        std::string meetingLocation;
-        if (bot->GetGuildId())
-        {
-            Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-            if (guild)
-            {
-                std::string motd = guild->GetMOTD();
-                auto pos = motd.find("Meeting:");
-                if (pos != std::string::npos)
-                {
-                    std::string body = motd.substr(pos + 8);
-                    body.erase(body.begin(), std::find_if(body.begin(), body.end(), [](unsigned char ch) { return !std::isspace(ch); }));
-                    std::vector<std::string> tokens;
-                    { std::istringstream iss(body); std::string t; while (iss >> t) tokens.push_back(t); }
-                    if (tokens.size() >= 3)
-                    {
-                        tokens.pop_back(); // end time
-                        tokens.pop_back(); // start time
-                        std::ostringstream loc;
-                        for (size_t i = 0; i < tokens.size(); ++i) { if (i) loc << " "; loc << tokens[i]; }
-                        meetingLocation = loc.str();
-                    }
-                }
-            }
-        }
-
+        std::string const meetingLocation = GuildScheduleValue::GetMeetingLocation(ai);
         if (meetingLocation.empty())
-        {
-            ai->TellDebug(ai->GetMaster(), "No meeting location found in guild MOTD", "debug travel");
             return false;
-        }
+
+        SET_AI_VALUE2(std::string, "manual string", "future travel detail", meetingLocation);
 
         *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [travelInfo = PlayerTravelInfo(bot), center, meetingLocation]()
             {
@@ -908,6 +890,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     }
     else if (travelName == "guild order")
     {
+        if (!GuildOrdersAllowed(ai))
+            return false;
+
         GuildOrder order = AI_VALUE(GuildOrder, "guild order");
 
         if (!order.IsTravelOrder())
@@ -1310,8 +1295,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", getQualifier());
     SET_AI_VALUE2(std::string, "manual string", "future travel condition",
-        travelName == "guild meeting" ? "should travel named::guild meeting" :
-        travelName == "guild order" ? "should travel named::guild order" :
+        travelName == "guild meeting" || travelName == "guild order" || travelName == "reagent vendor" ? "should travel named::" + travelName :
         event.getSource());
     SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
 

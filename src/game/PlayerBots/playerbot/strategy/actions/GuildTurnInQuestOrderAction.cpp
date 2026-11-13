@@ -7,7 +7,7 @@ using namespace ai;
 
 bool GuildTurnInQuestOrderAction::isUseful()
 {
-    if (!bot->GetGuildId())
+    if (!GuildOrdersAllowed(ai))
         return false;
 
     if (bot->IsInCombat())
@@ -36,6 +36,9 @@ static uint32 PickShareRewardChoice(Quest const* quest, uint32 preferredItemId)
 
 bool GuildTurnInQuestOrderAction::Execute(Event& /*event*/)
 {
+    if (!GuildOrdersAllowed(ai))
+        return false;
+
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     if (!order.IsQuestRewardOrder() || !order.questId)
         return false;

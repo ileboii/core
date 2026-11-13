@@ -4,7 +4,10 @@
 #include <iomanip>
 
 #include "playerbot/strategy/values/SharedValueContext.h"
+#include "playerbot/strategy/values/GuildValues.h"
+#include "playerbot/strategy/values/LastMovementValue.h"
 #include "playerbot/strategy/values/TravelValues.h"
+#include "MoveSpline.h"
 #include "PathFinder.h"
 #include "TravelNode.h"
 #include "PlayerbotAI.h"
@@ -946,8 +949,52 @@ bool TravelTarget::IsConditionsActive(bool clear)
     return true;
 }
 
+void TravelTarget::CheckGuildSchedule()
+{
+    if (!IsActive() || travelConditions.empty())
+        return;
+
+    std::string const& condition = travelConditions.front();
+    bool const isMeeting = condition == "should travel named::guild meeting";
+    if (!isMeeting && condition != "should travel named::guild order" && condition != "should travel named::reagent vendor")
+        return;
+
+    GuildActivity const expected = isMeeting ? GuildActivity::Meeting : GuildActivity::Orders;
+    if (GuildScheduleValue::GetActivity(ai) == expected)
+        return;
+
+    LastMovement& lastMove = ai->GetLastMovement();
+    lastMove.lastPath.clear();
+    lastMove.lastTransportEntry = 0;
+    lastMove.lastSwimGoal = WorldPosition();
+    lastMove.nextTeleport = 0;
+    lastMove.nextMinimalRepath = 0;
+
+    Action const* lastAction = ai->GetLastExecutedAction(BotState::BOT_STATE_NON_COMBAT);
+    if (m_status == TravelStatus::TRAVEL_STATUS_TRAVEL &&
+        lastAction && const_cast<Action*>(lastAction)->getName() == "move to travel target" &&
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE &&
+        !bot->IsInCombat() && !ai->IsJumping() && !bot->IsFalling() && !bot->movespline->IsUninterruptible())
+        ai->StopMoving();
+
+    RESET_AI_VALUE2(bool, "no active travel destinations", condition.substr(sizeof("should travel named::") - 1));
+    sTravelMgr.SetNullTravelTarget(this);
+    travelConditions.clear();
+    forced = false;
+    SetRetry(true);
+    SetRetry(false);
+    RESET_AI_VALUE(bool, "travel target active");
+    RESET_AI_VALUE(bool, "travel target traveling");
+    RESET_AI_VALUE(bool, "travel target working");
+    RESET_AI_VALUE(GuidPosition, "rpg target");
+    if (!bot->IsInCombat())
+        RESET_AI_VALUE(ObjectGuid, "attack target");
+}
+
 void TravelTarget::CheckStatus()
 {
+    CheckGuildSchedule();
+
     if (!IsActive())
         return;
 

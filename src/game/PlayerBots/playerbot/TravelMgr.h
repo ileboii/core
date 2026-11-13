@@ -361,6 +361,7 @@ namespace ai
 		bool IsConditionsActive(bool clear = false);
 		bool IsDestinationActive();
 
+        void CheckGuildSchedule();
 		void CheckStatus();
 
 		bool IsActive();
