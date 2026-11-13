@@ -29,4 +29,29 @@ void TestRegistry::RegisterAvTests()
         "av status",
         "observe"
     });
+
+    RegisterTest("av_join_smoke_default", {
+        "require bot is level=60",
+        "debug",
+        "av join 300",
+        "require av node av_dunbaldar_north alliance",
+        "require av node av_frostwolf_east_tower horde",
+        "require av node av_snowfall_grave neutral",
+        "av status",
+        "av leave",
+        "cleanup av leave"
+    });
+
+    RegisterTest("av_join_squad_default", {
+        "require bot is level=60",
+        "debug",
+        "spawn level=60 class=warrior race=human",
+        "spawn level=60 class=mage race=troll",
+        "av join 300",
+        "require av node av_dunbaldar_south alliance",
+        "av leave",
+        "wait 10",
+        "despawn",
+        "cleanup av leave"
+    });
 }

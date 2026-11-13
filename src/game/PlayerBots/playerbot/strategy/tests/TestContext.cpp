@@ -42,6 +42,7 @@ void TestContext::Reset()
     spawnedBots.clear();
     deliveredGroupMembers.clear();
     groupOnMapExpected = 0;
+    avJoinStart = 0;
     lootStackSeen = false;
     actionSpamArmed = false;
 }

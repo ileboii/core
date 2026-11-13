@@ -65,6 +65,8 @@ void TestAction::RegisterCommands()
     commands.push_back(std::make_unique<CommandPartySpawnGroup>());
     commands.push_back(std::make_unique<CommandAvStatus>());
     commands.push_back(std::make_unique<RequireAvNode>());
+    commands.push_back(std::make_unique<CommandAvJoin>());
+    commands.push_back(std::make_unique<CommandAvLeave>());
     commands.push_back(std::make_unique<CommandFlowObserve>());
     commands.push_back(std::make_unique<CommandFlowMonitor>());
     commands.push_back(std::make_unique<CommandFlowWaitGroup>());
