@@ -25,6 +25,8 @@ set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd4514") # unreferenced i
 set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd4996") # This function or variable may be unsafe.
 set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd4777") # wrong printf format (might lead to stack error / crash)
 set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd4774") # format string expected in argument ...
+set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd5262")
+set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd5266")
 set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd4365") # signed/unsigned mismatch
 set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd4018") # signed/unsigned mismatch
 set(MSVC_DISABLED_WARNINGS "${MSVC_DISABLED_WARNINGS} /wd4388") # signed/unsigned mismatch
