@@ -1,5 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "AvTestSupport.h"
+#include "BattleGround.h"
+#include "BattleGroundAV.h"
 
 using namespace ai;
 
@@ -50,6 +52,43 @@ std::string FormatAvNodeState(uint8 owner, uint8 state)
     std::string ownerName = owner == 0 ? "alliance" : owner == 1 ? "horde" : "neutral";
     std::string stateName = state == 0 ? "assaulted" : "controlled";
     return ownerName + " " + stateName;
+}
+
+std::string FormatAvSquadScore(Player* bot, TestContext const& ctx)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeID() != BATTLEGROUND_AV)
+        return "no av score (not in Alterac Valley)";
+
+    std::vector<ObjectGuid> squad;
+    squad.push_back(bot->GetObjectGuid());
+    squad.insert(squad.end(), ctx.spawnedBots.begin(), ctx.spawnedBots.end());
+
+    std::string out = "av score (kills/deaths/towers assaulted/towers defended):";
+    for (ObjectGuid const& guid : squad)
+    {
+        Player* member = sObjectMgr.GetPlayer(guid);
+        std::string name = member ? member->GetName() : guid.GetString();
+        std::string team = member ? (member->GetTeam() == ALLIANCE ? "A" : "H") : "?";
+        out += " " + name + "(" + team + (member && member->IsInCombat() ? ",combat" : "") + (member && !member->IsAlive() ? ",dead" : "") + (member && member != bot && member->GetMapId() == bot->GetMapId() ? "," + std::to_string(uint32(member->GetDistance(bot))) + "m" : "") + ")";
+
+        bool found = false;
+        for (auto itr = bg->GetPlayerScoresBegin(); itr != bg->GetPlayerScoresEnd(); ++itr)
+        {
+            if (itr->first != guid)
+                continue;
+
+            BattleGroundAVScore const* score = static_cast<BattleGroundAVScore const*>(itr->second);
+            out += "=" + std::to_string(score->killingBlows) + "/" + std::to_string(score->deaths) + "/" +
+                std::to_string(score->towersAssaulted) + "/" + std::to_string(score->towersDefended);
+            found = true;
+            break;
+        }
+
+        if (!found)
+            out += "=left";
+    }
+    return out;
 }
 
 }

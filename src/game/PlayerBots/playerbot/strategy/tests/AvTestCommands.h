@@ -43,6 +43,33 @@ namespace ai
         std::string GetName() const override { return "av leave"; }
     };
 
+    class CommandAvTeleport : public TestCommand
+    {
+    public:
+        TestResult Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message) override;
+    protected:
+        std::string GetName() const override { return "av teleport"; }
+    };
+
+    class CommandAvScore : public TestCommand
+    {
+    public:
+        TestResult Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message) override;
+    protected:
+        std::string GetName() const override { return "av score"; }
+    };
+
+    class CommandAvWaitNode : public TestCommand
+    {
+    public:
+        TestResult Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message) override;
+    protected:
+        std::string GetName() const override { return "av wait node"; }
+    };
+
     class CommandAvWaitStart : public TestCommand
     {
     public:

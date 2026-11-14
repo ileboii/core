@@ -26,4 +26,5 @@ namespace ai
     AvTestNode const* GetAvTestNodes();
     bool ParseAvNodeName(std::string const& name, uint8& outNodeId);
     std::string FormatAvNodeState(uint8 owner, uint8 state);
+    std::string FormatAvSquadScore(Player* bot, TestContext const& ctx);
 }

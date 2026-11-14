@@ -87,4 +87,27 @@ void TestRegistry::RegisterAvTests()
         "observe",
         "cleanup av leave"
     });
+
+    RegisterTest("av_defend_stoneheart_bunker_alliance", {
+        "require bot is level=60 race=orc class=warrior",
+        "debug",
+        "spawn level=60 class=warrior race=tauren",
+        "spawn level=60 class=warrior race=human",
+        "spawn level=60 class=warrior race=dwarf",
+        "spawn level=60 class=warrior race=human",
+        "av join 300",
+        "av wait start",
+        "av teleport horde av_stoneheart_bunker",
+        "av wait node av_stoneheart_bunker horde assaulted 120",
+        "av teleport alliance av_stoneheart_bunker",
+        "monitor av node av_stoneheart_bunker alliance controlled => pass \"Alliance defenders retook the assaulted Stonehearth Bunker after <time elapsed>; <av score>\"",
+        "monitor av node av_stoneheart_bunker horde controlled => fail \"3 alliance bots placed at the assaulted Stonehearth Bunker let it burn down; <av score>\"",
+        "monitor time > 900 => fail \"Stonehearth Bunker neither retaken nor destroyed within 15 min; <av score>\"",
+        "wait 30",
+        "av score",
+        "wait 90",
+        "av score",
+        "observe",
+        "cleanup av leave"
+    });
 }
