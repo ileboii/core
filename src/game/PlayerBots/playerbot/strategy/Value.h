@@ -80,7 +80,7 @@ namespace ai
             return value;
         }
         virtual void Set(T value) override { this->value = value; }
-        virtual void Update() { }
+        virtual void Update() override { }
         virtual void Reset() override { lastCheckTime = 0; }
         virtual bool Expired() override { return Expired(checkInterval / 2); }
         virtual bool Expired(uint32 interval) override { return time(0) - lastCheckTime >= interval; }
@@ -323,7 +323,7 @@ namespace ai
         virtual T Get() override { return value; }
         virtual T LazyGet() override { return value; }
         virtual void Set(T value) override { this->value = value; }
-        virtual void Update() { }
+        virtual void Update() override { }
         virtual void Reset() override { value = defaultValue; }
 
     protected:
