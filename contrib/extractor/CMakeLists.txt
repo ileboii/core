@@ -34,6 +34,9 @@ add_executable (${EXECUTABLE_NAME}
 mangos_target_flags(${EXECUTABLE_NAME})
 
 SET_TARGET_PROPERTIES (${EXECUTABLE_NAME} PROPERTIES FOLDER Extractors)
+if(MINGW)
+  set_target_properties(${EXECUTABLE_NAME} PROPERTIES CXX_STANDARD 14)
+endif()
 
 if(UNIX)
   find_package(ZLIB REQUIRED)
