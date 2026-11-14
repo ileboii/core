@@ -1,4 +1,5 @@
 #include "TestComponent.h"
+#include "AvTestSupport.h"
 #include "playerbot/WorldPosition.h"
 #include "playerbot/PlayerbotTextMgr.h"
 #include "Group.h"
@@ -250,6 +251,9 @@ TestResult TestMonitor::Check(const std::string& monitorStr, Player* bot, TestCo
             placeholders["<distance wanted>"] = std::to_string(static_cast<uint32>(ctx.testStartPosition.distance(WorldPosition(ctx.destinationPosition)))) + "m";
 
         placeholders["<time elapsed>"] = std::to_string((WorldTimer::getMSTime() - ctx.testStartTime) / 1000) + "s";
+
+        if (message.find("<av score>") != std::string::npos)
+            placeholders["<av score>"] = FormatAvSquadScore(bot, ctx);
         
         if (!placeholders.empty())
         {

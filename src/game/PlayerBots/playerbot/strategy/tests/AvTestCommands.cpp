@@ -248,6 +248,132 @@ TestResult CommandAvLeave::Execute(const std::string& params, Player* bot,
     return TestResult::PASS;
 }
 
+TestResult CommandAvTeleport::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    std::vector<std::string> args = Qualified::getMultiQualifiers(params, " ");
+    args.erase(std::remove(args.begin(), args.end(), std::string()), args.end());
+    if (args.size() != 2 || (args[0] != "alliance" && args[0] != "horde"))
+    {
+        message = "usage: av teleport <alliance|horde> <location>";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    BattleGroundAV* av = GetAvForBot(bot);
+    if (!av)
+    {
+        message = "av teleport: bot is not in an Alterac Valley";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    GuidPosition loc;
+    if (!TestRegistry::ParseLocation(args[1], loc) || loc.mapId != av->GetMapId())
+    {
+        message = "av teleport: " + args[1] + " is not a location in Alterac Valley";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    std::vector<Player*> squad;
+    if (!CollectAvSquad(bot, ctx, squad, message))
+        return TestResult::IMPOSSIBLE;
+
+    Team team = args[0] == "alliance" ? ALLIANCE : HORDE;
+    uint32 matched = 0;
+    std::string failed;
+    for (Player* member : squad)
+    {
+        if (member->GetTeam() != team)
+            continue;
+
+        ++matched;
+        if (GetAvForBot(member) != av || member->IsBeingTeleported() || !member->TeleportTo(av->GetMapId(), loc.x, loc.y, loc.z, member->GetOrientation()))
+            failed += " " + std::string(member->GetName());
+    }
+
+    if (!matched)
+    {
+        message = "av teleport: no " + args[0] + " bots in the test squad";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    if (!failed.empty())
+    {
+        message = "av teleport: could not move" + failed + " to " + args[1];
+        return TestResult::FAIL;
+    }
+
+    return TestResult::PASS;
+}
+
+TestResult CommandAvScore::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    if (!GetAvForBot(bot))
+    {
+        message = "av score: bot is not in an Alterac Valley";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    message = FormatAvSquadScore(bot, ctx);
+    ai->TellPlayerNoFacing(bot, message);
+    return TestResult::PASS;
+}
+
+TestResult CommandAvWaitNode::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    std::vector<std::string> args = Qualified::getMultiQualifiers(params, " ");
+    args.erase(std::remove(args.begin(), args.end(), std::string()), args.end());
+    if (args.size() < 3 || args.size() > 4 || args.back().find_first_not_of("0123456789") != std::string::npos || args.back().size() > 4)
+    {
+        message = "usage: av wait node <node name> <alliance|horde|neutral> [assaulted|controlled] <timeout seconds>";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    uint8 nodeId = 0;
+    if (!ParseAvNodeName(args[0], nodeId))
+    {
+        message = "unknown av node: " + args[0];
+        return TestResult::IMPOSSIBLE;
+    }
+
+    uint8 owner = 0;
+    uint8 state = 0;
+    std::string stateName = args.size() == 4 ? args[2] : "controlled";
+    if (!ParseAvOwnerState(args[1], stateName, owner, state))
+    {
+        message = "unknown av owner/state: " + args[1] + " " + stateName;
+        return TestResult::IMPOSSIBLE;
+    }
+
+    BattleGroundAV* av = GetAvForBot(bot);
+    if (!av)
+    {
+        message = "av wait node: bot is not in an Alterac Valley";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    if (av->GetAvNodeOwner(nodeId) == owner && av->GetAvNodeState(nodeId) == state)
+    {
+        ctx.avJoinStart = 0;
+        return TestResult::PASS;
+    }
+
+    if (!ctx.avJoinStart)
+        ctx.avJoinStart = WorldTimer::getMSTime();
+
+    uint32 timeoutSec = std::max<uint32>(std::stoul(args.back()), 1);
+    if (WorldTimer::getMSTimeDiff(ctx.avJoinStart, WorldTimer::getMSTime()) > timeoutSec * IN_MILLISECONDS)
+    {
+        ctx.avJoinStart = 0;
+        message = "av wait node: " + args[0] + " is " + FormatAvNodeState(av->GetAvNodeOwner(nodeId), av->GetAvNodeState(nodeId)) + ", not " + FormatAvNodeState(owner, state) + " after " + args.back() + "s";
+        return TestResult::FAIL;
+    }
+
+    message = "Waiting for " + args[0] + " to be " + FormatAvNodeState(owner, state);
+    return TestResult::PENDING;
+}
+
 TestResult CommandAvWaitStart::Execute(const std::string& params, Player* bot,
                     PlayerbotAI* ai, TestContext& ctx, std::string& message)
 {
