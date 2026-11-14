@@ -54,4 +54,20 @@ void TestRegistry::RegisterAvTests()
         "despawn",
         "cleanup av leave"
     });
+
+    RegisterTest("av_capture_stoneheart_bunker_horde", {
+        "require bot is level=60 race=orc class=warrior",
+        "debug",
+        "spawn level=60 class=warrior race=tauren",
+        "spawn level=60 class=warrior race=troll",
+        "form",
+        "av join 300",
+        "av wait start",
+        "monitor av node av_stoneheart_bunker horde assaulted => pass \"Horde squad assaulted Stonehearth Bunker after <time elapsed>\"",
+        "monitor time > 900 => fail \"Squad parked at the Stonehearth Bunker banner did not capture it - <current position>\"",
+        "teleport av_stoneheart_bunker",
+        "teleport group",
+        "observe",
+        "cleanup av leave"
+    });
 }

@@ -67,6 +67,7 @@ void TestAction::RegisterCommands()
     commands.push_back(std::make_unique<RequireAvNode>());
     commands.push_back(std::make_unique<CommandAvJoin>());
     commands.push_back(std::make_unique<CommandAvLeave>());
+    commands.push_back(std::make_unique<CommandAvWaitStart>());
     commands.push_back(std::make_unique<CommandFlowObserve>());
     commands.push_back(std::make_unique<CommandFlowMonitor>());
     commands.push_back(std::make_unique<CommandFlowWaitGroup>());
@@ -88,6 +89,7 @@ void TestAction::RegisterMonitors()
 {
     monitors.push_back(std::make_unique<MonitorStateDead>());
     monitors.push_back(std::make_unique<MonitorStateTime>());
+    monitors.push_back(std::make_unique<MonitorAvNode>());
     monitors.push_back(std::make_unique<MonitorCombatHp>());
     monitors.push_back(std::make_unique<MonitorNotInCombat>());
     monitors.push_back(std::make_unique<MonitorMovementDistance>());
