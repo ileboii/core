@@ -219,7 +219,7 @@ class BattleGroundAB : public BattleGround
         /* Nodes occupying */
         void EventPlayerClickedOnFlag(Player* source, GameObject* targetGo) override;
 
-bool BattleGroundAB::IsNodeOccupiedByTeam(uint8 node, Team team) const
+        bool IsNodeOccupiedByTeam(uint8 node, Team team) const
         {
             if (node >= BG_AB_NODES_MAX)
                 return false;

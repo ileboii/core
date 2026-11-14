@@ -161,11 +161,11 @@ target_link_libraries(${LIBRARY_NAME}
   PRIVATE shared
   PRIVATE Detour
   PRIVATE g3dlite
-  PRIVATE zlib
 )
 if(WIN32)
   target_link_libraries(${LIBRARY_NAME}
     PRIVATE ws2_32
+    PRIVATE zlib
   )
 endif()
 

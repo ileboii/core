@@ -9,6 +9,12 @@
 #define MAX_EXPANSION 0
 #endif
 
+#ifndef _WIN32
+#include <strings.h>
+#define _stricmp strcasecmp
+#define _strnicmp strncasecmp
+#endif
+
 // Compatibility layer between cmangos playerbot code and vmangos core.
 // cmangos uses AreaTableEntry from DBC with sAreaStore (DBCStorage).
 // vmangos uses AreaEntry from SQL with sAreaStorage (SQLStorage).

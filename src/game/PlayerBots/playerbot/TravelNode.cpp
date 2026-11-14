@@ -2279,7 +2279,7 @@ void TravelNodeMap::generatePortalNodes()
 
         if (outPos.isOverworld() && outPos.currentHeight() > 0.5f && outPos.currentHeight() < 50.0f)
         {
-            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "%s adjusting height down from %f", pSpellInfo->SpellName[0], outPos.currentHeight());
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "%s adjusting height down from %f", pSpellInfo->SpellName[0].c_str(), outPos.currentHeight());
             outPos.setZ(outPos.getZ() - outPos.currentHeight() + 0.5f);
         }
 
