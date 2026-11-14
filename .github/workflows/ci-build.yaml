@@ -132,6 +132,7 @@ jobs:
             -DCMAKE_CXX_COMPILER="${{ matrix.config.cxx_compiler }}" \
             -DCMAKE_INSTALL_PREFIX="../_install" \
             -DBUILD_EXTRACTORS=1 \
+            -DBUILD_PLAYERBOTS=1 \
             -DENABLE_MAILSENDER=1 \
             -DBUILD_WARNINGS_AS_ERROR=1 \
             -DSUPPORTED_CLIENT_BUILD="${{ matrix.client_build }}" \
@@ -149,6 +150,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="../_install" \
             -DCMAKE_PREFIX_PATH="$(brew --prefix openssl@3);$(brew --prefix mysql-client@8.4)" \
             -DBUILD_EXTRACTORS=1 \
+            -DBUILD_PLAYERBOTS=1 \
             -DENABLE_MAILSENDER=1 \
             -DBUILD_WARNINGS_AS_ERROR=1 \
             -DSUPPORTED_CLIENT_BUILD="${{ matrix.client_build }}"
@@ -169,6 +171,7 @@ jobs:
           cd build
           cmake ../ \
             -DBUILD_EXTRACTORS=1 \
+            -DBUILD_PLAYERBOTS=1 \
             -DENABLE_MAILSENDER=1 \
             -DBUILD_WARNINGS_AS_ERROR=1 \
             -DSUPPORTED_CLIENT_BUILD="${{ matrix.client_build }}" \
@@ -185,6 +188,7 @@ jobs:
           cd build
           cmake ../ \
             -DBUILD_EXTRACTORS=1 \
+            -DBUILD_PLAYERBOTS=1 \
             -DENABLE_MAILSENDER=1 \
             -DBUILD_WARNINGS_AS_ERROR=1 \
             -DSUPPORTED_CLIENT_BUILD="${{ matrix.client_build }}" \
