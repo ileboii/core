@@ -227,7 +227,7 @@ bool RpgTaxiAction::Execute(Event& event)
     bot->ResolvePendingMount();
 #endif
 
-    sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot #%d <%s> is flying from %s to %s (%zu location available)", bot->GetGUIDLow(), bot->GetName(), nodeFrom->name[0], nodeTo->name[0], nodes.size());
+    sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "Bot #%d <%s> is flying from %s to %s (%zu location available)", bot->GetGUIDLow(), bot->GetName(), nodeFrom->name[0].c_str(), nodeTo->name[0].c_str(), nodes.size());
     bot->SetMoney(money);
 
     rpg->AfterExecute();
