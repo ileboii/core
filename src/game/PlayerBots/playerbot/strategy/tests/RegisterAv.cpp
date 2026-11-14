@@ -22,6 +22,7 @@ void TestRegistry::RegisterAvTests()
     RegisterAvNamedLocation("av_captain_balinda",   -57.789f, -286.597f, 15.647f);
     RegisterAvNamedLocation("av_boss_drekthar",   -1370.260f, -219.702f, 98.510f);
     RegisterAvNamedLocation("av_boss_vanndar",      722.430f,  -10.998f, 50.705f);
+    RegisterAvNamedLocation("av_stoneheart_outpost_waiting_horde", 28.100f, -302.600f, 15.100f);
 
     RegisterTest("av_status_smoke_default", {
         "require bot is level=60",
@@ -52,6 +53,38 @@ void TestRegistry::RegisterAvTests()
         "av leave",
         "wait 10",
         "despawn",
+        "cleanup av leave"
+    });
+
+    RegisterTest("av_capture_stoneheart_bunker_horde", {
+        "require bot is level=60 race=orc class=warrior",
+        "debug",
+        "spawn level=60 class=warrior race=tauren",
+        "spawn level=60 class=warrior race=troll",
+        "form",
+        "av join 300",
+        "av wait start",
+        "monitor av node av_stoneheart_bunker horde assaulted => pass \"Horde squad assaulted Stonehearth Bunker after <time elapsed>\"",
+        "monitor time > 900 => fail \"Squad parked at the Stonehearth Bunker banner did not capture it - <current position>\"",
+        "teleport av_stoneheart_bunker",
+        "teleport group",
+        "observe",
+        "cleanup av leave"
+    });
+
+    RegisterTest("av_captain_balinda_small_squad_horde", {
+        "require bot is level=60 race=orc class=warrior",
+        "debug",
+        "spawn level=60 class=warrior race=tauren",
+        "spawn level=60 class=warrior race=troll",
+        "form",
+        "av join 300",
+        "av wait start",
+        "monitor distance to av_captain_balinda < 25 => pass \"Small squad left the Stonehearth waiting spot and reached Captain Balinda after <time elapsed>\"",
+        "monitor time > 900 => fail \"Small squad stayed parked: the captain assault waits for 5 friendlies at the waiting spot and has no timeout - <current position>\"",
+        "teleport av_stoneheart_outpost_waiting_horde",
+        "teleport group",
+        "observe",
         "cleanup av leave"
     });
 }

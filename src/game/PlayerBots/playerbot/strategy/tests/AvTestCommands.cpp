@@ -27,6 +27,13 @@ namespace
         bool Queue() { return JoinQueue(BATTLEGROUND_QUEUE_AV); }
     };
 
+    bool ParseAvOwnerState(std::string const& ownerName, std::string const& stateName, uint8& owner, uint8& state)
+    {
+        owner = ownerName == "alliance" ? 0 : ownerName == "horde" ? 1 : ownerName == "neutral" ? 2 : 255;
+        state = stateName == "assaulted" ? 0 : stateName == "controlled" ? 1 : 255;
+        return owner != 255 && state != 255;
+    }
+
     bool CollectAvSquad(Player* bot, TestContext& ctx, std::vector<Player*>& squad, std::string& message)
     {
         squad.push_back(bot);
@@ -100,9 +107,9 @@ TestResult RequireAvNode::Execute(const std::string& params, Player* bot,
         return TestResult::IMPOSSIBLE;
     }
 
-    uint8 expectedOwner = ownerName == "alliance" ? 0 : ownerName == "horde" ? 1 : ownerName == "neutral" ? 2 : 255;
-    uint8 expectedState = stateName == "assaulted" ? 0 : stateName == "controlled" ? 1 : 255;
-    if (expectedOwner == 255 || expectedState == 255)
+    uint8 expectedOwner = 0;
+    uint8 expectedState = 0;
+    if (!ParseAvOwnerState(ownerName, stateName, expectedOwner, expectedState))
     {
         message = "unknown av owner/state: " + ownerName + " " + stateName;
         return TestResult::IMPOSSIBLE;
@@ -197,7 +204,25 @@ TestResult CommandAvJoin::Execute(const std::string& params, Player* bot,
 
     if (timedOut)
     {
-        message = "av join: " + std::to_string(inside) + "/" + std::to_string(squad.size()) + " bots entered Alterac Valley within " + std::to_string(timeoutSec) + "s";
+        std::string stuck;
+        for (Player* member : squad)
+        {
+            if (BattleGroundAV* av = GetAvForBot(member))
+            {
+                if (member->GetMapId() != av->GetMapId() || !member->IsInWorld() || member->IsBeingTeleported())
+                    stuck += " " + std::string(member->GetName()) + "=porting";
+                continue;
+            }
+
+            GroupQueueInfo ginfo;
+            std::string state = "not queued";
+            if (member->InBattleGroundQueueForBattleGroundQueueType(BATTLEGROUND_QUEUE_AV) && sBattleGroundMgr.m_battleGroundQueues[BATTLEGROUND_QUEUE_AV].GetPlayerGroupInfoData(member->GetObjectGuid(), &ginfo))
+                state = ginfo.isInvitedToBgInstanceGuid ? "invited" : "queued";
+            stuck += " " + std::string(member->GetName()) + "=" + state;
+        }
+        if (stuck.find("=queued") != std::string::npos && sWorld.getConfig(CONFIG_UINT32_BATTLEGROUND_INVITATION_TYPE) != 0)
+            stuck += " (Battleground.InvitationType balances team sizes; one-sided squads need 0)";
+        message = "av join: " + std::to_string(inside) + "/" + std::to_string(squad.size()) + " bots entered Alterac Valley within " + std::to_string(timeoutSec) + "s;" + stuck;
         ctx.avJoinStart = 0;
         return TestResult::FAIL;
     }
@@ -221,4 +246,62 @@ TestResult CommandAvLeave::Execute(const std::string& params, Player* bot,
     }
 
     return TestResult::PASS;
+}
+
+TestResult CommandAvWaitStart::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    BattleGroundAV* av = GetAvForBot(bot);
+    if (!av)
+    {
+        message = "av wait start: bot is not in an Alterac Valley";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    if (av->GetStatus() == STATUS_IN_PROGRESS)
+    {
+        ctx.avJoinStart = 0;
+        return TestResult::PASS;
+    }
+
+    if (av->GetStatus() == STATUS_WAIT_LEAVE)
+    {
+        message = "av wait start: the match already ended";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    if (!ctx.avJoinStart)
+        ctx.avJoinStart = WorldTimer::getMSTime();
+
+    if (WorldTimer::getMSTimeDiff(ctx.avJoinStart, WorldTimer::getMSTime()) > 300 * IN_MILLISECONDS)
+    {
+        ctx.avJoinStart = 0;
+        message = "av wait start: Alterac Valley did not start within 300s";
+        return TestResult::FAIL;
+    }
+
+    message = "Waiting for Alterac Valley gates to open";
+    return TestResult::PENDING;
+}
+
+bool MonitorAvNode::IsConditionMet(const std::string& monitorStr, Player* bot, TestContext& ctx) const
+{
+    BattleGroundAV* av = GetAvForBot(bot);
+    if (!av)
+        return false;
+
+    size_t arrowPos = monitorStr.find("=>");
+    std::string condition = monitorStr.substr(0, arrowPos);
+    std::vector<std::string> args = Qualified::getMultiQualifiers(condition, " ");
+    args.erase(std::remove(args.begin(), args.end(), std::string()), args.end());
+    if (args.size() < 2)
+        return false;
+
+    uint8 nodeId = 0;
+    uint8 owner = 0;
+    uint8 state = 0;
+    if (!ParseAvNodeName(args[0], nodeId) || !ParseAvOwnerState(args[1], args.size() > 2 ? args[2] : "controlled", owner, state))
+        return false;
+
+    return av->GetAvNodeOwner(nodeId) == owner && av->GetAvNodeState(nodeId) == state;
 }

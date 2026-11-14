@@ -42,4 +42,20 @@ namespace ai
     protected:
         std::string GetName() const override { return "av leave"; }
     };
+
+    class CommandAvWaitStart : public TestCommand
+    {
+    public:
+        TestResult Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message) override;
+    protected:
+        std::string GetName() const override { return "av wait start"; }
+    };
+
+    class MonitorAvNode : public TestMonitor
+    {
+    private:
+        bool IsConditionMet(const std::string& monitorStr, Player* bot, TestContext& ctx) const override;
+        std::string GetName() const override { return "av node"; }
+    };
 }
