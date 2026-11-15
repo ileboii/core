@@ -635,11 +635,14 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 std::vector<uint32> const FlagEntries =
 {
     178925,
+    179435,
     178940,
     178943,
     178932,
+    178364,
     178365,
     179286,
+    179287,
     179310,
     179308,
     180418,
