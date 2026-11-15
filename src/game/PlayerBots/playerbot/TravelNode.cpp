@@ -1829,7 +1829,7 @@ TravelPath TravelNodeMap::getFullPath(WorldPosition startPos, WorldPosition endP
     //[[Node pathfinding system]]
                 //We try to find nodes near the bot and near the end position that have a route between them.
                 //Then bot has to move towards/along the route.
-    sTravelNodeMap.m_nMapMtx.lock_shared();
+    std::shared_lock lock(sTravelNodeMap.m_nMapMtx);
 
     //Find the route of nodes starting at a node closest to the start position and ending at a node closest to the endposition.
     //Also returns longPath: The path from the start position to the first node in the route.
@@ -1844,8 +1844,6 @@ TravelPath TravelNodeMap::getFullPath(WorldPosition startPos, WorldPosition endP
     movePath = route.buildPath(beginPath, endPath);
 
     route.cleanTempNodes();
-
-    sTravelNodeMap.m_nMapMtx.unlock_shared();
 
     return movePath;
 }

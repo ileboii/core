@@ -1004,7 +1004,7 @@ void TravelTarget::CheckGuildSchedule()
     lastMove.lastTransportEntry = 0;
     lastMove.lastSwimGoal = WorldPosition();
     lastMove.nextTeleport = 0;
-    lastMove.nextMinimalRepath = 0;
+    lastMove.nextMinimalRepath = {};
 
     Action const* lastAction = ai->GetLastExecutedAction(BotState::BOT_STATE_NON_COMBAT);
     if (m_status == TravelStatus::TRAVEL_STATUS_TRAVEL &&

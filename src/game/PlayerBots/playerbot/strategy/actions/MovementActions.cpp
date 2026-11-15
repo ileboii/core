@@ -14,6 +14,7 @@
 #include "TargetedMovementGenerator.h"
 #include "MoveSpline.h"
 #include "MoveMap.h"
+#include "VMapFactory.h"
 #include "playerbot/TravelMgr.h"
 // Transports.h not in vmangos
 #ifdef MANGOSBOT_TWO
@@ -134,17 +135,199 @@ namespace
         return true;
     }
 
-    bool TeleportToWalkablePoint(Player* bot, WorldPosition destination)
+    char const* FindModelFloor(Player* bot, WorldPosition& position, float maxRange = 2.0f)
+    {
+        if (!position.isValid() || position.mapId != bot->GetMapId())
+            return "Invalid model floor waypoint";
+
+        auto* query = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMeshQuery(position.mapId);
+        if (!query || !query->getAttachedNavMesh())
+            return "No navigation mesh at the waypoint";
+
+        dtQueryFilter filter;
+        filter.setIncludeFlags(NAV_GROUND);
+        filter.setExcludeFlags(NAV_STEEP_SLOPES);
+        float target[VERTEX_SIZE] = {position.y, position.z, position.x};
+        float extents[VERTEX_SIZE] = {maxRange, 2.0f, maxRange};
+        float point[VERTEX_SIZE] = {};
+        dtPolyRef polygon = INVALID_POLYREF;
+        if (dtStatusFailed(query->findNearestPoly(target, extents, &filter, &polygon, point)) || !polygon ||
+            std::abs(point[0] - target[0]) > maxRange || std::abs(point[1] - target[1]) > 2.0f ||
+            std::abs(point[2] - target[2]) > maxRange)
+            return "No walkable polygon near the waypoint";
+
+        WorldPosition landing(position.mapId, point[2], point[0], point[1], position.o);
+        auto* vmap = VMAP::VMapFactory::createOrGetVMapManager();
+        float const floor = vmap->getHeight(landing.mapId, landing.x, landing.y, landing.z + 1.0f, 2.0f);
+        if (!std::isfinite(floor) || floor <= INVALID_HEIGHT || std::abs(floor - landing.z) > 1.0f ||
+            std::abs(floor - position.z) > 1.0f)
+            return "No collision floor matching the waypoint and mesh";
+
+        float const terrain = bot->GetTerrain()->GetHeightStatic(landing.x, landing.y, floor, false);
+        if (terrain > INVALID_HEIGHT && floor <= terrain + 2.0f)
+            return "Waypoint has no matching raised floor";
+
+        dtMeshTile const* tile;
+        dtPoly const* poly;
+        query->getAttachedNavMesh()->getTileAndPolyByRefUnsafe(polygon, &tile, &poly);
+        // The mesh already reserves space around obstacles for its agent radius.
+        float const clearanceNeeded = bot->GetObjectBoundingRadius() - tile->header->walkableRadius;
+        if (clearanceNeeded > 0.0f)
+        {
+            // A stair may border the landing polygon without being a wall.
+            filter.setExcludeFlags(0);
+            float clearance, hit[VERTEX_SIZE] = {}, normal[VERTEX_SIZE] = {};
+            if (dtStatusFailed(query->findDistanceToWall(polygon, point, clearanceNeeded, &filter, &clearance, hit, normal)) ||
+                clearance < clearanceNeeded)
+                return "Raised floor is too narrow for the bot";
+        }
+
+        if (!bot->GetMap()->isInLineOfSight(landing.x, landing.y, floor + 0.05f,
+                landing.x, landing.y, floor + bot->GetCollisionHeight(), true, false))
+            return "Raised floor has blocked headroom";
+
+        landing.z = floor;
+        position = landing;
+        return nullptr;
+    }
+
+    bool FindModelFloorPath(Player* bot, WorldPosition& destination, bool& destinationOnModel,
+        Movement::PointsArray* points = nullptr)
     {
         WorldPosition origin(bot);
-        if (bot->IsInWater() || bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) ||
-            GetSwimPosition(bot, origin) || GetSwimPosition(bot, destination))
-            return false;
-        if (!destination.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()) || !HasNavigationRoute(bot, destination))
+        if (origin.mapId != destination.mapId || origin.distance(destination) > sPlayerbotAIConfig.sightDistance ||
+            bot->GetTransport() || GetSwimPosition(bot, origin))
             return false;
 
+        WorldPosition landing(destination);
+        bool const onModel = destinationOnModel || !FindModelFloor(bot, landing);
+        if ((!onModel && FindModelFloor(bot, origin)) || GetSwimPosition(bot, landing) ||
+            !FindCompleteMmapPath(bot, landing, points))
+            return false;
+
+        destination = landing;
+        destinationOnModel = onModel;
+        return true;
+    }
+
+    bool FindNearbyMinimalLanding(Player* bot, WorldPosition const& origin, WorldPosition& waypoint, bool& onModel)
+    {
+        float const originDistanceSq = origin.sqDistance(waypoint);
+        float const sightDistance = sPlayerbotAIConfig.sightDistance;
+        if (!waypoint.isValid() || bot->GetTransport() || originDistanceSq > sightDistance * sightDistance)
+            return false;
+
+        constexpr float diagonal = 0.70710678f;
+        constexpr float directions[][2] = {
+            {1.0f, 0.0f}, {-1.0f, 0.0f}, {0.0f, 1.0f}, {0.0f, -1.0f},
+            {diagonal, diagonal}, {-diagonal, -diagonal}, {diagonal, -diagonal}, {-diagonal, diagonal},
+        };
+        for (float offset : {0.75f, 3.0f})
+        {
+            for (auto const& direction : directions)
+            {
+                WorldPosition landing(waypoint.mapId, waypoint.x + offset * direction[0],
+                    waypoint.y + offset * direction[1], waypoint.z, waypoint.o);
+                bool const modelFloor = !FindModelFloor(bot, landing, 1.0f);
+                if (!modelFloor)
+                {
+                    if (!landing.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()))
+                        continue;
+
+                    float const terrain = bot->GetTerrain()->GetHeightStatic(landing.x, landing.y, landing.z, false);
+                    if (!std::isfinite(terrain) || std::abs(landing.z - terrain) > 1.0f ||
+                        !bot->GetMap()->isInLineOfSight(landing.x, landing.y, terrain + 0.05f,
+                            landing.x, landing.y, terrain + bot->GetCollisionHeight(), true, false))
+                        continue;
+                    landing.z = terrain;
+                }
+
+                float const waypointDistanceSq = landing.sqDistance(waypoint);
+                if (waypointDistanceSq > 16.0f || waypointDistanceSq >= originDistanceSq ||
+                    origin.sqDistance(landing) <= 0.25f || GetSwimPosition(bot, landing) ||
+                    !FindCompleteMmapPath(bot, landing))
+                    continue;
+
+                waypoint = landing;
+                onModel = modelFloor;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    enum class WaypointTeleportResult
+    {
+        Requested,
+        Unusable,
+        Visible,
+        Blocked
+    };
+
+    WaypointTeleportResult TeleportToWalkablePoint(Player* bot, WorldPosition destination, PlayerbotAI* minimalAI = nullptr)
+    {
+        WorldPosition const waypoint = destination;
+        auto record = [minimalAI, &waypoint](WaypointTeleportResult outcome, char const* message)
+        {
+            if (minimalAI)
+                minimalAI->GetLastMovement().RecordMinimalMove(message, waypoint);
+            return outcome;
+        };
+
+        WorldPosition origin(bot);
+        if (destination.mapId != origin.mapId)
+            return record(WaypointTeleportResult::Blocked, "Waypoint is on another map");
+
+        if (bot->IsInWater() || bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) ||
+            GetSwimPosition(bot, origin) || GetSwimPosition(bot, destination))
+            return record(WaypointTeleportResult::Blocked, "Waypoint requires swimming");
+
+        bool destinationOnModel = false;
+        bool nearbyLanding = false;
+        if (!destination.ClosestCorrectPoint(1.0f, 1.0f, bot->GetInstanceId()))
+        {
+            if (!minimalAI)
+                return record(WaypointTeleportResult::Unusable, "Waypoint has no safe ground");
+
+            if (!destination.ClosestCorrectPoint(2.0f, 1.0f, bot->GetInstanceId()))
+            {
+                if (char const* reason = FindModelFloor(bot, destination))
+                {
+                    if (!FindNearbyMinimalLanding(bot, origin, destination, destinationOnModel))
+                        return record(WaypointTeleportResult::Unusable, reason);
+                    nearbyLanding = true;
+                }
+                else
+                    destinationOnModel = true;
+            }
+
+            if (GetSwimPosition(bot, destination))
+                return record(WaypointTeleportResult::Blocked, "Waypoint requires swimming");
+        }
+
+        if (!nearbyLanding && !HasNavigationRoute(bot, destination) &&
+            (!minimalAI || !FindModelFloorPath(bot, destination, destinationOnModel)))
+            return record(WaypointTeleportResult::Unusable, "No walkable connection to the waypoint");
+
         destination.z += 0.05f;
-        return bot->TeleportTo(destination);
+        if (minimalAI)
+        {
+            if (origin.sqDistance(destination) <= 0.25f)
+                return record(WaypointTeleportResult::Unusable, "Waypoint snap would leave the bot in place");
+            if (minimalAI->HasPlayerNearby(destination, bot->GetMap()->GetVisibilityDistance()))
+                return record(WaypointTeleportResult::Visible, "A player can see the landing point");
+        }
+
+        if (!bot->TeleportTo(destination))
+            return record(WaypointTeleportResult::Blocked, "Server rejected waypoint teleport");
+
+        if (minimalAI)
+        {
+            auto& landing = minimalAI->GetLastMovement().lastMinimalModelLanding;
+            landing = destinationOnModel ? std::optional<WorldPosition>(destination) : std::nullopt;
+        }
+        return record(WaypointTeleportResult::Requested,
+            nearbyLanding ? "Nearby waypoint teleport requested" : "Waypoint teleport requested");
     }
 
     Creature* GetAvCaptainCombatTarget(Player* bot)
@@ -483,7 +666,7 @@ bool MovementAction::UseTaxi(PlayerbotAI* ai, uint32 entry, bool needNpc)
 
     Creature* unit = nullptr;
 
-    if (needNpc)
+    if (needNpc || (!bot->IsTaxiCheater() && !bot->GetTaxi().IsTaximaskNodeKnown(tEntry->from)))
     {
         std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
         for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)
@@ -638,18 +821,37 @@ bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition d
     return false;
 }
 
+bool MovementAction::BuildModelFloorPath(WorldPosition destination, TravelPath& path)
+{
+    Movement::PointsArray points;
+    bool destinationOnModel = false;
+    if (!FindModelFloorPath(bot, destination, destinationOnModel, &points))
+        return false;
+
+    path.addPath(destination.fromPointsArray(points));
+    return true;
+}
+
 bool MovementAction::MinimalMove(PlayerbotAI* ai)
 {
     if (!sPlayerbotAIConfig.enableMinimalMove)
         return false;
 
     Player* bot = ai->GetBot();
-
-
     if (bot->IsTaxiFlying())
         return false;
 
     LastMovement& lastMove = ai->GetLastMovement();
+    time_t const now = time(nullptr);
+    if (lastMove.nextTeleport > now)
+        return false;
+
+    lastMove.nextTeleport = now + std::max<time_t>(1, sPlayerbotAIConfig.passiveDelay / 1000);
+    if (!ai->CanMove())
+    {
+        lastMove.RecordMinimalMove("The bot cannot move right now");
+        return false;
+    }
 
     if (lastMove.lastPath.empty())
     {
@@ -658,53 +860,73 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
         WorldPosition const destination = lastMove.lastSwimGoal;
         MovementAction movement(ai, "minimal swim");
-        return movement.MoveTo2(destination.mapId, destination.x, destination.y, destination.z, false, false, false, false, true);
+        bool const moved = movement.MoveTo2(destination.mapId, destination.x, destination.y, destination.z, false, false, false, false, true);
+        lastMove.RecordMinimalMove(moved ? "Swimming movement requested" : "Swimming route blocked");
+        return moved;
     }
 
     WorldPosition nextPosition = lastMove.lastPath.getFront();
     WorldPosition origin(bot);
+    float const visibility = bot->GetMap()->GetVisibilityDistance();
+    if (ai->HasPlayerNearby(origin, visibility))
+    {
+        lastMove.RecordMinimalMove("A player can see the bot");
+        return false;
+    }
+
     if (!bot->GetTransport() && (bot->IsInWater() || bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) ||
         GetSwimPosition(bot, origin) || GetSwimPosition(bot, nextPosition)))
     {
         WorldPosition const destination = lastMove.lastPath.getBack();
         MovementAction movement(ai, "minimal swim");
-        return movement.MoveTo2(destination.mapId, destination.x, destination.y, destination.z, false, false, false, false, true);
+        bool const moved = movement.MoveTo2(destination.mapId, destination.x, destination.y, destination.z, false, false, false, false, true);
+        lastMove.RecordMinimalMove(moved ? "Swimming movement requested" : "Swimming route blocked");
+        return moved;
     }
-
-    time_t now = time(0);
-
-    if (lastMove.nextTeleport > now)
-        return false;
 
     auto pmo1 = sPerformanceMonitor.start(PERF_MON_ACTION, "minimalMove", ai);
 
-    lastMove.nextTeleport = now + sPlayerbotAIConfig.passiveDelay/1000; //For teleports/transports/ect 
-
     std::vector<PathNodePoint>& path = lastMove.lastPath.getPath();
 
-    auto nextStep = path.begin();
-
-    bool doDelay = true;
+    auto nextStep = std::find_if(path.begin(), path.end(), [&](PathNodePoint const& step)
+    {
+        return !step.isWalkable() || step.point.mapId != origin.mapId || step.point.sqDistance(origin) > 0.25f;
+    });
+    if (nextStep == path.end())
+    {
+        path.clear();
+        lastMove.RecordMinimalMove("The cached route ends at the bot's position");
+        return false;
+    }
 
     uint32 const minimalWalkChunkMs = std::max<uint32>(sPlayerbotAIConfig.passiveDelay, 20000u);
 
     //Taxi handling: Start taxi and remove path until it ends.
     if (nextStep->type == PathNodeType::NODE_FLIGHTPATH)
     {
-        if (nextStep->point.sqDistance(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
-            return TeleportToWalkablePoint(bot, nextStep->point);
-
-        bool didTaxi = UseTaxi(ai, nextStep->entry, false);
-
-        for (auto& step : path)
+        if (nextStep->point.mapId != origin.mapId ||
+            nextStep->point.sqDistance(origin) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
         {
-            if (step.type == PathNodeType::NODE_FLIGHTPATH && step.entry == nextStep->entry)
-                continue;
-
-            lastMove.lastPath.cutTo(step, false); //Remove path until next walk or taxi.
-            break;
+            auto const result = TeleportToWalkablePoint(bot, nextStep->point, ai);
+            if (result == WaypointTeleportResult::Unusable || result == WaypointTeleportResult::Blocked)
+                path.clear();
+            return result == WaypointTeleportResult::Requested;
         }
 
+        uint32 const entry = nextStep->entry;
+        if (!UseTaxi(ai, entry, false))
+        {
+            path.clear();
+            lastMove.RecordMinimalMove("Taxi boarding rejected");
+            return false;
+        }
+
+        auto end = std::find_if(std::next(nextStep), path.end(), [entry](PathNodePoint const& step)
+        {
+            return step.type != PathNodeType::NODE_FLIGHTPATH || step.entry != entry;
+        });
+        path.erase(path.begin(), end);
+        lastMove.RecordMinimalMove("Taxi boarded");
         return true;
     }
 
@@ -725,34 +947,38 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
             if (afterTransport == path.end())
             {
                 lastMove.lastPath.clear();
-                return true;
+                lastMove.RecordMinimalMove("Transport route has no exit waypoint");
+                return false;
             }
 
-            PathNodePoint destination = *afterTransport;
+            if (!bot->TeleportTo(afterTransport->point))
+            {
+                lastMove.RecordMinimalMove("Transport exit teleport rejected");
+                return false;
+            }
 
-            lastMove.lastPath.cutTo(destination, false);
-
-            bot->TeleportTo(destination.point);
-
-            lastMove.nextTeleport = now + std::max<time_t>(1, sPlayerbotAIConfig.passiveDelay / 1000);
-
+            path.erase(path.begin(), afterTransport);
+            lastMove.RecordMinimalMove("Transport exit teleport requested");
             return true;
         }
 
         bool didTransport = UseTransport(ai, nextStep->entry, nextStep->point);
 
         if (!didTransport)
-            return true;
+        {
+            lastMove.RecordMinimalMove("Waiting for transport");
+            return false;
+        }
 
         if (bot->GetTransport())
         {
             PathNodePoint lastStep = *nextStep;
 
-            for (auto& step : path)
+            for (auto it = nextStep; it != path.end(); ++it)
             {
-                if (step.type == PathNodeType::NODE_TRANSPORT && step.entry == nextStep->entry)
+                if (it->type == PathNodeType::NODE_TRANSPORT && it->entry == nextStep->entry)
                 {
-                    lastStep = step;
+                    lastStep = *it;
                     continue;
                 }
 
@@ -760,15 +986,14 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
             }
 
             lastMove.lastPath.cutTo(lastStep, false);
+            lastMove.RecordMinimalMove("Transport boarded");
             return true;
         }
 
         lastMove.lastPath.cutTo(*nextStep, true);
-
-        nextStep = path.begin();
-
-        bot->TeleportTo(nextStep->point);
-
+        if (!path.empty())
+            bot->TeleportTo(path.front().point);
+        lastMove.RecordMinimalMove("Transport disembarked");
         return true;
     }
 
@@ -780,35 +1005,37 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
         });
 
         if (it != path.end())
-        {
             nextStep = it;
-            doDelay = true;
-        }
     }
 
-    if (!nextStep->isWalkable())
-        return false;
-
-    {
-        bool playerNearby;
-        if (now >= lastMove.nextPlayerNearbyCheck)
-        {
-            playerNearby = ai->HasPlayerNearby(nextStep->point, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_YELL));
-            lastMove.cachedPlayerNearby = playerNearby;
-            lastMove.nextPlayerNearbyCheck = now + 1;
-        }
-        else
-        {
-            playerNearby = lastMove.cachedPlayerNearby;
-        }
-
-        if (playerNearby)
-            return true;
-    }
-
-    if (!TeleportToWalkablePoint(bot, nextStep->point))
+    if (!nextStep->isWalkable() || nextStep->point.mapId != origin.mapId)
     {
         lastMove.lastPath.clear();
+        lastMove.RecordMinimalMove("Cached route has no walkable waypoint on this map");
+        return false;
+    }
+
+    auto result = TeleportToWalkablePoint(bot, nextStep->point, ai);
+    // Keep looking along this walking leg when a waypoint cannot be used as a landing.
+    float lookAheadDistance = 0.0f;
+    for (uint32 tries = 0; result == WaypointTeleportResult::Unusable && tries < 3; ++tries)
+    {
+        auto candidate = std::next(nextStep);
+        if (candidate == path.end() || !candidate->isWalkable() || candidate->point.mapId != origin.mapId)
+            break;
+
+        lookAheadDistance += nextStep->point.distance(candidate->point);
+        if (lookAheadDistance > 24.0f)
+            break;
+
+        nextStep = candidate;
+        result = TeleportToWalkablePoint(bot, nextStep->point, ai);
+    }
+
+    if (result != WaypointTeleportResult::Requested)
+    {
+        if (result != WaypointTeleportResult::Visible)
+            path.clear();
         return false;
     }
 
@@ -1562,7 +1789,7 @@ bool MovementAction::MoveTo2(uint32 mapId, float x, float y, float z, bool idle,
     {
         WorldPosition destination(movePosition);
         destination.o = startPosition.getAngleTo(movePosition);
-        if (TeleportToWalkablePoint(bot, destination))
+        if (TeleportToWalkablePoint(bot, destination) == WaypointTeleportResult::Requested)
         {
             lastMove.nextTeleport = time(0) + (time_t)MoveDelay(startPosition.distance(movePosition));
             return true;

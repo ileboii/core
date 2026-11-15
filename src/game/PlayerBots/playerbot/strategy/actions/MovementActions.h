@@ -34,6 +34,7 @@ namespace ai
 
 
         bool WaitForTransport();
+        bool BuildModelFloorPath(WorldPosition destination, TravelPath& path);
 
 
         enum class PathHandleResult

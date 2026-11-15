@@ -184,20 +184,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     }
 
     canMove = MoveTo2(mapId, x, y, z, false, false, false, false, false, &location);
-
-    if (!canMove)
-    {
-        target->IncRetry(true);
-
-        if (target->IsMaxRetry(true))
-        {
-            ai->TellDebug(ai->GetMaster(), "The target is cooling down because we failed to move to it a few times in a row.", "debug travel");
-            target->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);      
-            target->SetForced(false);
-        }
-    }
-    else
-        target->DecRetry(true);
+    UpdateMoveRetries(*target, canMove);
 
     if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
     {
@@ -229,6 +216,82 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
 bool MoveToTravelTargetAction::isUseful()
 {
+    return CanTravel(false);
+}
+
+bool MoveToTravelTargetAction::MoveMinimally(TravelTarget& target)
+{
+    LastMovement& lastMove = ai->GetLastMovement();
+    if (!CanTravel(true) || !isPossible())
+    {
+        lastMove.RecordMinimalMove("Travel is restricted by the bot's movement or strategy");
+        return false;
+    }
+
+    if (target.GetStatus() == TravelStatus::TRAVEL_STATUS_READY)
+        target.SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
+
+    target.CheckStatus();
+    if (target.GetStatus() != TravelStatus::TRAVEL_STATUS_TRAVEL)
+    {
+        lastMove.RecordMinimalMove("The target no longer requires travel");
+        return false;
+    }
+
+    WorldPosition const origin(bot);
+    WorldPosition const destination = *target.GetPosition();
+    if (!destination.isValid())
+    {
+        lastMove.RecordMinimalMove("Invalid travel target position");
+        return false;
+    }
+
+    bool const sameMap = origin.mapId == destination.mapId;
+    TravelPath path;
+    if ((!sameMap || origin.distance(destination) > sPlayerbotAIConfig.sightDistance) &&
+        !sTravelNodeMap.getNodes().empty())
+        path = sTravelNodeMap.getFullPath(origin, destination, bot);
+
+    if (path.empty() && sameMap)
+    {
+        auto points = destination.getPathStepFrom(origin, bot);
+        if (destination.isPathTo(points, 2.0f) || !BuildModelFloorPath(destination, path))
+            path.addPath(std::move(points));
+    }
+
+    if (path.empty())
+    {
+        UpdateMoveRetries(target, false);
+        lastMove.RecordMinimalMove("No route to the travel target");
+        return false;
+    }
+
+    lastMove.lastPath = std::move(path);
+    bool const moved = MinimalMove(ai);
+    if (moved || lastMove.lastPath.empty())
+        UpdateMoveRetries(target, moved);
+    return moved;
+}
+
+void MoveToTravelTargetAction::UpdateMoveRetries(TravelTarget& target, bool moved)
+{
+    if (moved)
+    {
+        target.DecRetry(true);
+        return;
+    }
+
+    target.IncRetry(true);
+    if (target.IsMaxRetry(true))
+    {
+        ai->TellDebug(ai->GetMaster(), "The target is cooling down because we failed to move to it a few times in a row.", "debug travel");
+        target.SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
+        target.SetForced(false);
+    }
+}
+
+bool MoveToTravelTargetAction::CanTravel(bool minimalMove)
+{
     if (bot->GetGroup() && !ai->IsGroupLeader())
         return false;
 
@@ -238,16 +301,13 @@ bool MoveToTravelTargetAction::isUseful()
     if (!MovementAction::isUseful())
         return false;
 
-    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
-        return false;
-
-    if (!AI_VALUE(bool, "travel target traveling"))
+    if (!minimalMove && (!ai->AllowActivity(TRAVEL_ACTIVITY) || !AI_VALUE(bool, "travel target traveling")))
         return false;
 
     if (bot->IsTaxiFlying())
         return false;
 
-    if (MEM_AI_VALUE(WorldPosition, "current position")->LastChangeDelay() < 10)
+    if (!minimalMove && MEM_AI_VALUE(WorldPosition, "current position")->LastChangeDelay() < 10)
 #ifndef MANGOSBOT_ZERO
         if (bot->IsMovingIgnoreFlying())
             return false;
@@ -256,7 +316,7 @@ bool MoveToTravelTargetAction::isUseful()
             return false;
 #endif
 
-    if (!AI_VALUE(bool, "can move around"))
+    if (minimalMove ? bot->GetTradeData() != nullptr : !AI_VALUE(bool, "can move around"))
         return false;
 
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
@@ -277,7 +337,7 @@ bool MoveToTravelTargetAction::isUseful()
     if (travelPos.isDungeon() && bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetObjectGuid()) && sTravelMgr.MapTransDistance(bot, travelPos, true) < sPlayerbotAIConfig.sightDistance && !AI_VALUE2(bool, "group and", "near leader"))
         return false;
      
-    if (AI_VALUE(bool, "has available loot"))
+    if (!minimalMove && AI_VALUE(bool, "has available loot"))
     {
         LootObject lootObject = AI_VALUE(LootObjectStack*, "available loot")->GetLoot(sPlayerbotAIConfig.lootDistance);
         if (lootObject.IsLootPossible(bot))

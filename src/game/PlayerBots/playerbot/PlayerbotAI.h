@@ -402,7 +402,7 @@ public:
     time_t GetAIPlayLastChatTime() const { return aiPlayLastChatTime; }
     void HandleBotOutgoingPacket(const WorldPacket& packet);
     void ProcessBotOutgoingPackets();
-    bool TryMinimalMove();
+    bool TryMinimalMove(bool allowTargetSelection = true);
     size_t GetPendingBotOutgoingPacketCount();
     void HandleMasterIncomingPacket(const WorldPacket& packet);
     void HandleMasterOutgoingPacket(const WorldPacket& packet);

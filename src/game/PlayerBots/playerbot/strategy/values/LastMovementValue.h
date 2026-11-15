@@ -1,4 +1,7 @@
 #pragma once
+#include <chrono>
+#include <optional>
+
 #include "playerbot/strategy/Value.h"
 #include "playerbot/TravelNode.h"
 
@@ -25,9 +28,11 @@ namespace ai
             lastPath = other.lastPath;
             nextTeleport = other.nextTeleport;
             lastFlee = other.lastFlee;
-            nextPlayerNearbyCheck = other.nextPlayerNearbyCheck;
-            cachedPlayerNearby = other.cachedPlayerNearby;
             nextMinimalRepath = other.nextMinimalRepath;
+            lastMinimalMoveCheck = other.lastMinimalMoveCheck;
+            lastMinimalMoveResult = other.lastMinimalMoveResult;
+            lastMinimalWaypoint = other.lastMinimalWaypoint;
+            lastMinimalModelLanding = other.lastMinimalModelLanding;
             nextStuckRecoveryAttempt = other.nextStuckRecoveryAttempt;
             stuckRecoveryUntil = other.stuckRecoveryUntil;
             moveEvent = Event();
@@ -44,9 +49,11 @@ namespace ai
             lastTransportEntry = 0;
             lastFlee = 0;
             nextTeleport = 0;
-            nextPlayerNearbyCheck = 0;
-            cachedPlayerNearby = false;
-            nextMinimalRepath = 0;
+            nextMinimalRepath = {};
+            lastMinimalMoveCheck = 0;
+            lastMinimalMoveResult = "No attempt yet";
+            lastMinimalWaypoint.reset();
+            lastMinimalModelLanding.reset();
             nextStuckRecoveryAttempt = 0;
             stuckRecoveryUntil = 0;
             moveEvent = Event();
@@ -66,6 +73,13 @@ namespace ai
             lastFollow = NULL;
         }
         void setPath(TravelPath path) { lastPath = path; }
+
+        void RecordMinimalMove(char const* result, std::optional<WorldPosition> waypoint = std::nullopt)
+        {
+            lastMinimalMoveCheck = time(nullptr);
+            lastMinimalMoveResult = result;
+            lastMinimalWaypoint = waypoint;
+        }
     public:
         std::vector<uint32> taxiNodes;
         ObjectGuid taxiMaster;
@@ -78,9 +92,11 @@ namespace ai
         WorldPosition lastSwimGoal;
         TravelPath lastPath;
         time_t nextTeleport;
-        time_t nextPlayerNearbyCheck = 0;
-        bool cachedPlayerNearby = false;
-        time_t nextMinimalRepath = 0;
+        std::chrono::steady_clock::time_point nextMinimalRepath;
+        time_t lastMinimalMoveCheck;
+        char const* lastMinimalMoveResult;
+        std::optional<WorldPosition> lastMinimalWaypoint;
+        std::optional<WorldPosition> lastMinimalModelLanding;
         time_t nextStuckRecoveryAttempt = 0;
         time_t stuckRecoveryUntil = 0;
         Event moveEvent;
