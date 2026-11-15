@@ -1609,6 +1609,9 @@ void PlayerbotAI::HandleTeleportAck()
 
 		WorldPackets::Movement::MoveTeleportAck teleportAck;
 		teleportAck.guid = bot->GetObjectGuid();
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_9_4
+        teleportAck.movementCounter = bot->GetLastCounterForMovementChangeType(TELEPORT);
+#endif
         bot->GetSession()->HandleMoveTeleportAckOpcode(teleportAck);
 
         // add delay to simulate teleport delay
