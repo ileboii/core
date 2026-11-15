@@ -15,14 +15,14 @@ namespace
         {"av_iceblood_grave",        4, false, -612.672f, -396.693f, 60.858f},
         {"av_frostwolf_grave",       5, false,-1082.529f, -346.567f, 54.977f},
         {"av_frostwolf_hut",         6, false,-1402.192f, -307.467f, 89.442f},
-        {"av_dunbaldar_south",       7, true,   582.162f,  -81.238f, 37.922f},
-        {"av_dunbaldar_north",       8, true,   676.393f, -146.850f, 56.543f},
-        {"av_icewing_bunker",        9, true,   196.619f, -378.016f, 56.913f},
-        {"av_stoneheart_bunker",    10, true,  -143.591f, -439.750f, 40.927f},
-        {"av_iceblood_tower",       11, true,  -572.329f, -262.476f, 88.650f},
-        {"av_tower_point",          12, true,  -768.199f, -363.105f, 104.537f},
-        {"av_frostwolf_east_tower", 13, true, -1302.735f, -316.630f, 127.503f},
-        {"av_frostwolf_west_tower", 14, true, -1297.786f, -266.743f, 127.790f},
+        {"av_dunbaldar_south",       7, true,   553.779f,  -78.657f, 51.938f},
+        {"av_dunbaldar_north",       8, true,   674.001f, -143.125f, 63.661f},
+        {"av_icewing_bunker",        9, true,   203.238f, -360.264f, 56.386f},
+        {"av_stoneheart_bunker",    10, true,  -152.434f, -441.615f, 40.397f},
+        {"av_iceblood_tower",      11, true,  -571.880f, -262.777f, 75.009f},
+        {"av_tower_point",         12, true,  -768.907f, -363.710f, 90.895f},
+        {"av_frostwolf_east_tower",13, true, -1302.870f, -316.968f, 113.867f},
+        {"av_frostwolf_west_tower",14, true, -1297.720f, -266.741f, 114.151f},
     };
 }
 

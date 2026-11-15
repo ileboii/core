@@ -2990,6 +2990,13 @@ if (getName() == "check objective")
         if (!bg)
             return false;
 
+        if (bg->GetTypeID() == BATTLEGROUND_AV)
+        {
+            WorldLocation defendLocation;
+            if (SelectAvNearbyDefendObjective(defendLocation))
+                return SetAvNearbyDefendObjective(defendLocation);
+        }
+
         if (bg->GetTypeID() == BATTLEGROUND_WS && !bot->IsAlive())
         {
             pos.Reset();
