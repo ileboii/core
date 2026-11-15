@@ -414,7 +414,9 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 
         bool captainEngaged = pGalvangar && pGalvangar->GetHealth() > 0 && sServerFacade.IsInCombat(pGalvangar);
 
-        if (!supporter || captainEngaged)
+        bool assaultTime = bg->GetStartTime() >= (uint32)(5 * MINUTE * IN_MILLISECONDS);
+
+        if (!supporter || captainEngaged || assaultTime)
         {
             if (WorldLocation icebloodGarrison; sRandomPlayerbotMgr.GetNamedLocation("AV_ICEBLOOD_GARRISON_WAITING_ALLIANCE", icebloodGarrison))
             {
@@ -424,7 +426,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
                 {
                     uint32 attackCount = getDefendersCount(Position(icebloodGarrison.x, icebloodGarrison.y, icebloodGarrison.z, icebloodGarrison.o), 60.0f, true);
 
-                    if (attackCount >= 5 || captainEngaged)
+                    if (attackCount >= 5 || captainEngaged || assaultTime)
                     {
                         objectiveLocation = WorldLocation(pGalvangar->GetMapId(), pGalvangar->GetPositionX(), pGalvangar->GetPositionY(), pGalvangar->GetPositionZ(), pGalvangar->GetOrientation());
                     }
@@ -587,7 +589,9 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 
         bool captainEngaged = pGalvangar && pGalvangar->GetHealth() > 0 && sServerFacade.IsInCombat(pGalvangar);
 
-        if (!supporter || captainEngaged)
+        bool assaultTime = bg->GetStartTime() >= (uint32)(5 * MINUTE * IN_MILLISECONDS);
+
+        if (!supporter || captainEngaged || assaultTime)
         {
             if (WorldLocation icebloodGarrison; sRandomPlayerbotMgr.GetNamedLocation("AV_STONEHEART_OUTPOST_WAITING_HORDE", icebloodGarrison))
             {
@@ -597,7 +601,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
                 {
                     uint32 attackCount = getDefendersCount(Position(icebloodGarrison.x, icebloodGarrison.y, icebloodGarrison.z, icebloodGarrison.o), 60.0f, true);
 
-                    if (attackCount >= 5 || captainEngaged)
+                    if (attackCount >= 5 || captainEngaged || assaultTime)
                     {
                         objectiveLocation = WorldLocation(pGalvangar->GetMapId(), pGalvangar->GetPositionX(), pGalvangar->GetPositionY(), pGalvangar->GetPositionZ(), pGalvangar->GetOrientation());
                     }
