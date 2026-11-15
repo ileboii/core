@@ -16,11 +16,14 @@ static bool IsAvCaptureBanner(uint32 entry)
     switch (entry)
     {
     case 178925:
+    case 179435:
     case 178940:
     case 178943:
     case 178932:
+    case 178364:
     case 178365:
     case 179286:
+    case 179287:
     case 179310:
     case 179308:
     case 180418:

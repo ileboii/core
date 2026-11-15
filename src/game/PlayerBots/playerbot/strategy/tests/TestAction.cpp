@@ -69,6 +69,7 @@ void TestAction::RegisterCommands()
     commands.push_back(std::make_unique<CommandAvLeave>());
     commands.push_back(std::make_unique<CommandAvWaitStart>());
     commands.push_back(std::make_unique<CommandAvTeleport>());
+    commands.push_back(std::make_unique<CommandAvObjective>());
     commands.push_back(std::make_unique<CommandAvScore>());
     commands.push_back(std::make_unique<CommandAvWaitNode>());
     commands.push_back(std::make_unique<CommandFlowObserve>());

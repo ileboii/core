@@ -280,6 +280,70 @@ static bool AvQuestGiverOffersQuest(Player* bot, Creature* questGiver, uint32 qu
     return false;
 }
 
+static float const AV_NEARBY_DEFEND_DISTANCE = 150.0f;
+static float const AV_DEFEND_BANNER_RANGE = 20.0f;
+static uint32 const AV_MAX_RESPONDING_DEFENDERS = 3;
+
+bool BGTactics::SelectAvNearbyDefendObjective(WorldLocation& objectiveLocation)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive())
+        return false;
+
+    if (IsAvQuester() || ai->IsAvQuester() || IsAvWingCommanderRescuer())
+        return false;
+
+    std::vector<std::tuple<uint32, uint32, std::string>> defendObjectives;
+    if (bot->GetTeam() == ALLIANCE)
+        defendObjectives.assign(std::begin(AV_AllianceDefendObjectives), std::end(AV_AllianceDefendObjectives));
+    else
+        defendObjectives.assign(std::begin(AV_HordeDefendObjectives), std::end(AV_HordeDefendObjectives));
+
+    bool found = false;
+    float closest = AV_NEARBY_DEFEND_DISTANCE;
+    for (auto const& [nodeId, nodeStatus, locationName] : defendObjectives)
+    {
+        if (!bg->IsActiveEvent(nodeId, nodeStatus))
+            continue;
+
+        WorldLocation location;
+        if (!sRandomPlayerbotMgr.GetNamedLocation(locationName, location))
+            continue;
+
+        float distance = bot->GetDistance(location.x, location.y, location.z);
+        if (distance >= closest)
+            continue;
+
+        if (distance > AV_DEFEND_BANNER_RANGE && getDefendersCount(Position(location.x, location.y, 0.0f, 0.0f), AV_DEFEND_BANNER_RANGE) >= AV_MAX_RESPONDING_DEFENDERS)
+            continue;
+
+        closest = distance;
+        objectiveLocation = location;
+        found = true;
+    }
+
+    return found;
+}
+
+bool BGTactics::SetAvNearbyDefendObjective(WorldLocation const& defendLocation)
+{
+    ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+    ai::PositionEntry pos = posMap["bg objective"];
+
+    if (pos.isSet())
+    {
+        float dx = pos.x - defendLocation.x;
+        float dy = pos.y - defendLocation.y;
+        float dz = pos.z - defendLocation.z;
+        if (dx * dx + dy * dy + dz * dz < 25.0f)
+            return false;
+    }
+
+    pos.Set(defendLocation.x, defendLocation.y, defendLocation.z, bot->GetMapId());
+    posMap["bg objective"] = pos;
+    return true;
+}
+
 bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 {
     if (IsAvQuester() || ai->IsAvQuester())
@@ -350,7 +414,9 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 
         bool captainEngaged = pGalvangar && pGalvangar->GetHealth() > 0 && sServerFacade.IsInCombat(pGalvangar);
 
-        if (!supporter || captainEngaged)
+        bool assaultTime = bg->GetStartTime() >= (uint32)(5 * MINUTE * IN_MILLISECONDS);
+
+        if (!supporter || captainEngaged || assaultTime)
         {
             if (WorldLocation icebloodGarrison; sRandomPlayerbotMgr.GetNamedLocation("AV_ICEBLOOD_GARRISON_WAITING_ALLIANCE", icebloodGarrison))
             {
@@ -360,7 +426,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
                 {
                     uint32 attackCount = getDefendersCount(Position(icebloodGarrison.x, icebloodGarrison.y, icebloodGarrison.z, icebloodGarrison.o), 60.0f, true);
 
-                    if (attackCount >= 5 || captainEngaged)
+                    if (attackCount >= 5 || captainEngaged || assaultTime)
                     {
                         objectiveLocation = WorldLocation(pGalvangar->GetMapId(), pGalvangar->GetPositionX(), pGalvangar->GetPositionY(), pGalvangar->GetPositionZ(), pGalvangar->GetOrientation());
                     }
@@ -523,7 +589,9 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 
         bool captainEngaged = pGalvangar && pGalvangar->GetHealth() > 0 && sServerFacade.IsInCombat(pGalvangar);
 
-        if (!supporter || captainEngaged)
+        bool assaultTime = bg->GetStartTime() >= (uint32)(5 * MINUTE * IN_MILLISECONDS);
+
+        if (!supporter || captainEngaged || assaultTime)
         {
             if (WorldLocation icebloodGarrison; sRandomPlayerbotMgr.GetNamedLocation("AV_STONEHEART_OUTPOST_WAITING_HORDE", icebloodGarrison))
             {
@@ -533,7 +601,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
                 {
                     uint32 attackCount = getDefendersCount(Position(icebloodGarrison.x, icebloodGarrison.y, icebloodGarrison.z, icebloodGarrison.o), 60.0f, true);
 
-                    if (attackCount >= 5 || captainEngaged)
+                    if (attackCount >= 5 || captainEngaged || assaultTime)
                     {
                         objectiveLocation = WorldLocation(pGalvangar->GetMapId(), pGalvangar->GetPositionX(), pGalvangar->GetPositionY(), pGalvangar->GetPositionZ(), pGalvangar->GetOrientation());
                     }
@@ -635,11 +703,14 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 std::vector<uint32> const FlagEntries =
 {
     178925,
+    179435,
     178940,
     178943,
     178932,
+    178364,
     178365,
     179286,
+    179287,
     179310,
     179308,
     180418,

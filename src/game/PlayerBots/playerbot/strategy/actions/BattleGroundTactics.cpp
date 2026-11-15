@@ -2990,6 +2990,13 @@ if (getName() == "check objective")
         if (!bg)
             return false;
 
+        if (bg->GetTypeID() == BATTLEGROUND_AV)
+        {
+            WorldLocation defendLocation;
+            if (SelectAvNearbyDefendObjective(defendLocation))
+                return SetAvNearbyDefendObjective(defendLocation);
+        }
+
         if (bg->GetTypeID() == BATTLEGROUND_WS && !bot->IsAlive())
         {
             pos.Reset();
@@ -3038,19 +3045,25 @@ if (getName() == "check objective")
 
             bool captainEngaged = captain && captain->GetHealth() > 0 && sServerFacade.IsInCombat(captain);
             bool captainDead = bg->IsActiveEvent(captainDeadEvent, 0);
+            bool assaultTime = bg->GetStartTime() >= (uint32)(5 * MINUTE * IN_MILLISECONDS);
+
+            WorldLocation waitingLocation;
+            bool haveWaitingLocation = sRandomPlayerbotMgr.GetNamedLocation(waitingName, waitingLocation);
+            bool objectiveIsWaiting = false;
+
+            if (haveWaitingLocation)
+            {
+                float waitDx = pos.x - waitingLocation.x;
+                float waitDy = pos.y - waitingLocation.y;
+                float waitDz = pos.z - waitingLocation.z;
+
+                objectiveIsWaiting = (waitDx * waitDx + waitDy * waitDy + waitDz * waitDz) < 25.0f;
+            }
 
             if (captainDead)
             {
-                WorldLocation waitingLocation;
-
-                if (sRandomPlayerbotMgr.GetNamedLocation(waitingName, waitingLocation))
+                if (haveWaitingLocation)
                 {
-                    float waitDx = pos.x - waitingLocation.x;
-                    float waitDy = pos.y - waitingLocation.y;
-                    float waitDz = pos.z - waitingLocation.z;
-
-                    bool objectiveIsWaiting = (waitDx * waitDx + waitDy * waitDy + waitDz * waitDz) < 25.0f;
-
                     bool objectiveIsCaptain = false;
 
                     if (captain)
@@ -3072,18 +3085,10 @@ if (getName() == "check objective")
                 }
             }
 
-            if ((!supporter || captainEngaged) && !captainDead)
+            if ((!supporter || captainEngaged || (assaultTime && objectiveIsWaiting)) && !captainDead)
             {
-                WorldLocation waitingLocation;
-
-                if (sRandomPlayerbotMgr.GetNamedLocation(waitingName, waitingLocation))
+                if (haveWaitingLocation)
                 {
-                    float waitDx = pos.x - waitingLocation.x;
-                    float waitDy = pos.y - waitingLocation.y;
-                    float waitDz = pos.z - waitingLocation.z;
-
-                    bool objectiveIsWaiting = (waitDx * waitDx + waitDy * waitDy + waitDz * waitDz) < 25.0f;
-
                     bool objectiveIsCaptain = false;
 
                     if (captain && captain->GetHealth() > 0)
@@ -3107,7 +3112,7 @@ if (getName() == "check objective")
                     {
                         uint32 attackCount = getDefendersCount(Position(waitingLocation.x, waitingLocation.y, waitingLocation.z, waitingLocation.o), 30.0f, true);
 
-                        if (attackCount >= 5 || captainEngaged)
+                        if (attackCount >= 5 || captainEngaged || assaultTime)
                         {
                             pos.Reset();
                             posMap["bg objective"] = pos;
