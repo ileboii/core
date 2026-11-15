@@ -6302,10 +6302,8 @@ bool IsAlliance(uint8 race)
 
 uint32 PlayerbotAI::GetFixedBotNumber(BotTypeNumber typeNumber, uint32 maxNum, float cyclePerMin, bool ignoreGuid)
 {
-    uint8 seedNumber = uint8(typeNumber);
-    std::mt19937 rng(seedNumber);
-    uint32 randseed = rng();                                       //Seed random number
-    uint32 randnum = randseed;                                     //Semi-random.
+    static const uint32 activitySeed = std::mt19937(uint8(BotTypeNumber::ACTIVITY_TYPE_NUMBER))();
+    uint32 randnum = typeNumber == BotTypeNumber::ACTIVITY_TYPE_NUMBER ? activitySeed : std::mt19937(uint8(typeNumber))();
     
     if (!ignoreGuid)
         randnum += bot->GetGUIDLow();                              //but fixed number for each bot.
@@ -6666,16 +6664,13 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
             return ActivePiorityType::NO_PATH;
     }
 
-    //If has real players - slow down continents without player
-    //This means we first disable bots in a different continent/area.
-    if (!sRandomPlayerbotMgr.HasPlayers())
+    PlayerBotMap const players = sRandomPlayerbotMgr.GetPlayersSnapshot();
+    if (players.empty())
         return ActivePiorityType::IN_EMPTY_SERVER;
 
-    // friends always active
-    PlayerBotMap playersSnap = sRandomPlayerbotMgr.GetPlayersSnapshot();
-    for (auto& i : playersSnap)
+    for (auto const& entry : players)
     {
-        Player* player = i.second;
+        Player* player = entry.second;
         if (!player || !player->IsInWorld())
             continue;
 
@@ -6690,39 +6685,32 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return ActivePiorityType::IN_INACTIVE_MAP;
 
-    // Check if the bot's map has any real (non-bot) players
-    bool mapHasRealPlayers = false;
-    bool zoneHasRealPlayers = false;
-    Map* botMap = bot->GetMap();
-    if (botMap)
-    {
-        uint32 botZoneId = bot->GetZoneId();
-        Map::PlayerList const& mapPlayers = botMap->GetPlayers();
-        for (auto itr = mapPlayers.begin(); itr != mapPlayers.end(); ++itr)
-        {
-            Player* plr = itr->getSource();
-            if (!plr || !plr->IsInWorld())
-                continue;
-
-            if (plr->GetPlayerbotAI() && !plr->GetPlayerbotAI()->IsRealPlayer())
-                continue;
-
-            mapHasRealPlayers = true;
-            if (plr->GetZoneId() == botZoneId)
-            {
-                zoneHasRealPlayers = true;
-                break;
-            }
-        }
-    }
-
-    if (!mapHasRealPlayers)
+    Map const* botMap = bot->FindMap();
+    if (!botMap)
         return ActivePiorityType::IN_INACTIVE_MAP;
 
-    if (!zoneHasRealPlayers)
-        return ActivePiorityType::IN_ACTIVE_MAP;
+    bool mapHasRealPlayers = false;
+    uint32 botZoneId = 0;
+    for (auto const& entry : players)
+    {
+        Player* player = entry.second;
+        if (!player || !player->IsInWorld() || player->FindMap() != botMap)
+            continue;
 
-    return ActivePiorityType::IN_ACTIVE_AREA;
+        if (PlayerbotAI* playerAI = player->GetPlayerbotAI(); playerAI && !playerAI->IsRealPlayer())
+            continue;
+
+        if (!mapHasRealPlayers)
+        {
+            botZoneId = bot->GetZoneId();
+            mapHasRealPlayers = true;
+        }
+
+        if (player->GetZoneId() == botZoneId)
+            return ActivePiorityType::IN_ACTIVE_AREA;
+    }
+
+    return mapHasRealPlayers ? ActivePiorityType::IN_ACTIVE_MAP : ActivePiorityType::IN_INACTIVE_MAP;
 }
 
 //Returns the lower and upper bracket for bots to be active.
