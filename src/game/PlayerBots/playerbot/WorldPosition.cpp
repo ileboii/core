@@ -1180,7 +1180,7 @@ float WorldPosition::GetWmoFloorHeight(uint32* areaId) const
     return INVALID_HEIGHT_VALUE;
 }
 
-bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 instanceId)
+bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 instanceId, dtPolyRef* snappedPoly)
 {
     if (!isValid())
         return false;
@@ -1232,6 +1232,8 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
             wallDistance >= 1.0f)
         {
             set(floor);
+            if (snappedPoly)
+                *snappedPoly = polyRef;
             return true;
         }
 
@@ -1253,6 +1255,8 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
     y = newPoint[0];
     z = newPoint[1];
     x = newPoint[2];
+    if (snappedPoly)
+        *snappedPoly = polyRef;
 
     return true;
 }
