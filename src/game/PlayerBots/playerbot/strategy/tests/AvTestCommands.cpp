@@ -6,6 +6,7 @@
 #include "BattleGroundAV.h"
 #include "BattleGroundMgr.h"
 #include "playerbot/strategy/actions/BattleGroundJoinAction.h"
+#include "playerbot/strategy/values/PositionValue.h"
 
 using namespace ai;
 
@@ -300,6 +301,62 @@ TestResult CommandAvTeleport::Execute(const std::string& params, Player* bot,
     {
         message = "av teleport: could not move" + failed + " to " + args[1];
         return TestResult::FAIL;
+    }
+
+    return TestResult::PASS;
+}
+
+TestResult CommandAvObjective::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    std::vector<std::string> args = Qualified::getMultiQualifiers(params, " ");
+    args.erase(std::remove(args.begin(), args.end(), std::string()), args.end());
+    if (args.size() != 2 || (args[0] != "alliance" && args[0] != "horde"))
+    {
+        message = "usage: av objective <alliance|horde> <location>";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    BattleGroundAV* av = GetAvForBot(bot);
+    if (!av)
+    {
+        message = "av objective: bot is not in an Alterac Valley";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    GuidPosition loc;
+    if (!TestRegistry::ParseLocation(args[1], loc) || loc.mapId != av->GetMapId())
+    {
+        message = "av objective: " + args[1] + " is not a location in Alterac Valley";
+        return TestResult::IMPOSSIBLE;
+    }
+
+    std::vector<Player*> squad;
+    if (!CollectAvSquad(bot, ctx, squad, message))
+        return TestResult::IMPOSSIBLE;
+
+    Team team = args[0] == "alliance" ? ALLIANCE : HORDE;
+    uint32 matched = 0;
+    for (Player* member : squad)
+    {
+        if (member->GetTeam() != team)
+            continue;
+
+        PlayerbotAI* memberAI = member->GetPlayerbotAI();
+        if (!memberAI)
+            continue;
+
+        ++matched;
+        ai::PositionMap& posMap = memberAI->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
+        ai::PositionEntry pos = posMap["bg objective"];
+        pos.Set(loc.x, loc.y, loc.z, av->GetMapId());
+        posMap["bg objective"] = pos;
+    }
+
+    if (!matched)
+    {
+        message = "av objective: no " + args[0] + " bots in the test squad";
+        return TestResult::IMPOSSIBLE;
     }
 
     return TestResult::PASS;
