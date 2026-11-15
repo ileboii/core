@@ -280,6 +280,70 @@ static bool AvQuestGiverOffersQuest(Player* bot, Creature* questGiver, uint32 qu
     return false;
 }
 
+static float const AV_NEARBY_DEFEND_DISTANCE = 150.0f;
+static float const AV_DEFEND_BANNER_RANGE = 20.0f;
+static uint32 const AV_MAX_RESPONDING_DEFENDERS = 3;
+
+bool BGTactics::SelectAvNearbyDefendObjective(WorldLocation& objectiveLocation)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive())
+        return false;
+
+    if (IsAvQuester() || ai->IsAvQuester() || IsAvWingCommanderRescuer())
+        return false;
+
+    std::vector<std::tuple<uint32, uint32, std::string>> defendObjectives;
+    if (bot->GetTeam() == ALLIANCE)
+        defendObjectives.assign(std::begin(AV_AllianceDefendObjectives), std::end(AV_AllianceDefendObjectives));
+    else
+        defendObjectives.assign(std::begin(AV_HordeDefendObjectives), std::end(AV_HordeDefendObjectives));
+
+    bool found = false;
+    float closest = AV_NEARBY_DEFEND_DISTANCE;
+    for (auto const& [nodeId, nodeStatus, locationName] : defendObjectives)
+    {
+        if (!bg->IsActiveEvent(nodeId, nodeStatus))
+            continue;
+
+        WorldLocation location;
+        if (!sRandomPlayerbotMgr.GetNamedLocation(locationName, location))
+            continue;
+
+        float distance = bot->GetDistance(location.x, location.y, location.z);
+        if (distance >= closest)
+            continue;
+
+        if (distance > AV_DEFEND_BANNER_RANGE && getDefendersCount(Position(location.x, location.y, 0.0f, 0.0f), AV_DEFEND_BANNER_RANGE) >= AV_MAX_RESPONDING_DEFENDERS)
+            continue;
+
+        closest = distance;
+        objectiveLocation = location;
+        found = true;
+    }
+
+    return found;
+}
+
+bool BGTactics::SetAvNearbyDefendObjective(WorldLocation const& defendLocation)
+{
+    ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+    ai::PositionEntry pos = posMap["bg objective"];
+
+    if (pos.isSet())
+    {
+        float dx = pos.x - defendLocation.x;
+        float dy = pos.y - defendLocation.y;
+        float dz = pos.z - defendLocation.z;
+        if (dx * dx + dy * dy + dz * dz < 25.0f)
+            return false;
+    }
+
+    pos.Set(defendLocation.x, defendLocation.y, defendLocation.z, bot->GetMapId());
+    posMap["bg objective"] = pos;
+    return true;
+}
+
 bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 {
     if (IsAvQuester() || ai->IsAvQuester())

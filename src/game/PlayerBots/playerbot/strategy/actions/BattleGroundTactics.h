@@ -60,6 +60,8 @@ public:
 private:
     bool SelectAvObjectiveAlliance(WorldLocation& objectiveLocation);
     bool SelectAvObjectiveHorde(WorldLocation& objectiveLocation);
+    bool SelectAvNearbyDefendObjective(WorldLocation& objectiveLocation);
+    bool SetAvNearbyDefendObjective(WorldLocation const& defendLocation);
     bool SelectAvQuesterObjective(WorldLocation& objectiveLocation);
     bool moveToStart(bool force = false);
     bool selectObjective(bool reset = false);
