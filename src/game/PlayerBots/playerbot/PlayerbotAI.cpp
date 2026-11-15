@@ -28,6 +28,7 @@
 #include "strategy/actions/AIPlayAction.h"
 #include "strategy/actions/EmoteAction.h"
 #include "strategy/values/LastSpellCastValue.h"
+#include "strategy/values/MountValues.h"
 #include "LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
@@ -658,6 +659,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 #endif
 
     bool const reactionRunning = UpdateAIReaction(elapsed, doMinimalReaction, bot->IsTaxiFlying());
+
+    // Check for the leader's mount cast even while the normal action engine is waiting.
+    if (Group const* group = bot->GetGroup();
+        group && !reactionRunning && !inCombat && !isWaiting && TryMountWithGroupMaster(*group))
+        return;
+
     // Resume assigned travel while the action engine is waiting.
     if (!reactionRunning && !CanUpdateAIInternal() && !IsActivityAllowedCached() && !isWaiting)
         TryMinimalMove(false);
@@ -695,6 +702,25 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
         YieldAIInternalThread(min);
     }
+}
+
+bool PlayerbotAI::TryMountWithGroupMaster(Group const& group)
+{
+    ObjectGuid const leaderGuid = group.GetLeaderGuid();
+    if (!leaderGuid || leaderGuid == bot->GetObjectGuid() || group.isBGGroup() ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsMounted() || bot->IsBeingTeleported() ||
+        bot->IsTaxiFlying() || bot->GetTransport() || bot->GetSession()->IsLogingOut() ||
+        bot->IsNonMeleeSpellCasted(false, false, true))
+        return false;
+
+    Player* leader = master && masterGuid == leaderGuid ? master : bot->GetMap()->GetPlayer(leaderGuid);
+    if (!IsSafe(leader) || !leader->IsInWorld() || !MountValue::IsMountCast(leader->GetCurrentSpell(CURRENT_GENERIC_SPELL)))
+        return false;
+
+    if (!HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) && !HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT))
+        return false;
+
+    return DoSpecificAction("check mount state", Event("group master mount cast"), true);
 }
 
 static bool FindWmoRecoveryPoint(WorldPosition& position, uint32 instanceId, bool requireCapital)
