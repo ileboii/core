@@ -86,6 +86,25 @@ namespace ai
             return indices;
         }
 
+        static bool IsTarget(Player* player, Unit* target)
+        {
+            if (!player || !target || !player->GetPlayerbotAI())
+                return false;
+
+            const Group* group = player->GetGroup();
+            if (!group)
+                return false;
+
+            const ObjectGuid guid = target->GetObjectGuid();
+            for (uint8 icon = 0; icon < TARGET_ICON_COUNT; ++icon)
+            {
+                if (group->GetTargetWithIcon(static_cast<RaidTargetIcon>(icon)) == guid)
+                    return PAI_VALUE(Unit*, "rti target") == target;
+            }
+
+            return false;
+        }
+
         Unit *Calculate() override
         {
             Group *group = bot->GetGroup();
@@ -96,11 +115,21 @@ namespace ai
             if (indices.empty())
                 return NULL;
 
-            std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("possible targets")->Get();
+            std::list<ObjectGuid> attackers;
             for (int index : indices)
             {
                 ObjectGuid guid = group->GetTargetWithIcon((RaidTargetIcon)index);
-                if (!guid || std::find(attackers.begin(), attackers.end(), guid) == attackers.end())
+                if (!guid)
+                    continue;
+
+                if (attackers.empty())
+                {
+                    attackers = AI_VALUE(std::list<ObjectGuid>, "possible targets");
+                    if (attackers.empty())
+                        return nullptr;
+                }
+
+                if (std::find(attackers.begin(), attackers.end(), guid) == attackers.end())
                     continue;
 
                 Unit* unit = ai->GetUnit(guid);

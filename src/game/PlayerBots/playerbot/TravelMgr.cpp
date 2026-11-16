@@ -2612,32 +2612,51 @@ WorldPosition* TravelMgr::GetFishSpot(WorldPosition start, bool onlyNearestGrid)
 
 DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, bool onlyPossible, float maxDistance) const
 {
-    WorldPosition center = info.GetPosition();
+    const WorldPosition& center = info.GetPosition();
     DestinationList retDests;
 
-    for (auto& [purpose, entryDests] : destinationMap)
+    auto appendDestinations = [&](const DestinationList& destinations)
     {
-
-        if (purposeFlag != (uint32)TravelDestinationPurpose::None && !((uint32)purpose & (uint32)purposeFlag))
-            continue;
-
-        for (auto& [destEntry, dests] : entryDests)
+        for (TravelDestination* dest : destinations)
         {
-            if (entries.size() && std::find(entries.begin(), entries.end(), destEntry) == entries.end())
+            if (onlyPossible && !dest->IsPossible(info))
                 continue;
 
-            for (auto& dest : dests)
+            float distance = dest->DistanceTo(center);
+            if (distance == FLT_MAX || (maxDistance > 0 && distance > maxDistance))
+                continue;
+
+            retDests.push_back(dest);
+        }
+    };
+
+    // The same entry can be requested more than once, but its destinations are visited only once.
+    std::vector<int32> uniqueEntries;
+    if (entries.size() > 1)
+    {
+        uniqueEntries = entries;
+        std::sort(uniqueEntries.begin(), uniqueEntries.end());
+        uniqueEntries.erase(std::unique(uniqueEntries.begin(), uniqueEntries.end()), uniqueEntries.end());
+    }
+
+    const auto& requestedEntries = entries.size() > 1 ? uniqueEntries : entries;
+    for (const auto& [purpose, entryDests] : destinationMap)
+    {
+        if (purposeFlag != (uint32)TravelDestinationPurpose::None && !((uint32)purpose & purposeFlag))
+            continue;
+
+        if (requestedEntries.empty())
+        {
+            for (const auto& entry : entryDests)
+                appendDestinations(entry.second);
+        }
+        else
+        {
+            for (int32 entry : requestedEntries)
             {
-                if (onlyPossible && !dest->IsPossible(info))
-                    continue;
-
-                if (maxDistance > 0 && dest->DistanceTo(center) > maxDistance)
-                    continue;
-
-                if (dest->DistanceTo(center) == FLT_MAX) //Do not return destinations on maps you can't path to.
-                    continue;
-                
-                retDests.push_back(dest);
+                auto destinations = entryDests.find(entry);
+                if (destinations != entryDests.end())
+                    appendDestinations(destinations->second);
             }
         }
     }
@@ -2704,39 +2723,35 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
     PartitionedTravelList pointMap;
     DestinationList destinations = GetDestinations(info, purposeFlag, entries, onlyPossible, maxDistance);
 
-
-
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::shuffle(destinations.begin(), destinations.end(), std::default_random_engine(seed));
 
     for (auto& dest : destinations)
     {
-        TravelPoint point(dest, sTravelMgr.nullWorldPosition, 0.0f);
-
         std::pair<uint32, std::vector<WorldPosition*>> pointRange = dest->GetClosestPartition(center, distancePartitions);
 
         if (!pointRange.first)
             continue;
 
-        MANGOS_ASSERT(pointRange.second.size());
-        std::vector<WorldPosition*> points = pointRange.second;
+        auto& points = pointRange.second;
+        MANGOS_ASSERT(!points.empty());
         std::shuffle(points.begin(), points.end(), std::default_random_engine(seed));
 
-        for (auto& position : points)
+        // Select the last eligible point in the shuffled range.
+        for (auto it = points.rbegin(); it != points.rend(); ++it)
         {
+            WorldPosition* position = *it;
             if (!IsLocationLevelValid(*position, info))
                 continue;
 
             float distance = position->distance(center);
-
             if (distance > maxDistance)
                 continue;
-            
-            point = TravelPoint(dest, position, distance);
-        }
 
-        if (std::get<2>(point) > 0)
-            pointMap[pointRange.first].push_back(point);
+            if (distance > 0.0f)
+                pointMap[pointRange.first].emplace_back(dest, position, distance);
+            break;
+        }
     }
 
     sTravelMgr.GetPartitionsLock(false);

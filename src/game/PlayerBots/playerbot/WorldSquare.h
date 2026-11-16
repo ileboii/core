@@ -141,9 +141,6 @@ namespace ai
 
             if (!IsIn(point))
             {
-                float minDist = sqOutDistance(point);
-                float maxDist = sqMaxOutDistance(point);
-
                 uint32 currentPartition = GetCurrentPartition(point, distancePartitions);
 
                 if (currentPartition) //All points fall within this partition get all.
@@ -270,9 +267,6 @@ namespace ai
 
             if (!IsIn(point))
             {
-                float minDist = sqOutDistance(point);
-                float maxDist = sqMaxOutDistance(point);
-
                 uint32 currentPartition = GetCurrentPartition(point, distancePartitions);
 
                 if (currentPartition) //All squares fall within this partition 
