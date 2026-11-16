@@ -606,6 +606,16 @@ public:
     // vmangos sets m_remoteIpAddress to "<BOT>" for bot sessions (no socket).
     bool IsRealPlayer() { return bot->GetSession()->GetRemoteAddress() != "<BOT>"; }
     bool IsRealPlayer(Unit* unit) { return unit->IsPlayer() && ((Player*)unit)->GetSession()->GetRemoteAddress() != "<BOT>"; }
+
+    bool CanSkipWorldObjectValueUpdates()
+    {
+        if (IsRealPlayer())
+            return false;
+
+        return !IsActivityAllowedCached() ||
+            (!sPlayerbotAIConfig.disableBotOptimizations && !bot->GetSession()->GetBot());
+    }
+
     bool IsSelfMaster() { return master ? (master == bot) : false; }
     //Bot has a master that is a player.
     bool HasRealPlayerMaster() { return master && (!master->GetPlayerbotAI() || master->GetPlayerbotAI()->IsRealPlayer()); } 

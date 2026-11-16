@@ -2947,13 +2947,10 @@ struct WorldObjectChangeAccumulator
     UpdateDataMapType &i_updateDatas;
     WorldObject &i_object;
 
-    static bool IsInactiveBotCamera(Player* player)
+    static bool SkipPlayerbotValueUpdates(Player const& player)
     {
-        if (!player)
-            return false;
-
-        PlayerbotAI* botAI = player->GetPlayerbotAI();
-        return botAI && !botAI->IsRealPlayer() && !botAI->IsActivityAllowedCached();
+        PlayerbotAI* botAI = player.GetPlayerbotAI();
+        return botAI && botAI->CanSkipWorldObjectValueUpdates();
     }
 
     WorldObjectChangeAccumulator(WorldObject &obj, UpdateDataMapType &d) : i_updateDatas(d), i_object(obj)
@@ -2963,7 +2960,7 @@ struct WorldObjectChangeAccumulator
         if (i_object.IsType(TYPEMASK_PLAYER))
         {
             Player* player = (Player*)&i_object;
-            if (!IsInactiveBotCamera(player))
+            if (!SkipPlayerbotValueUpdates(*player))
                 i_object.BuildUpdateDataForPlayer(player, i_updateDatas);
         }
     }
@@ -2973,7 +2970,7 @@ struct WorldObjectChangeAccumulator
         for (const auto& iter : m)
         {
             Player* owner = iter.getSource()->GetOwner();
-            if (!owner || IsInactiveBotCamera(owner))
+            if (!owner || SkipPlayerbotValueUpdates(*owner))
                 continue;
 
             if (owner != &i_object && owner->IsInVisibleList_Unsafe(&i_object))
