@@ -2589,15 +2589,20 @@ void PlayerbotAI::DoNextAction(bool min)
         }
     }
 
-    bool minimal = !AllowActivity();
-    bool needsTravelTarget = false;
-    if (minimal && sPlayerbotAIConfig.enableMinimalMove)
+    const bool minimal = !AllowActivity();
+    bool minimalDecision = minimal || min;
+    if (minimal && !min && sPlayerbotAIConfig.enableMinimalMove)
     {
-        if (!aiObjectContext->GetValue<bool>("travel target active")->Get())
-            needsTravelTarget = true;
+        // Let the rate-limited minimal movement pass select destinations for these bots.
+        const bool canPlanMinimalTravel = currentState == BotState::BOT_STATE_NON_COMBAT &&
+            bot->IsAlive() && currentEngine->HasStrategy("travel") && CanMinimalMove() &&
+            (!bot->GetGroup() || IsGroupLeader());
+
+        if (!canPlanMinimalTravel)
+            minimalDecision = AI_VALUE(bool, "travel target active");
     }
 
-    currentEngine->DoNextAction(NULL, 0, ((minimal && !needsTravelTarget) || min), bot->IsTaxiFlying());
+    currentEngine->DoNextAction(NULL, 0, minimalDecision, bot->IsTaxiFlying());
 
     if (!bot->IsInWorld()) //Teleport out of bg
         return;
@@ -9450,18 +9455,16 @@ bool PlayerbotAI::IsAvQuester() const
     return (bot->GetGUIDLow() % 5) == 0;
 }
 
+bool PlayerbotAI::CanMinimalMove()
+{
+    return sPlayerbotAIConfig.enableMinimalMove && bot && bot->IsInWorld() &&
+        !bot->IsBeingTeleported() && !isWaiting && !IsRealPlayer() && !HasRealPlayerMaster() &&
+        !bot->InBattleGround() && !bot->IsTaxiFlying() && !bot->IsInCombat() && !bot->IsNonMeleeSpellCasted(false);
+}
+
 bool PlayerbotAI::TryMinimalMove(bool allowTargetSelection)
 {
-    if (!sPlayerbotAIConfig.enableMinimalMove)
-        return false;
-
-    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || isWaiting)
-        return false;
-
-    if (IsRealPlayer() || HasRealPlayerMaster())
-        return false;
-
-    if (bot->InBattleGround() || bot->IsTaxiFlying() || bot->IsInCombat() || bot->IsNonMeleeSpellCasted(false))
+    if (!CanMinimalMove())
         return false;
 
     LastMovement& lastMove = GetLastMovement();

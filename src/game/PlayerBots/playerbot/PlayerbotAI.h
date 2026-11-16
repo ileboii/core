@@ -717,6 +717,7 @@ public:
 private:
     friend class ai::AIPlayAction;
     bool RecoverFromUnderground(uint32 elapsed);
+    bool CanMinimalMove();
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
     void HandleBotOutgoingPacketInternal(const WorldPacket& packet);
