@@ -300,6 +300,13 @@ enum class ActivePiorityType : uint8
     MAX_TYPE
 };
 
+struct BotActivityTeleportCounts
+{
+    uint32 nearAcks = 0;
+    uint32 farAcks = 0;
+    uint32 minimalWaypoints = 0;
+};
+
 enum ActivityType
 {
     GRIND_ACTIVITY = 1,
@@ -636,6 +643,9 @@ public:
     bool AllowActive(ActivityType activityType);
     bool AllowActivity(ActivityType activityType = ALL_ACTIVITY, bool checkNow = false);
     bool IsActivityAllowedCached(ActivityType activityType = ALL_ACTIVITY) const { return allowActive[activityType]; }
+    ActivePiorityType GetLastActivityPriority() const { return lastActivityPriority; }
+    void RecordMinimalWaypointTeleport();
+    BotActivityTeleportCounts TakeActivityTeleportCounts();
 
     bool HasCheat(BotCheatMask mask) const;
     BotCheatMask GetCheat() { return cheatMask; }
@@ -759,6 +769,8 @@ protected:
     static std::set<std::string> unsecuredCommands;
     bool allowActive[MAX_ACTIVITY_TYPE];
     time_t allowActiveCheckTimer[MAX_ACTIVITY_TYPE];
+    ActivePiorityType lastActivityPriority = ActivePiorityType::MAX_TYPE;
+    BotActivityTeleportCounts activityTeleportCounts;
     bool inCombat = false;
     bool isMoving = false;
     bool isWaiting = false;

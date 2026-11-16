@@ -5,9 +5,63 @@
 #include "Common.h"
 #include "PlayerbotAIBase.h"
 
-#include <mutex>
+#include <atomic>
 #include <chrono>
 #include <ctime>
+#include <iosfwd>
+#include <mutex>
+
+namespace ai
+{
+    enum class BotActivityPhase : uint8
+    {
+        ActiveUpdate,
+        InactiveUpdate,
+        ActivityCheck,
+        Reaction,
+        Decision,
+        MinimalDecision,
+        MinimalMovement,
+        TravelDecision,
+        GroundRecovery,
+        Count
+    };
+
+    class BotActivityTimer
+    {
+    public:
+        static constexpr char LogFile[] = "bot_activity_trace.jsonl";
+        static constexpr uint8 SampleInterval = 61;
+
+        explicit BotActivityTimer(BotActivityPhase phase) : phase(phase)
+        {
+            if (IsEnabled())
+                StartSample();
+        }
+
+        ~BotActivityTimer()
+        {
+            if (sampled)
+                FinishSample();
+        }
+
+        BotActivityTimer(const BotActivityTimer&) = delete;
+        BotActivityTimer& operator=(const BotActivityTimer&) = delete;
+
+        static bool IsEnabled() { return enabled.load(std::memory_order_relaxed); }
+        static void Enable(bool enable);
+        static void WriteSamples(std::ostream& out);
+
+    private:
+        void StartSample();
+        void FinishSample();
+
+        static std::atomic<bool> enabled;
+        std::chrono::steady_clock::time_point start;
+        BotActivityPhase phase;
+        bool sampled = false;
+    };
+}
 
 typedef std::vector<std::string> PerformanceStack;
 

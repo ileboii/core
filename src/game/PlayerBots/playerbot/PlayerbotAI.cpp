@@ -11,6 +11,7 @@
 #include <optional>
 
 #include "playerbot/AiFactory.h"
+#include "playerbot/PerformanceMonitor.h"
 
 #include "MovementGenerator.h"
 #include "MoveMap.h"
@@ -314,6 +315,7 @@ PlayerbotAI::~PlayerbotAI()
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
+    BotActivityTimer activityTimer(IsActivityAllowedCached() ? BotActivityPhase::ActiveUpdate : BotActivityPhase::InactiveUpdate);
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
 
@@ -787,6 +789,7 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
         return false;
     }
 
+    BotActivityTimer activityTimer(BotActivityPhase::GroundRecovery);
     Map* map = bot->GetMap();
     float x = bot->GetPositionX();
     float y = bot->GetPositionY();
@@ -935,6 +938,7 @@ bool PlayerbotAI::RecoverFromUnderground(uint32 elapsed)
 
 bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 {
+    BotActivityTimer activityTimer(BotActivityPhase::Reaction);
     bool reactionFound;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
 
@@ -1620,6 +1624,19 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 	DoNextAction(minimal);
 }
 
+void PlayerbotAI::RecordMinimalWaypointTeleport()
+{
+    if (BotActivityTimer::IsEnabled())
+        ++activityTeleportCounts.minimalWaypoints;
+}
+
+BotActivityTeleportCounts PlayerbotAI::TakeActivityTeleportCounts()
+{
+    auto const counts = activityTeleportCounts;
+    activityTeleportCounts = {};
+    return counts;
+}
+
 void PlayerbotAI::HandleTeleportAck()
 {
     if (IsRealPlayer() && bot->IsBeingTeleportedFar())
@@ -1642,6 +1659,8 @@ void PlayerbotAI::HandleTeleportAck()
         teleportAck.movementCounter = bot->GetLastCounterForMovementChangeType(TELEPORT);
 #endif
         bot->GetSession()->HandleMoveTeleportAckOpcode(teleportAck);
+        if (BotActivityTimer::IsEnabled() && !bot->IsBeingTeleportedNear())
+            ++activityTeleportCounts.nearAcks;
 
         // add delay to simulate teleport delay
         SetAIInternalUpdateDelay(urand(1000, 2000));
@@ -1649,6 +1668,8 @@ void PlayerbotAI::HandleTeleportAck()
 	else if (bot->IsBeingTeleportedFar())
 	{
         bot->GetSession()->HandleMoveWorldportAck();
+        if (BotActivityTimer::IsEnabled() && !bot->IsBeingTeleportedFar())
+            ++activityTeleportCounts.farAcks;
 
         // add delay to simulate teleport delay
         SetAIInternalUpdateDelay(urand(2000, 5000));
@@ -2602,7 +2623,10 @@ void PlayerbotAI::DoNextAction(bool min)
             minimalDecision = AI_VALUE(bool, "travel target active");
     }
 
-    currentEngine->DoNextAction(NULL, 0, minimalDecision, bot->IsTaxiFlying());
+    {
+        BotActivityTimer activityTimer(minimalDecision ? BotActivityPhase::MinimalDecision : BotActivityPhase::Decision);
+        currentEngine->DoNextAction(NULL, 0, minimalDecision, bot->IsTaxiFlying());
+    }
 
     if (!bot->IsInWorld()) //Teleport out of bg
         return;
@@ -6793,7 +6817,10 @@ std::pair<uint32, uint32> PlayerbotAI::GetPriorityBracket(ActivePiorityType type
 
 bool PlayerbotAI::AllowActive(ActivityType activityType)
 {
+    BotActivityTimer activityTimer(BotActivityPhase::ActivityCheck);
     ActivePiorityType type = GetPriorityType();
+    if (activityType == ALL_ACTIVITY)
+        lastActivityPriority = type;
 
     if (sPlayerbotAIConfig.forceActiveWhenNearPlayer && type == ActivePiorityType::VISIBLE_FOR_PLAYER)
     {
@@ -9464,6 +9491,7 @@ bool PlayerbotAI::CanMinimalMove()
 
 bool PlayerbotAI::TryMinimalMove(bool allowTargetSelection)
 {
+    BotActivityTimer activityTimer(BotActivityPhase::MinimalMovement);
     if (!CanMinimalMove())
         return false;
 
@@ -9593,7 +9621,10 @@ bool PlayerbotAI::TryMinimalMove(bool allowTargetSelection)
             allowActive[TRAVEL_ACTIVITY] = true;
             allowActiveCheckTimer[TRAVEL_ACTIVITY] = now;
 
-            currentEngine->DoNextAction(NULL, 0, false, bot->IsTaxiFlying());
+            {
+                BotActivityTimer travelDecisionTimer(BotActivityPhase::TravelDecision);
+                currentEngine->DoNextAction(NULL, 0, false, bot->IsTaxiFlying());
+            }
 
             allowActive[TRAVEL_ACTIVITY] = oldTravelAllowed;
             allowActiveCheckTimer[TRAVEL_ACTIVITY] = oldTravelCheck;

@@ -309,6 +309,7 @@ namespace
 
         if (minimalAI)
         {
+            minimalAI->RecordMinimalWaypointTeleport();
             auto& landing = minimalAI->GetLastMovement().lastMinimalModelLanding;
             landing = destinationOnModel ? std::optional<WorldPosition>(destination) : std::nullopt;
         }

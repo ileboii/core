@@ -44,7 +44,10 @@
 #endif
 
 #include "playerbot/TravelMgr.h"
+#include "playerbot/PerformanceMonitor.h"
+#include <array>
 #include <iomanip>
+#include <locale>
 #include <float.h>
 #include <cmath>
 #include <algorithm>
@@ -60,6 +63,85 @@ using namespace MaNGOS;
 
 namespace
 {
+    void AppendActivityShard(std::ostream& out, Map const& map, uint32 targetMs, float botWorkMs,
+                             float previousActivity, float newActivity)
+    {
+        struct BotCounts
+        {
+            uint32 bots = 0;
+            uint32 active = 0;
+        };
+
+        constexpr std::pair<ActivePiorityType, const char*> priorities[] = {
+            {ActivePiorityType::NO_PATH, "no_path"},
+            {ActivePiorityType::IN_EMPTY_SERVER, "empty_server"},
+            {ActivePiorityType::IN_INACTIVE_MAP, "inactive_map"},
+            {ActivePiorityType::IN_ACTIVE_MAP, "active_map"},
+            {ActivePiorityType::IN_ACTIVE_AREA, "active_area"},
+            {ActivePiorityType::IN_COMBAT, "combat"},
+            {ActivePiorityType::MAX_TYPE, "unclassified"},
+        };
+
+        uint32 realPlayers = 0;
+        BotCounts total;
+        BotActivityTeleportCounts teleports;
+        std::array<BotCounts, static_cast<size_t>(ActivePiorityType::MAX_TYPE) + 1> byPriority{};
+        Map::PlayerList const& players = map.GetPlayers();
+        for (auto itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player const* player = itr->getSource();
+            if (!player || !player->IsInWorld())
+                continue;
+
+            PlayerbotAI* botAI = player->GetPlayerbotAI();
+            if (!botAI)
+            {
+                ++realPlayers;
+                continue;
+            }
+
+            BotCounts& count = byPriority[static_cast<size_t>(botAI->GetLastActivityPriority())];
+            auto const botTeleports = botAI->TakeActivityTeleportCounts();
+            teleports.nearAcks += botTeleports.nearAcks;
+            teleports.farAcks += botTeleports.farAcks;
+            teleports.minimalWaypoints += botTeleports.minimalWaypoints;
+            ++total.bots;
+            ++count.bots;
+            if (botAI->IsActivityAllowedCached())
+            {
+                ++total.active;
+                ++count.active;
+            }
+        }
+
+        out << "{\"map\":" << map.GetId() << ",\"instance\":" << map.GetInstanceId()
+            << ",\"players\":" << realPlayers << ",\"bots\":" << total.bots << ",\"active\":" << total.active
+            << ",\"activity_before\":" << previousActivity << ",\"activity_after\":" << newActivity
+            << ",\"target_ms\":" << targetMs << ",\"bot_work_ms\":" << botWorkMs
+            << ",\"map_samples\":" << map.GetAverageUpdateTimeSamples10s()
+            << ",\"map_ms\":" << map.GetAverageUpdateTimeMs10s()
+            << ",\"players_ms\":" << map.GetAveragePlayersUpdateTimeMs10s()
+            << ",\"cells_ms\":" << map.GetAverageCellsUpdateTimeMs10s()
+            << ",\"objects_ms\":" << map.GetAverageObjectsUpdateTimeMs10s()
+            << ",\"visibility_ms\":" << map.GetAverageVisibilityUpdateTimeMs10s()
+            << ",\"active_object_visits\":" << map.GetCellActiveObjectCalls10s()
+            << ",\"bot_ai_ms\":" << map.GetAverageBotPlayerAiTimeMs10s()
+            << ",\"bot_update_samples\":" << map.GetBotPlayerUpdateProfileSamples10s()
+            << ",\"near_teleport_acks\":" << teleports.nearAcks << ",\"far_teleport_acks\":" << teleports.farAcks
+            << ",\"minimal_waypoint_teleports\":" << teleports.minimalWaypoints
+            << ",\"priorities\":{";
+        bool first = true;
+        for (auto const& [priority, name] : priorities)
+        {
+            if (!first)
+                out << ',';
+            first = false;
+            BotCounts const& count = byPriority[static_cast<size_t>(priority)];
+            out << '"' << name << "\":{\"bots\":" << count.bots << ",\"active\":" << count.active << '}';
+        }
+        out << "}}";
+    }
+
     bool PrepareTeleportLocation(WorldLocation& location)
     {
         if (!MapManager::IsValidMapCoord(location.mapId, location.x, location.y, location.z, location.o))
@@ -1112,7 +1194,8 @@ void RandomPlayerbotMgr::ScaleBotActivity()
 
     float previousActivityPercentage = getActivityPercentage();
 
-    uint32 wantedDiff = sRandomPlayerbotMgr.GetPlayers().empty() ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer;
+    auto const trackedPlayers = sRandomPlayerbotMgr.GetPlayers().size();
+    uint32 wantedDiff = trackedPlayers == 0 ? sPlayerbotAIConfig.diffEmpty : sPlayerbotAIConfig.diffWithPlayer;
 
     uint32 currentDiff = sWorld.GetCurrentDiff();
 
@@ -1141,6 +1224,29 @@ void RandomPlayerbotMgr::ScaleBotActivity()
         if (!continentInstancedActivityTimer || now >= continentInstancedActivityTimer + 10)
         {
             continentInstancedActivityTimer = now;
+
+            const bool traceActivity = BotActivityTimer::IsEnabled();
+            std::ostringstream trace;
+            bool firstShard = true;
+            if (traceActivity)
+            {
+                trace.imbue(std::locale::classic());
+                trace << std::fixed << std::setprecision(3)
+                      << "{\"boot_epoch\":" << sWorld.GetStartTime() << ",\"uptime_s\":" << sWorld.GetUptime()
+                      << ",\"diff_10s_ms\":" << currentDiff << ",\"diff_60s_ms\":" << sWorld.GetAverageDiff()
+                      << ",\"diff_target_ms\":" << wantedDiff << ",\"global_activity\":" << activityPercentage
+                      << ",\"remote_cap\":" << remoteBotActivityCap.load(std::memory_order_relaxed)
+                      << ",\"background_activity\":" << sPlayerbotAIConfig.botActiveAlone
+                      << ",\"tracked_players\":" << trackedPlayers
+                      << ",\"map_update_tasks\":" << sMapMgr.GetContinentUpdateTaskCount()
+                      << ",\"reported_bots\":" << botCount << ",\"reported_active_bots\":" << activeBots
+                      << ",\"travel_in_flight\":" << sTravelMgr.GetActiveDestinationSearches()
+                      << ",\"travel_deferred\":" << sTravelMgr.GetDeferredDestinationSearches()
+                      << ",\"sample_stride\":" << static_cast<unsigned>(BotActivityTimer::SampleInterval)
+                      << ",\"phases\":";
+                BotActivityTimer::WriteSamples(trace);
+                trace << ",\"shards\":[";
+            }
 
             for (auto const& mapPair : sMapMgr.Maps())
             {
@@ -1187,6 +1293,20 @@ void RandomPlayerbotMgr::ScaleBotActivity()
                 newActivity = std::max(0.0f, std::min(100.0f, newActivity));
 
                 map->SetBotActivityPercentage(newActivity);
+
+                if (traceActivity)
+                {
+                    if (!firstShard)
+                        trace << ',';
+                    firstShard = false;
+                    AppendActivityShard(trace, *map, wantedMs, currentMs, previousActivity, newActivity);
+                }
+            }
+
+            if (traceActivity)
+            {
+                trace << "]}";
+                sPlayerbotAIConfig.log(BotActivityTimer::LogFile, "%s", trace.str().c_str());
             }
         }
     }

@@ -5,6 +5,88 @@
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
 
+#include <array>
+#include <ostream>
+
+namespace ai
+{
+    namespace
+    {
+        struct PhaseSamples
+        {
+            uint64 count = 0;
+            uint64 nanoseconds = 0;
+        };
+
+        constexpr size_t phaseCount = static_cast<size_t>(BotActivityPhase::Count);
+        constexpr std::array<const char*, phaseCount> phaseNames = {
+            "active_update", "inactive_update", "activity_check", "reaction", "decision",
+            "minimal_decision", "minimal_movement", "travel_decision", "ground_recovery"
+        };
+
+        std::mutex sampleMutex;
+        std::array<PhaseSamples, phaseCount> phaseSamples{};
+    }
+
+    std::atomic<bool> BotActivityTimer::enabled{false};
+
+    void BotActivityTimer::Enable(bool enable)
+    {
+        if (enabled.exchange(enable, std::memory_order_relaxed) && !enable)
+        {
+            std::lock_guard<std::mutex> lock(sampleMutex);
+            phaseSamples = {};
+        }
+    }
+
+    void BotActivityTimer::StartSample()
+    {
+        thread_local std::array<uint8, phaseCount> untilSample{};
+        uint8& remaining = untilSample[static_cast<size_t>(phase)];
+        if (remaining)
+        {
+            --remaining;
+            return;
+        }
+
+        remaining = SampleInterval - 1;
+        start = std::chrono::steady_clock::now();
+        sampled = true;
+    }
+
+    void BotActivityTimer::FinishSample()
+    {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start);
+        std::lock_guard<std::mutex> lock(sampleMutex);
+        if (!IsEnabled())
+            return;
+
+        auto& sample = phaseSamples[static_cast<size_t>(phase)];
+        ++sample.count;
+        sample.nanoseconds += elapsed.count();
+    }
+
+    void BotActivityTimer::WriteSamples(std::ostream& out)
+    {
+        std::array<PhaseSamples, phaseCount> interval{};
+        {
+            std::lock_guard<std::mutex> lock(sampleMutex);
+            interval = phaseSamples;
+            phaseSamples = {};
+        }
+
+        out << '{';
+        for (size_t i = 0; i < interval.size(); ++i)
+        {
+            if (i)
+                out << ',';
+            out << '"' << phaseNames[i] << "\":{\"samples\":" << interval[i].count
+                << ",\"nanoseconds\":" << interval[i].nanoseconds << '}';
+        }
+        out << '}';
+    }
+}
+
 PerformanceMonitor::PerformanceMonitor() 
 {
 
