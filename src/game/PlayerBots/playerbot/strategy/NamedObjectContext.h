@@ -217,13 +217,19 @@ namespace ai
             created.clear();
         }
 
-        void Erase(const std::string& name)
+        template <class Predicate>
+        void EraseMatching(const std::string& prefix, const Predicate& shouldErase)
         {
-            auto const it = created.find(name);
-            if (it != created.end())
+            for (auto it = created.lower_bound(prefix); it != created.end() && it->first.compare(0, prefix.size(), prefix) == 0;)
             {
-                delete it->second;
-                created.erase(it);
+                T* object = it->second;
+                if (object && shouldErase(it->first, *object))
+                {
+                    it = created.erase(it);
+                    delete object;
+                }
+                else
+                    ++it;
             }
         }
 
@@ -362,12 +368,11 @@ namespace ai
             return result;
         }
 
-        void Erase(const std::string& name)
+        template <class Predicate>
+        void EraseMatching(const std::string& prefix, const Predicate& shouldErase)
         {
-            for (typename std::list<NamedObjectContext<T>*>::iterator i = contexts.begin(); i != contexts.end(); i++)
-            {
-                (*i)->Erase(name);
-            }
+            for (auto* context : contexts)
+                context->EraseMatching(prefix, shouldErase);
         }
 
     private:

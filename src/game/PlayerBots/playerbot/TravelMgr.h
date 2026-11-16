@@ -5,6 +5,11 @@
 #include "strategy/values/TravelValues.h"
 #include "WorldSquare.h"
 
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <mutex>
+
 // Pair hash for std::unordered_map with std::pair keys (replaces boost::hash)
 struct PairHash {
     template <class T1, class T2>
@@ -446,6 +451,12 @@ namespace ai
 	//General container for all travel destinations.
 	class TravelMgr
 	{
+        struct ReleaseDestinationSearch
+        {
+            void operator()(TravelMgr* manager) const;
+        };
+        using DestinationSearchSlot = std::unique_ptr<TravelMgr, ReleaseDestinationSearch>;
+
 	public:
 		TravelMgr() {};
         ~TravelMgr() { Clear(); };
@@ -467,7 +478,11 @@ namespace ai
 		void SetMobAvoidArea();
 
 		DestinationList GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
-		void GetPartitionsLock(bool getLock = true);
+        static constexpr uint32 MaxDestinationSearches = 5;
+        DestinationSearchSlot ReserveDestinationSearch(const FutureDestinations& currentSearch);
+        static FutureDestinations StartDestinationSearch(DestinationSearchSlot slot, std::function<PartitionedTravelList()> search);
+        uint32 GetActiveDestinationSearches() const { return activeDestinationSearches.load(std::memory_order_relaxed); }
+        uint64 GetDeferredDestinationSearches() const { return deferredDestinationSearches.load(std::memory_order_relaxed); }
 		static bool IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info);
 		PartitionedTravelList GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
 		static void ShuffleTravelPoints(std::vector<TravelPoint>& points);
@@ -523,11 +538,11 @@ namespace ai
 
 		GatherTravelDestination fishMap;
 		std::list<AsyncGuidPosition> fishPoints;
+        std::mutex fishPointsMutex;
 		std::unordered_map<uint32, int32> areaLevels;
 
-		std::mutex getDestinationMutex;
-		std::condition_variable getDestinationVar;
-		uint8 availableDestinationWorkers = 5;
+        std::atomic<uint32> activeDestinationSearches{0};
+        std::atomic<uint64> deferredDestinationSearches{0};
 
 		std::vector<std::tuple<uint32, int, int>> badMmap;
 

@@ -4803,7 +4803,7 @@ float RandomPlayerbotMgr::GetMetricDelta(botPerformanceMetric& metric) const
     float deltaMetric = 0;
     for (auto& botMetric : metric)
     {
-        std::list<float> values = botMetric.second;
+        const auto& values = botMetric.second;
         if (values.size() > 1)
             deltaMetric += (values.back() - values.front()) / values.size();
     }
@@ -5113,6 +5113,8 @@ std::list<std::string> RandomPlayerbotMgr::HandleConsoleCpu(std::string param)
 
     ss << "CPU / map partition profile (10 sec)\n";
     ss << "World-map update tasks: " << sMapMgr.GetContinentUpdateTaskCount() << "\n";
+    ss << "Travel searches: " << sTravelMgr.GetActiveDestinationSearches() << "/" << TravelMgr::MaxDestinationSearches
+       << " in flight | Deferred since startup: " << sTravelMgr.GetDeferredDestinationSearches() << "\n";
 
     struct PartitionStats
     {

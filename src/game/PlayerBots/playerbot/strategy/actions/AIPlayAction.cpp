@@ -471,41 +471,29 @@ namespace
         if (autonomous && target->IsActive())
             return true;
 
-        // Do not interrupt an in-flight destination query. Otherwise expire
-        // the current goal so this explicit request can replace it.
         if (target->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
             return true;
 
-        const TravelStatus previousStatus = target->GetStatus();
-        target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
-        context->ClearValues("travel target active");
-        context->ClearValues("no active travel destinations");
-
-        const uint32 purpose = (uint32)TravelDestinationPurpose::Explore;
-        WorldPosition center(bot);
-        PlayerTravelInfo travelInfo(bot);
         FutureDestinations* destinations = AI_VALUE(FutureDestinations*, "future travel destinations");
         if (!destinations)
-        {
-            target->SetStatus(previousStatus);
-            context->ClearValues("travel target active");
             return false;
-        }
 
-        try
-        {
-            *destinations = std::async(std::launch::async,
-                [partitions = travelPartitions, travelInfo, center, purpose]()
-                {
-                    return sTravelMgr.GetPartitions(center, partitions, travelInfo, purpose);
-                });
-        }
-        catch (const std::exception&)
-        {
-            target->SetStatus(previousStatus);
-            context->ClearValues("travel target active");
+        auto slot = sTravelMgr.ReserveDestinationSearch(*destinations);
+        if (!slot)
             return false;
-        }
+
+        const uint32 purpose = (uint32)TravelDestinationPurpose::Explore;
+        FutureDestinations search = TravelMgr::StartDestinationSearch(std::move(slot),
+            [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center = WorldPosition(bot), purpose]()
+            {
+                return sTravelMgr.GetPartitions(center, partitions, travelInfo, purpose);
+            });
+        if (!search.valid())
+            return false;
+
+        *destinations = std::move(search);
+        context->ClearValues("travel target active");
+        context->ClearValues("no active travel destinations");
 
         SET_AI_VALUE2(std::string, "manual string", "future travel purpose", std::to_string(purpose));
         SET_AI_VALUE2(std::string, "manual string", "future travel condition", std::string());

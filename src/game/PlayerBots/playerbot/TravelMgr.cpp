@@ -2551,7 +2551,7 @@ void TravelMgr::GetFishLocations(uint32 mapId)
         }
     }
 
-    getDestinationMutex.lock();
+    std::lock_guard<std::mutex> lock(fishPointsMutex);
     for (auto& [zone, spots] : fishSpots)
     {
         TravelDestination* dest = AddDestination<GatherTravelDestination>(zone, TravelDestinationPurpose::GatherFishing);
@@ -2563,7 +2563,6 @@ void TravelMgr::GetFishLocations(uint32 mapId)
             fishMap.AddPoint(point);
         }
     }
-    getDestinationMutex.unlock();
 }
 
 void TravelMgr::SaveFishLocations()
@@ -2664,19 +2663,43 @@ DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 
     return retDests;
 }
 
-void TravelMgr::GetPartitionsLock(bool getLock)
+void TravelMgr::ReleaseDestinationSearch::operator()(TravelMgr* manager) const
 {
-    std::unique_lock<std::mutex> lock(sTravelMgr.getDestinationMutex);
-    if (getLock)
-    {
-        sTravelMgr.getDestinationVar.wait(lock, [&] { return sTravelMgr.availableDestinationWorkers; });
-        sTravelMgr.availableDestinationWorkers--;
+    manager->activeDestinationSearches.fetch_sub(1, std::memory_order_relaxed);
+}
 
-        return;
+TravelMgr::DestinationSearchSlot TravelMgr::ReserveDestinationSearch(const FutureDestinations& currentSearch)
+{
+    if (currentSearch.valid() && currentSearch.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return {};
+
+    uint32 active = activeDestinationSearches.load(std::memory_order_relaxed);
+    while (active < MaxDestinationSearches)
+    {
+        if (activeDestinationSearches.compare_exchange_weak(active, active + 1, std::memory_order_relaxed))
+            return DestinationSearchSlot(this);
     }
-    
-    sTravelMgr.availableDestinationWorkers++;
-    sTravelMgr.getDestinationVar.notify_one();
+
+    deferredDestinationSearches.fetch_add(1, std::memory_order_relaxed);
+    return {};
+}
+
+FutureDestinations TravelMgr::StartDestinationSearch(DestinationSearchSlot slot, std::function<PartitionedTravelList()> search)
+{
+    try
+    {
+        return std::async(std::launch::async, [slot = std::move(slot), search = std::move(search)]() mutable
+        {
+            // Release the slot when the search finishes, even if the bot hasn't collected the result.
+            auto activeSearch = std::move(slot);
+            return search();
+        });
+    }
+    catch (const std::system_error& error)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Could not start playerbot travel search: %s", error.what());
+        return {};
+    }
 }
 
 bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info)
@@ -2718,8 +2741,6 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
 
 PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, bool onlyPossible, float maxDistance) const
 {
-    sTravelMgr.GetPartitionsLock();
-
     PartitionedTravelList pointMap;
     DestinationList destinations = GetDestinations(info, purposeFlag, entries, onlyPossible, maxDistance);
 
@@ -2753,8 +2774,6 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
             break;
         }
     }
-
-    sTravelMgr.GetPartitionsLock(false);
 
     return pointMap;
 }
