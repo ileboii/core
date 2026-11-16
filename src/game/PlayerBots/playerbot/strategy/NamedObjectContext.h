@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdarg>
 #include <string>
+#include <string_view>
 #include <iosfwd>
 #include <set>
 #include <list>
@@ -152,22 +153,14 @@ namespace ai
     {
     protected:
         using ActionCreator = std::function<T* (PlayerbotAI* ai)>;
-        std::map<std::string, ActionCreator> creators;
+        std::map<std::string, ActionCreator, std::less<>> creators;
 
     public:
-        T* Create(std::string name, PlayerbotAI* ai)
+        T* Create(const std::string& name, PlayerbotAI* ai)
         {
-            std::string nameView = name;
-            std::string qualifierView;
-
-            size_t pos = nameView.find("::");
-            if (pos != std::string::npos)
-            {
-                qualifierView = nameView.substr(pos + 2);
-                nameView = nameView.substr(0, pos);
-            }
-
-            auto it = creators.find(std::string(nameView));
+            std::string_view nameView(name);
+            size_t const pos = nameView.find("::");
+            auto it = creators.find(nameView.substr(0, pos));
             if (it == creators.end())
                 return nullptr;
 
@@ -175,10 +168,10 @@ namespace ai
             if (object == nullptr)
                 return nullptr;
 
-            if (!qualifierView.empty())
+            if (pos != std::string_view::npos && pos + 2 < name.size())
             {
                 if (auto* q = dynamic_cast<Qualified*>(object))
-                    q->Qualify(std::string(qualifierView));
+                    q->Qualify(name.substr(pos + 2));
             }
 
             return object;
@@ -199,12 +192,13 @@ namespace ai
         NamedObjectContext(bool shared = false, bool supportsSiblings = false) :
             NamedObjectFactory<T>(), shared(shared), supportsSiblings(supportsSiblings) {}
 
-        T* Create(std::string name, PlayerbotAI* ai)
+        T* Create(const std::string& name, PlayerbotAI* ai)
         {
-            if (created.find(name) == created.end())
-                return created[name] = NamedObjectFactory<T>::Create(name, ai);
+            auto const it = created.find(name);
+            if (it != created.end())
+                return it->second;
 
-            return created[name];
+            return created[name] = NamedObjectFactory<T>::Create(name, ai);
         }
 
         virtual ~NamedObjectContext()
@@ -225,10 +219,11 @@ namespace ai
 
         void Erase(const std::string& name)
         {
-            if (created.find(name) != created.end())
+            auto const it = created.find(name);
+            if (it != created.end())
             {
-                delete created[name];
-                created.erase(name);
+                delete it->second;
+                created.erase(it);
             }
         }
 
@@ -388,7 +383,7 @@ namespace ai
             factories.emplace_back(std::move(factory));
         }
 
-        T* GetObject(std::string name, PlayerbotAI* ai)
+        T* GetObject(const std::string& name, PlayerbotAI* ai)
         {
             for (auto it = factories.rbegin(); it != factories.rend(); ++it)
             {

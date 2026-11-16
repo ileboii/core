@@ -7,6 +7,7 @@
 #include <random>
 #include <chrono>
 #include <mutex>
+#include <optional>
 
 #include "playerbot/AiFactory.h"
 
@@ -122,7 +123,8 @@ void PacketHandlingHelper::AddHandler(uint16 opcode, std::string handler, bool s
 
 void PacketHandlingHelper::Handle(ExternalEventHelper &helper)
 {
-    if (!m_botPacketMutex.try_lock()) //Packets do not have to be handled now. Handle them later.
+    std::unique_lock<std::mutex> lock(m_botPacketMutex, std::try_to_lock);
+    if (!lock.owns_lock() || queue.empty())
         return;
 
     std::stack<WorldPacket> delayed;
@@ -131,13 +133,11 @@ void PacketHandlingHelper::Handle(ExternalEventHelper &helper)
     {
         if (!helper.HandlePacket(handlers, queue.top()))
             if(delay[queue.top().GetOpcode()])
-                delayed.push(queue.top());
+                delayed.push(std::move(queue.top()));
         queue.pop();
     }
 
-    queue = delayed;
-
-    m_botPacketMutex.unlock();
+    queue.swap(delayed);
 }
 
 void PacketHandlingHelper::AddPacket(const WorldPacket& packet)
@@ -1417,15 +1417,15 @@ void PlayerbotAI::OnResurrected()
 
 void PlayerbotAI::HandleCommands()
 {
-    ExternalEventHelper helper(aiObjectContext);
+    std::unique_lock<std::mutex> lock(m_chatQueuesMutex);
+    if (chatCommands.empty())
+        return;
 
     std::queue<ChatCommandHolder> pendingCommands;
+    pendingCommands.swap(chatCommands);
+    lock.unlock();
 
-    {
-        std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
-        pendingCommands.swap(chatCommands);
-    }
-
+    ExternalEventHelper helper(aiObjectContext);
     std::list<ChatCommandHolder> delayed;
 
     while (!pendingCommands.empty())
@@ -1468,7 +1468,7 @@ void PlayerbotAI::HandleCommands()
 
     if (!delayed.empty())
     {
-        std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
+        std::lock_guard<std::mutex> requeueLock(m_chatQueuesMutex);
 
         for (std::list<ChatCommandHolder>::iterator i = delayed.begin(); i != delayed.end(); ++i)
         {
@@ -1494,17 +1494,18 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     ExternalEventHelper helper(aiObjectContext);
 
     // AI-play text is queued from LLM worker threads and executed here, on the bot update thread.
-    std::queue<AIPlayQueuedMessage> pendingAIPlayMessages;
+    std::optional<std::queue<AIPlayQueuedMessage>> pendingAIPlayMessages;
 
     {
         std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
-        pendingAIPlayMessages.swap(aiPlayMessages);
+        if (!aiPlayMessages.empty())
+            pendingAIPlayMessages.emplace().swap(aiPlayMessages);
     }
 
-    while (!pendingAIPlayMessages.empty())
+    while (pendingAIPlayMessages && !pendingAIPlayMessages->empty())
     {
-        AIPlayQueuedMessage holder = pendingAIPlayMessages.front();
-        pendingAIPlayMessages.pop();
+        AIPlayQueuedMessage holder = std::move(pendingAIPlayMessages->front());
+        pendingAIPlayMessages->pop();
 
         if (holder.generationCompleted)
             aiPlayGenerationPending = false;
@@ -1526,19 +1527,20 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     }
 
     // chat replies
-    std::queue<ChatQueuedReply> pendingReplies;
+    std::optional<std::queue<ChatQueuedReply>> pendingReplies;
 
     {
         std::lock_guard<std::mutex> lock(m_chatQueuesMutex);
-        pendingReplies.swap(chatReplies);
+        if (!chatReplies.empty())
+            pendingReplies.emplace().swap(chatReplies);
     }
 
     std::list<ChatQueuedReply> delayedResponses;
 
-    while (!pendingReplies.empty())
+    while (pendingReplies && !pendingReplies->empty())
     {
-        ChatQueuedReply holder = pendingReplies.front();
-        pendingReplies.pop();
+        ChatQueuedReply holder = std::move(pendingReplies->front());
+        pendingReplies->pop();
 
         time_t checkTime = holder.m_time;
 
@@ -1998,12 +2000,13 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 
 void PlayerbotAI::ProcessBotOutgoingPackets()
 {
-    std::queue<WorldPacket> packets;
+    std::unique_lock<std::mutex> lock(m_pendingBotOutgoingPacketsMutex);
+    if (m_pendingBotOutgoingPackets.empty())
+        return;
 
-    {
-        std::lock_guard<std::mutex> lock(m_pendingBotOutgoingPacketsMutex);
-        packets.swap(m_pendingBotOutgoingPackets);
-    }
+    std::queue<WorldPacket> packets;
+    packets.swap(m_pendingBotOutgoingPackets);
+    lock.unlock();
 
     while (!packets.empty())
     {
