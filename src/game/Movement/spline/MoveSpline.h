@@ -129,6 +129,8 @@ namespace Movement
             std::string ToString() const;
             char const* GetMovementOrigin() const { return mvtOrigin; }
             void SetMovementOrigin(char const* m) { mvtOrigin = m; }
+
+            bool botRetreat = false;
     };
 }
 #endif // MANGOSSERVER_MOVEPLINE_H

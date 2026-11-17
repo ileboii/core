@@ -34,6 +34,11 @@
 template<class T>
 void PointMovementGenerator<T>::Initialize(T& unit)
 {
+    // A speed change can relaunch the same retreat with a new spline.
+    MotionMaster const& motion = *unit.GetMotionMaster();
+    bool const continuingRetreat = unit.movespline->botRetreat && !unit.movespline->Finalized() &&
+        !motion.empty() && motion.GetCurrent() == this;
+
     if (!unit.IsStopped())
         unit.StopMoving();
 
@@ -54,7 +59,8 @@ void PointMovementGenerator<T>::Initialize(T& unit)
         init.SetCyclic();
     if (m_o > -7.0f)
         init.SetFacing(m_o);
-    init.Launch();
+    if (init.Launch() && continuingRetreat)
+        unit.movespline->botRetreat = true;
 }
 
 template<class T>

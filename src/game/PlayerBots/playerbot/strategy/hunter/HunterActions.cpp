@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "MoveSpline.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/actions/GenericActions.h"
@@ -88,6 +89,9 @@ bool HunterEquipAmmoAction::Execute(Event& event)
 
 bool CastAutoShotAction::Execute(Event& event)
 {
+    if (bot->movespline->botRetreat && !bot->movespline->Finalized())
+        return false;
+
     if (bot->IsMoving() || !bot->IsStopped())
     {
         ai->StopMoving();

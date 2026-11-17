@@ -481,6 +481,9 @@ bool MovementAction::isPossible()
 
 bool MovementAction::isUseful()
 {
+    if (name == "flee" && bot->movespline->botRetreat && !bot->movespline->Finalized())
+        return false;
+
     return !ai->HasStrategy("stay", ai->GetState());
 }
 
@@ -3059,6 +3062,7 @@ void MovementAction::UpdateMovementState(PlayerbotAI* ai)
     if (swimming != wasSwimming)
     {
         WorldPosition resume;
+        bool const continuingRetreat = bot->movespline->botRetreat && !bot->movespline->Finalized();
         if (!bot->movespline->Finalized() && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
         {
             Vector3 const& destination = bot->movespline->FinalDestination();
@@ -3078,6 +3082,8 @@ void MovementAction::UpdateMovementState(PlayerbotAI* ai)
                 options = MOVE_RUN_MODE;
             bot->GetMotionMaster()->MovePoint(0, resume.x, resume.y, resume.z, options,
                 swimming ? bot->GetSpeed(MOVE_SWIM) : 0.0f);
+            if (continuingRetreat && !bot->movespline->Finalized())
+                bot->movespline->botRetreat = true;
         }
     }
     if (swimming)
@@ -3644,11 +3650,21 @@ bool MovementAction::Flee(Unit* target)
         return false;
     }
 
+    Movement::MoveSpline& spline = *bot->movespline;
+    MotionMaster& motion = *bot->GetMotionMaster();
+    if (!spline.Finalized() &&
+        (spline.botRetreat || motion.GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE))
+    {
+        spline.botRetreat = true;
+        return true;
+    }
+
     HostileReference* ref = sServerFacade.GetThreatManager(target).getCurrentVictim();
     const bool isTarget = ref && ref->getTarget() == bot;
 
-    time_t lastFlee = AI_VALUE(LastMovement&, "last movement").lastFlee;
-    time_t now = time(0);
+    LastMovement& lastMove = ai->GetLastMovement();
+    time_t const lastFlee = lastMove.lastFlee;
+    time_t const now = time(nullptr);
     uint32 fleeDelay = urand(2, sPlayerbotAIConfig.returnDelay / 1000);
 
     // let hunter kite mob
@@ -3658,30 +3674,19 @@ bool MovementAction::Flee(Unit* target)
     }
 
     if (lastFlee && (now - lastFlee) <= fleeDelay)
-    {
-        // A cast can stop movement; avoid selecting a new retreat path until
-        // the existing flee cooldown expires.
-        return sServerFacade.isMoving(bot);
-    }
-    
-    // Finish an active retreat spline before choosing another retreat destination.
-    MotionMaster* currentMotion = bot->GetMotionMaster();
-    if (currentMotion && !bot->IsStopped())
-    {
-        if (currentMotion->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE)
-        {
-            return true;
-        }
+        return false;
 
-        if (currentMotion->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+    // Finish an existing point move when it is already taking the bot away.
+    if (!spline.Finalized() && !spline.GetTransportGuid() && motion.GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+    {
+        Vector3 const destination = spline.FinalDestination();
+        if (target->GetDistance2dToCenter(destination.x, destination.y) >
+            target->GetDistance2dToCenter(bot) + 1.0f)
         {
-            float destinationX, destinationY, destinationZ;
-            if (currentMotion->GetDestination(destinationX, destinationY, destinationZ) &&
-                sServerFacade.GetDistance2d(target, destinationX, destinationY) >
-                    sServerFacade.GetDistance2d(bot, target) + 1.0f)
-            {
-                return true;
-            }
+            spline.botRetreat = true;
+            lastMove.lastFlee = now;
+            SetDuration(sPlayerbotAIConfig.reactDelay);
+            return true;
         }
     }
 
@@ -3788,17 +3793,12 @@ bool MovementAction::Flee(Unit* target)
         }
     }
 
-    bool succeeded = false;
-    if (fleeTarget)
-    {
-        succeeded = MoveNear(fleeTarget);
-        if (succeeded)
-        {
-            AI_VALUE(LastMovement&, "last movement").lastFlee = now;
-        }
-    }
+    uint32 const previousSplineId = spline.GetId();
+    bool succeeded = fleeTarget && MoveNear(fleeTarget);
+    bool const hostileTarget = sServerFacade.IsHostileTo(bot, target);
 
-    if (!ai->HasRealPlayerMaster() && !ai->IsRealPlayer(target) && !ai->IsStateActive(BotState::BOT_STATE_COMBAT))
+    if (!succeeded && !hostileTarget && !ai->HasRealPlayerMaster() &&
+        !ai->IsRealPlayer(target) && !ai->IsStateActive(BotState::BOT_STATE_COMBAT))
     {
         bool fullDistance = false;
         if (target->IsPlayer())
@@ -3808,57 +3808,31 @@ bool MovementAction::Flee(Unit* target)
 
         float distance = fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
 
-        MotionMaster* mm = bot->GetMotionMaster();
-
-        if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
+        if (motion.GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
         {
             if (sServerFacade.GetChaseTarget(bot) == target && sServerFacade.GetChaseOffset(bot) == distance)
                 return true;
         }
 
-        mm->MoveChase(target, distance);
+        motion.MoveChase(target, distance);
         return true;
     }
 
-    // Generate a position to flee
-    if(!succeeded)
+    if (!succeeded && !fleeTarget && (hostileTarget || ai->IsStateActive(BotState::BOT_STATE_COMBAT)))
     {
-        // Use the movement system's direct retreat when no group destination was found.
-        if (!fleeTarget && ai->IsStateActive(BotState::BOT_STATE_COMBAT))
-        {
-            bool fullDistance = target->IsPlayer() || WorldPosition(bot).isOverworld();
-            float distance = fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
-            if (isRanged)
-            {
-                distance = std::max(distance, ai->GetRange("spell") * 0.75f);
-            }
-            MotionMaster* mm = bot->GetMotionMaster();
+        bool const fullDistance = target->IsPlayer() || WorldPosition(bot).isOverworld();
+        float distance = ai->GetRange("flee") * (fullDistance ? 2.0f : 1.0f);
+        if (isRanged)
+            distance = std::max(distance, ai->GetRange("spell") * 0.75f);
 
-            if (mm->MoveDistance(target, distance))
-            {
-                AI_VALUE(LastMovement&, "last movement").lastFlee = time(0);
-                return true;
-            }
-        }
+        succeeded = motion.MoveDistance(target, distance) && !spline.Finalized() && spline.GetId() != previousSplineId;
+    }
 
-        if (lastFlee && bot->GetGroup())
-        {
-            if (!lastFlee)
-            {
-                AI_VALUE(LastMovement&, "last movement").lastFlee = now;
-            }
-            else
-            {
-                if ((now - lastFlee) > fleeDelay)
-                {
-                    AI_VALUE(LastMovement&, "last movement").lastFlee = 0;
-                }
-                else
-                {
-                    succeeded = false;
-                }
-            }
-        }
+    if (!succeeded)
+    {
+        if (lastFlee && group)
+            lastMove.lastFlee = 0;
+
         bool fullDistance = false;
         if (target->IsPlayer())
             fullDistance = true;
@@ -3886,11 +3860,16 @@ bool MovementAction::Flee(Unit* target)
             return false;
         }
 
-        if(MoveTo(target->GetMapId(), rx, ry, rz))
-        {
-            AI_VALUE(LastMovement&, "last movement").lastFlee = time(0);
-            succeeded = true;
-        }
+        succeeded = MoveTo(target->GetMapId(), rx, ry, rz);
+    }
+
+    if (succeeded && !spline.Finalized() && spline.GetId() != previousSplineId)
+    {
+        spline.botRetreat = true;
+        lastMove.lastFlee = now;
+        bot->InterruptSpell(CURRENT_GENERIC_SPELL, false);
+        bot->InterruptSpell(CURRENT_CHANNELED_SPELL);
+        SetDuration(sPlayerbotAIConfig.reactDelay);
     }
 
     return succeeded;

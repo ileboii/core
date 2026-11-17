@@ -650,6 +650,39 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->StopMoving();
     }
 
+    Movement::MoveSpline& spline = *bot->movespline;
+    // An offset chase can move a ranged bot away from its target.
+    if (!spline.botRetreat && !spline.Finalized() && bot->IsInWorld() && !bot->IsBeingTeleported() &&
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE &&
+        sServerFacade.GetChaseOffset(bot) > 0.0f && HasStrategy("ranged", BotState::BOT_STATE_COMBAT))
+    {
+        Unit* target = sServerFacade.GetChaseTarget(bot);
+        if (IsSafe(target) && target->IsAlive() && sServerFacade.IsHostileTo(bot, target))
+        {
+            uint32 const transportGuid = spline.GetTransportGuid();
+            GenericTransport* transport = transportGuid ? bot->GetTransport() : nullptr;
+            if (!transportGuid || (transport && transport->GetGUIDLow() == transportGuid))
+            {
+                Vector3 start = spline.GetPoint(spline._Spline().first());
+                Vector3 end = spline.FinalDestination();
+                if (transport)
+                {
+                    transport->CalculatePassengerPosition(start.x, start.y, start.z);
+                    transport->CalculatePassengerPosition(end.x, end.y, end.z);
+                }
+
+                spline.botRetreat = target->GetDistance2dToCenter(end.x, end.y) >
+                    target->GetDistance2dToCenter(start.x, start.y) + sPlayerbotAIConfig.targetPosRecalcDistance;
+            }
+        }
+    }
+
+    if (spline.botRetreat && !spline.Finalized() && bot->IsNonMeleeSpellCasted(false, false, true))
+    {
+        bot->InterruptSpell(CURRENT_GENERIC_SPELL, false);
+        bot->InterruptSpell(CURRENT_CHANNELED_SPELL);
+    }
+
     // Update facing
     UpdateFaceTarget(elapsed, minimal);
 
@@ -713,7 +746,7 @@ bool PlayerbotAI::TryMountWithGroupMaster(Group const& group)
     if (!leaderGuid || leaderGuid == bot->GetObjectGuid() || group.isBGGroup() ||
         !bot->IsInWorld() || !bot->IsAlive() || bot->IsMounted() || bot->IsBeingTeleported() ||
         bot->IsTaxiFlying() || bot->GetTransport() || bot->GetSession()->IsLogingOut() ||
-        bot->IsNonMeleeSpellCasted(false, false, true))
+        bot->IsNonMeleeSpellCasted(false, false, true) || (bot->movespline->botRetreat && !bot->movespline->Finalized()))
         return false;
 
     Player* leader = master && masterGuid == leaderGuid ? master : bot->GetMap()->GetPlayer(leaderGuid);
@@ -981,7 +1014,7 @@ void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
         if (IsStateActive(BotState::BOT_STATE_COMBAT))
         {
             // Don't update facing if bot is moving
-            if (!sServerFacade.isMoving(bot) && !bot->HasUnitState(UNIT_STATE_MOVING))
+            if (!sServerFacade.isMoving(bot) && (!bot->movespline->botRetreat || bot->movespline->Finalized()))
             {
                 AiObjectContext* context = GetAiObjectContext();
                 Unit* target = AI_VALUE(Unit*, "current target");
@@ -2593,7 +2626,9 @@ void PlayerbotAI::DoNextAction(bool min)
 
     MovementAction::UpdateMovementState(this);
 
-    if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) && !bot->IsInWater() && !bot->movespline->Finalized())
+    // Keep the current retreat ahead of ordinary actions until the movement ends.
+    if (!bot->movespline->Finalized() && (bot->movespline->botRetreat ||
+        (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING) && !bot->IsInWater())))
     {
         SetAIInternalUpdateDelay(sPlayerbotAIConfig.reactDelay);
         return;
@@ -4675,6 +4710,13 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
         return true;
     }
 
+    if (bot->movespline->botRetreat && !bot->movespline->Finalized())
+    {
+        if (checkResult)
+            *checkResult = SPELL_FAILED_MOVING;
+        return false;
+    }
+
     if (bot->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL))
     {
         // Spells that can be casted while out of control
@@ -4898,6 +4940,13 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, GameObject* goTarget, uint8 effec
         return true;
     }
 
+    if (bot->movespline->botRetreat && !bot->movespline->Finalized())
+    {
+        if (checkResult)
+            *checkResult = SPELL_FAILED_MOVING;
+        return false;
+    }
+
     if (bot->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL))
     {
         // Spells that can be casted while out of control
@@ -5023,6 +5072,13 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, float x, float y, float z, uint8 
         }
 
         return true;
+    }
+
+    if (bot->movespline->botRetreat && !bot->movespline->Finalized())
+    {
+        if (checkResult)
+            *checkResult = SPELL_FAILED_MOVING;
+        return false;
     }
 
     if (bot->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL))
@@ -5156,6 +5212,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     {
         return CastPetSpell(spellId, target);
     }
+
+    if (bot->movespline->botRetreat && !bot->movespline->Finalized())
+        return false;
 
     aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(NULL);
     aiObjectContext->GetValue<time_t>("stay time")->Set(0);
@@ -5381,7 +5440,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
 
 bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
-    if (!spellId)
+    if (!spellId || (bot->movespline->botRetreat && !bot->movespline->Finalized()))
         return false;
 
     aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(NULL);
@@ -5536,6 +5595,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
     {
         return CastPetSpell(spellId, nullptr);
     }
+
+    if (bot->movespline->botRetreat && !bot->movespline->Finalized())
+        return false;
 
     aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(NULL);
     aiObjectContext->GetValue<time_t>("stay time")->Set(0);
@@ -9486,7 +9548,8 @@ bool PlayerbotAI::CanMinimalMove()
 {
     return sPlayerbotAIConfig.enableMinimalMove && bot && bot->IsInWorld() &&
         !bot->IsBeingTeleported() && !isWaiting && !IsRealPlayer() && !HasRealPlayerMaster() &&
-        !bot->InBattleGround() && !bot->IsTaxiFlying() && !bot->IsInCombat() && !bot->IsNonMeleeSpellCasted(false);
+        !bot->InBattleGround() && !bot->IsTaxiFlying() && !bot->IsInCombat() && !bot->IsNonMeleeSpellCasted(false) &&
+        (!bot->movespline->botRetreat || bot->movespline->Finalized());
 }
 
 bool PlayerbotAI::TryMinimalMove(bool allowTargetSelection)

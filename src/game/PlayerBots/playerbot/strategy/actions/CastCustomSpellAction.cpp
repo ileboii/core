@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "MoveSpline.h"
 #include "CastCustomSpellAction.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
@@ -32,6 +33,9 @@ static inline void ltrim(std::string& s)
 
 bool CastCustomSpellAction::Execute(Event& event)
 {
+    if (bot->movespline->botRetreat && !bot->movespline->Finalized())
+        return false;
+
     // only allow proper vehicle seats
     if (ai->IsInVehicle() && !ai->IsInVehicle(false, false, true))
         return false;

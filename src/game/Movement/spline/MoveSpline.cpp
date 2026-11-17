@@ -171,6 +171,7 @@ void MoveSpline::init_spline(MoveSplineInitArgs const& args)
 
 void MoveSpline::Initialize(MoveSplineInitArgs const& args)
 {
+    botRetreat = false;
     splineflags = args.flags;
     facing = args.facing;
     m_Id = args.splineId;
