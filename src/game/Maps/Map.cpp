@@ -1302,6 +1302,8 @@ void Map::Update(uint32 t_diff)
                     m_averageBotPlayerAnticheatTimeUs10s.store(0);
                     m_averageBotPlayerAiTimeUs10s.store(0);
                 }
+
+                m_botWorkSampleReady.store(true, std::memory_order_release);
             }
 
             m_updateTimeAccumulatorUs = 0;

@@ -457,6 +457,8 @@ class Map : public GridRefManager<NGridType>
 
         double GetAverageBotPlayerWorkTimeMs10s() const { return static_cast<double>(m_averageBotPlayerWorkTimeUs10s.load()) / 1000.0; }
 
+        bool ConsumeBotWorkSample() { return m_botWorkSampleReady.exchange(false, std::memory_order_acquire); }
+
         double GetAverageBotPlayerInstanceTimeMs10s() const { return static_cast<double>(m_averageBotPlayerInstanceTimeUs10s.load()) / 1000.0; }
 
         double GetAverageBotPlayerAreaTimeMs10s() const { return static_cast<double>(m_averageBotPlayerAreaTimeUs10s.load()) / 1000.0; }
@@ -877,6 +879,7 @@ class Map : public GridRefManager<NGridType>
         std::atomic<uint64> m_averageMarkedCells10s{0};
 
         // Published full bot Player::Update profiling.
+        std::atomic<bool> m_botWorkSampleReady{false};
         std::atomic<uint64> m_averageBotPlayerWorkTimeUs10s{0};
         std::atomic<uint64> m_averageBotPlayerUpdateTimeUs10s{0};
         std::atomic<uint64> m_averageBotPlayerInstanceTimeUs10s{0};

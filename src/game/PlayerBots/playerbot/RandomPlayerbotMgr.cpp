@@ -12,6 +12,7 @@
 #include "Player.h"
 #include "Map.h"
 #include "MapManager.h"
+#include "CreatureGroups.h"
 #include "playerbot/AiFactory.h"
 #include "PlayerbotCommandServer.h"
 #include "MemoryMonitor.h"
@@ -63,7 +64,39 @@ using namespace MaNGOS;
 
 namespace
 {
-    void AppendActivityShard(std::ostream& out, Map const& map, uint32 targetMs, float botWorkMs,
+    struct ActivityTraceObjectCounts
+    {
+        uint32 creatures = 0;
+        uint32 activeCreatures = 0;
+        uint32 activeFormationMembers = 0;
+        uint32 gameObjects = 0;
+
+        template<class T>
+        void Visit(GridRefManager<T>&) {}
+
+        void Visit(CreatureMapType& objects)
+        {
+            creatures += objects.getSize();
+            for (auto const& ref : objects)
+            {
+                Creature const* creature = ref.getSource();
+                if (!creature || !creature->IsActiveObject())
+                    continue;
+
+                ++activeCreatures;
+                CreatureGroup const* group = creature->GetCreatureGroup();
+                if (group && group->IsFormation())
+                    ++activeFormationMembers;
+            }
+        }
+
+        void Visit(GameObjectMapType& objects)
+        {
+            gameObjects += objects.getSize();
+        }
+    };
+
+    void AppendActivityShard(std::ostream& out, Map& map, uint32 targetMs, float botWorkMs,
                              float previousActivity, float newActivity)
     {
         struct BotCounts
@@ -114,6 +147,20 @@ namespace
             }
         }
 
+        uint32 populatedGrids = 0;
+        uint32 lockedGrids = 0;
+        ActivityTraceObjectCounts objects;
+        TypeContainerVisitor<ActivityTraceObjectCounts, GridTypeMapContainer> visitor(objects);
+        for (auto const& ref : map)
+        {
+            NGridType* grid = ref.getSource();
+            if (grid->isGridObjectDataLoaded())
+                ++populatedGrids;
+            if (grid->getUnloadLock())
+                ++lockedGrids;
+            grid->Visit(visitor);
+        }
+
         out << "{\"map\":" << map.GetId() << ",\"instance\":" << map.GetInstanceId()
             << ",\"players\":" << realPlayers << ",\"bots\":" << total.bots << ",\"active\":" << total.active
             << ",\"activity_before\":" << previousActivity << ",\"activity_after\":" << newActivity
@@ -124,7 +171,16 @@ namespace
             << ",\"cells_ms\":" << map.GetAverageCellsUpdateTimeMs10s()
             << ",\"objects_ms\":" << map.GetAverageObjectsUpdateTimeMs10s()
             << ",\"visibility_ms\":" << map.GetAverageVisibilityUpdateTimeMs10s()
+            << ",\"cell_updates\":" << map.GetCellUpdateCalls10s()
+            << ",\"marked_cells\":" << map.GetAverageMarkedCells10s()
             << ",\"active_object_visits\":" << map.GetCellActiveObjectCalls10s()
+            << ",\"world_grids\":" << map.getSize()
+            << ",\"object_grids\":" << populatedGrids
+            << ",\"locked_grids\":" << lockedGrids
+            << ",\"resident_creatures\":" << objects.creatures
+            << ",\"active_creatures\":" << objects.activeCreatures
+            << ",\"active_formation_members\":" << objects.activeFormationMembers
+            << ",\"resident_game_objects\":" << objects.gameObjects
             << ",\"bot_ai_ms\":" << map.GetAverageBotPlayerAiTimeMs10s()
             << ",\"bot_update_samples\":" << map.GetBotPlayerUpdateProfileSamples10s()
             << ",\"near_teleport_acks\":" << teleports.nearAcks << ",\"far_teleport_acks\":" << teleports.farAcks
@@ -1260,6 +1316,10 @@ void RandomPlayerbotMgr::ScaleBotActivity()
                 if (!map->GetAverageUpdateTimeSamples10s())
                     continue;
 
+                bool const freshSample = map->ConsumeBotWorkSample();
+                if (!freshSample && !traceActivity)
+                    continue;
+
                 uint32 const wantedMs = map->HaveRealPlayers() ? sPlayerbotAIConfig.continentInstancedTargetMsWithPlayer : sPlayerbotAIConfig.continentInstancedTargetMsEmpty;
 
                 float const currentMs = static_cast<float>(map->GetAverageBotPlayerWorkTimeMs10s());
@@ -1272,8 +1332,8 @@ void RandomPlayerbotMgr::ScaleBotActivity()
                 float const deadbandMs = std::max(2.0f, static_cast<float>(wantedMs) * 0.10f);
                 float activityDelta = 0.0f;
 
-                if (currentMs > static_cast<float>(wantedMs) + deadbandMs ||
-                    currentMs < static_cast<float>(wantedMs) - deadbandMs)
+                if (freshSample && (currentMs > static_cast<float>(wantedMs) + deadbandMs ||
+                    currentMs < static_cast<float>(wantedMs) - deadbandMs))
                 {
                     float const errorMs = static_cast<float>(wantedMs) - currentMs;
                     activityDelta = errorMs * 0.5f;
@@ -1292,7 +1352,8 @@ void RandomPlayerbotMgr::ScaleBotActivity()
 
                 newActivity = std::max(0.0f, std::min(100.0f, newActivity));
 
-                map->SetBotActivityPercentage(newActivity);
+                if (freshSample)
+                    map->SetBotActivityPercentage(newActivity);
 
                 if (traceActivity)
                 {
