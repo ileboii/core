@@ -673,6 +673,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
                 spline.botRetreat = target->GetDistance2dToCenter(end.x, end.y) >
                     target->GetDistance2dToCenter(start.x, start.y) + sPlayerbotAIConfig.targetPosRecalcDistance;
+
+                // Finish the retreat without tracking and facing the enemy on every chase update.
+                if (spline.botRetreat && bot->GetMover() == bot && !bot->GetTransport() && !spline.IsUninterruptible() && CanMove())
+                {
+                    bot->GetMotionMaster()->MovePoint(0, end.x, end.y, end.z,
+                        MOVE_PATHFINDING | MOVE_RUN_MODE | MOVE_EXCLUDE_STEEP_SLOPES);
+                    spline.botRetreat = !spline.Finalized();
+                }
             }
         }
     }
@@ -1013,8 +1021,7 @@ void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
         // Only update the target facing when in combat
         if (IsStateActive(BotState::BOT_STATE_COMBAT))
         {
-            // Don't update facing if bot is moving
-            if (!sServerFacade.isMoving(bot) && (!bot->movespline->botRetreat || bot->movespline->Finalized()))
+            if (bot->movespline->Finalized() && !sServerFacade.isMoving(bot) && bot->GetMover() == bot)
             {
                 AiObjectContext* context = GetAiObjectContext();
                 Unit* target = AI_VALUE(Unit*, "current target");
@@ -1037,12 +1044,8 @@ void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
                                 !bot->IsTaxiFlying() &&
                                 !bot->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL))
                             {
-                                sServerFacade.SetFacingTo(bot, target);
                                 bot->SetInFront(target);
-                                WorldPacket data(MSG_MOVE_SET_FACING);
-                                data << bot->GetPackGUID();
-                                data << bot->m_movementInfo;
-                                bot->GetMover()->SendMessageToSetExcept(&data, bot);
+                                bot->SendMovementPacket(MSG_MOVE_SET_FACING);
                             }
                         }
                     }

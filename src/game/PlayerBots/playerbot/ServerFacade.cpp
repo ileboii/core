@@ -6,6 +6,7 @@
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
 
+#include "MoveSpline.h"
 #include "TargetedMovementGenerator.h"
 
 ServerFacade::ServerFacade() {}
@@ -48,7 +49,9 @@ bool ServerFacade::IsDistanceLessOrEqualThan(float dist1, float dist2)
 
 void ServerFacade::SetFacingTo(Unit* unit, float angle, bool force)
 {
-    MotionMaster &mm = *unit->GetMotionMaster();
+    if (unit->movespline->botRetreat && !unit->movespline->Finalized())
+        return;
+
     if (!force && !unit->IsStopped()) unit->SetFacingTo(angle);
     else
     {
