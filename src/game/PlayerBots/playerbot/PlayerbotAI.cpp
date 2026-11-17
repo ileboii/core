@@ -29,6 +29,7 @@
 #include "strategy/actions/MovementActions.h"
 #include "strategy/actions/SayAction.h"
 #include "strategy/actions/AIPlayAction.h"
+#include "strategy/actions/ChooseTargetActions.h"
 #include "strategy/actions/EmoteAction.h"
 #include "strategy/values/LastSpellCastValue.h"
 #include "strategy/values/MountValues.h"
@@ -1343,6 +1344,8 @@ void PlayerbotAI::OnCombatEnded()
 {
     if (!IsStateActive(BotState::BOT_STATE_NON_COMBAT))
     {
+        SelectNewTargetAction::ClearCurrentTarget(this);
+
         // Reset the combat start timestamp
         aiObjectContext->GetValue<time_t>("combat start time")->Set(0);
 

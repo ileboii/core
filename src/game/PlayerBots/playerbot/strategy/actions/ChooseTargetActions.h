@@ -70,6 +70,9 @@ namespace ai
     {
     public:
         SelectNewTargetAction(PlayerbotAI* ai) : Action(ai, "select new target") {}
+        static const char* GetAttackActionName(PlayerbotAI* ai);
+        static void ClearCurrentTarget(PlayerbotAI* ai);
+        bool isUseful() override;
         bool Execute(Event& event) override;
     };
 }

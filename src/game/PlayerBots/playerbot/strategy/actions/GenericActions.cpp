@@ -12,21 +12,20 @@ bool MeleeAction::isUseful()
         return false;
 
     Unit* target = GetTarget();
-    if (target)
-    {
-        std::set<Aura*> checkedAuras;
-        Unit::AuraList const& damageShields = target->GetAurasByType(SPELL_AURA_DAMAGE_SHIELD);
-        for (Unit::AuraList::const_iterator i = damageShields.begin(); i != damageShields.end(); ++i)
-        {
-            Aura* aura = *i;
-            if (!aura || !checkedAuras.insert(aura).second)
-                continue;
+    if (!target || !target->IsAlive())
+        return false;
 
-            if (aura->GetModifier()->m_amount >= bot->GetMaxHealth() * 0.10f)
-            {
-                bot->AttackStop();
-                return false;
-            }
+    std::set<Aura*> checkedAuras;
+    Unit::AuraList const& damageShields = target->GetAurasByType(SPELL_AURA_DAMAGE_SHIELD);
+    for (Aura* aura : damageShields)
+    {
+        if (!aura || !checkedAuras.insert(aura).second)
+            continue;
+
+        if (aura->GetModifier()->m_amount >= bot->GetMaxHealth() * 0.10f)
+        {
+            bot->AttackStop();
+            return false;
         }
     }
 

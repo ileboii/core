@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/ChooseTargetActions.h"
 #include "BotStateTriggers.h"
 
 using namespace ai;
@@ -9,8 +10,7 @@ bool CombatStartTrigger::IsActive()
 {
     if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT) && !ai->IsStateActive(BotState::BOT_STATE_DEAD))
     {
-        // Check if any member of the group (near this bot) is getting attacked
-        return AI_VALUE(bool, "has attackers");
+        return bot->IsInCombat() || SelectNewTargetAction::GetAttackActionName(ai);
     }
 
     return false;
@@ -18,14 +18,14 @@ bool CombatStartTrigger::IsActive()
 
 bool CombatEndTrigger::IsActive()
 {
-    // Check if the bot is currently in combat
-    if (ai->IsStateActive(BotState::BOT_STATE_COMBAT))
-    {
-        // Check if any member of the group (near this bot) is getting attacked
-        return !AI_VALUE(bool, "has attackers");
-    }
+    if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT) || bot->IsInCombat() || AI_VALUE(Unit*, "pull target"))
+        return false;
 
-    return false;
+    if (bot->GetVictim() && !AI_VALUE2(bool, "invalid target", "current target"))
+        return false;
+
+    // A nearby attacker can still be out of range or unavailable to assist against.
+    return !SelectNewTargetAction::GetAttackActionName(ai);
 }
 
 bool DeathTrigger::IsActive()
